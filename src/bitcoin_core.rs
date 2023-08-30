@@ -57,7 +57,6 @@ pub(crate) fn load_bitcoin_core_csv(input_path: &str) -> Result<Vec<Transaction>
     println!("Loading {}", input_path);
 
     let mut rdr = csv::ReaderBuilder::new()
-        .delimiter(b';')
         .from_path(input_path)?;
 
     for result in rdr.deserialize() {

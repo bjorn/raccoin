@@ -55,7 +55,6 @@ pub(crate) fn load_bitonic_csv(input_path: &str) -> Result<Vec<Transaction>, Box
     println!("Loading {}", input_path);
 
     let mut rdr = csv::ReaderBuilder::new()
-        .delimiter(b';')
         .from_path(input_path)?;
 
     for result in rdr.deserialize() {
