@@ -1,29 +1,73 @@
+use std::error::Error;
+
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use serde::Deserialize;
 
-use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time};
+use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time, base::Transaction};
 
 #[derive(Debug, Clone, Deserialize)]
-enum Operation {
+pub(crate) enum Operation {
     Buy,
     Sell,
 }
 
 #[derive(Debug, Deserialize)]
-struct BitonicAction {
+pub(crate) struct BitonicAction {
     #[serde(rename = "Date", deserialize_with = "deserialize_date_time")]
-    date: NaiveDateTime,
+    pub date: NaiveDateTime,
     #[serde(rename = "Action")]
-    operation: Operation,
+    pub operation: Operation,
     #[serde(rename = "Amount")]
-    amount: f64,
+    pub amount: f64,
     #[serde(rename = "Price")]
-    price: f64,
+    pub price: f64,
+}
+
+impl From<BitonicAction> for Transaction {
+    fn from(item: BitonicAction) -> Self {
+        let utc_time = Berlin.from_local_datetime(&item.date).unwrap().naive_utc();
+        match item.operation {
+            Operation::Buy => {
+                Transaction::buy(
+                    utc_time,
+                    item.amount,
+                    "BTC",
+                    -item.price,
+                    "EUR")
+            },
+            Operation::Sell => {
+                Transaction::sell(
+                    utc_time,
+                    -item.amount,
+                    "BTC",
+                    item.price,
+                    "EUR")
+            },
+        }
+    }
+}
+
+// loads a bitonic CSV file into a list of unified transactions
+pub(crate) fn load_bitonic_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    let mut transactions = Vec::new();
+
+    println!("Loading {}", input_path);
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .from_path(input_path)?;
+
+    for result in rdr.deserialize() {
+        let record: BitonicAction = result?;
+        transactions.push(record.into());
+    }
+
+    Ok(transactions)
 }
 
 // converts a custom Bitonic CSV file to one for CryptoTaxCalculator
-pub(crate) fn convert_bitonic_to_ctc(input_path: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn convert_bitonic_to_ctc(input_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
     println!("Converting {} to {}", input_path, output_path);
     let mut rdr = csv::ReaderBuilder::new()
         .from_path(input_path)?;

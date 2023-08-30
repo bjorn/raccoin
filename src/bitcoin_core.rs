@@ -1,8 +1,10 @@
+use std::error::Error;
+
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use serde::Deserialize;
 
-use crate::ctc::{CtcTx, CtcTxType};
+use crate::{ctc::{CtcTx, CtcTxType}, base::Transaction};
 
 #[derive(Debug, Clone, Deserialize)]
 enum TransferType {
@@ -30,8 +32,44 @@ struct BitcoinCoreAction {
     id: String,
 }
 
+impl From<BitcoinCoreAction> for Transaction {
+    // todo: translate address?
+    fn from(item: BitcoinCoreAction) -> Self {
+        let utc_time = Berlin.from_local_datetime(&item.date).unwrap().naive_utc();
+        let mut tx = match item.type_ {
+            TransferType::SentTo => {
+                Transaction::send(utc_time, -item.amount, "BTC")
+            },
+            TransferType::ReceivedWith => {
+                Transaction::receive(utc_time, item.amount, "BTC")
+            },
+        };
+        tx.description = item.label;
+        tx.tx_hash = Some(item.id);
+        tx
+    }
+}
+
+// loads a bitcoin.de CSV file into a list of unified transactions
+pub(crate) fn load_bitcoin_core_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    let mut transactions = Vec::new();
+
+    println!("Loading {}", input_path);
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .from_path(input_path)?;
+
+    for result in rdr.deserialize() {
+        let record: BitcoinCoreAction = result?;
+        transactions.push(record.into());
+    }
+
+    Ok(transactions)
+}
+
 // converts the Bitcoin Core CSV file to one for CryptoTaxCalculator
-pub(crate) fn convert_bitcoin_core_to_ctc(input_path: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn convert_bitcoin_core_to_ctc(input_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
     println!("Converting {} to {}", input_path, output_path);
     let mut rdr = csv::ReaderBuilder::new()
         .from_path(input_path)?;

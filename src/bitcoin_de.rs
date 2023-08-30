@@ -2,7 +2,7 @@ use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use serde::Deserialize;
 
-use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time};
+use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time, base::Transaction};
 
 #[derive(Debug, Deserialize)]
 pub(crate) enum BitcoinDeActionType {
@@ -49,6 +49,56 @@ pub(crate) struct BitcoinDeAction {
     pub incoming_outgoing: f64,
     // #[serde(rename = "Account balance")]
     // pub account_balance: f64,
+}
+
+impl From<BitcoinDeAction> for Transaction {
+    // todo: take trading fee into account?
+    // todo: translate btc_address?
+    fn from(item: BitcoinDeAction) -> Self {
+        let utc_time = Berlin.from_local_datetime(&item.date).unwrap().naive_utc();
+        let mut tx = match item.type_ {
+            BitcoinDeActionType::Registration => Transaction::noop(utc_time),
+            BitcoinDeActionType::Purchase => {
+                Transaction::buy(
+                    utc_time,
+                    item.incoming_outgoing,
+                    &item.currency,
+                    item.amount_after_bitcoin_de_fee.expect("Purchase should have an amount"),
+                    &item.unit_amount_after_bitcoin_de_fee)
+            },
+            BitcoinDeActionType::Disbursement => Transaction::send(utc_time, -item.incoming_outgoing, &item.currency),
+            BitcoinDeActionType::Deposit => Transaction::receive(utc_time, item.incoming_outgoing, &item.currency),
+            BitcoinDeActionType::Sale => {
+                Transaction::sell(
+                    utc_time,
+                    -item.incoming_outgoing,
+                    &item.currency,
+                    item.amount_after_bitcoin_de_fee.expect("Sale should have an amount"),
+                    &item.unit_amount_after_bitcoin_de_fee)
+            },
+            BitcoinDeActionType::NetworkFee => Transaction::fee(utc_time, item.incoming_outgoing, &item.currency),
+        };
+        tx.description = item.reference;
+        tx
+    }
+}
+
+// loads a bitcoin.de CSV file into a list of unified transactions
+pub(crate) fn load_bitcoin_de_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn std::error::Error>> {
+    let mut transactions = Vec::new();
+
+    println!("Loading {}", input_path);
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .from_path(input_path)?;
+
+    for result in rdr.deserialize() {
+        let record: BitcoinDeAction = result?;
+        transactions.push(record.into());
+    }
+
+    Ok(transactions)
 }
 
 // converts the bitcoin.de csv file to one for CryptoTaxCalculator

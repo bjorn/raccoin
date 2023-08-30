@@ -1,3 +1,4 @@
+mod base;
 mod bitcoin_core;
 mod bitcoin_de;
 mod bitonic;
