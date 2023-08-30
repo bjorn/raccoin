@@ -2,6 +2,7 @@ mod base;
 mod bitcoin_core;
 mod bitcoin_de;
 mod bitonic;
+mod coinmarketcap;
 mod coinpanda;
 mod ctc;
 mod electrum;
