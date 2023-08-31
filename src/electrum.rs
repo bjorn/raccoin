@@ -4,7 +4,7 @@ use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use serde::Deserialize;
 
-use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time};
+use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time, base::{Transaction, Amount}};
 
 #[derive(Debug, Deserialize)]
 struct ElectrumHistoryItem {
@@ -17,6 +17,40 @@ struct ElectrumHistoryItem {
     // fiat_fee: Option<f64>,
     #[serde(deserialize_with = "deserialize_date_time")]
     timestamp: NaiveDateTime,
+}
+
+impl From<ElectrumHistoryItem> for Transaction {
+    fn from(item: ElectrumHistoryItem) -> Self {
+        let utc_time = Berlin.from_local_datetime(&item.timestamp).unwrap().naive_utc();
+        let mut tx = if item.value < 0.0 {
+            let amount = -item.value - item.fee.unwrap_or(0.0);
+            Transaction::send(utc_time, amount, "BTC")
+        } else {
+            Transaction::receive(utc_time, item.value, "BTC")
+        };
+        tx.description = item.label;
+        tx.tx_hash = Some(item.transaction_hash);
+        tx.fee = item.fee.and_then(|f| Some(Amount { quantity: f, currency: "BTC".to_string() }));
+        tx
+    }
+}
+
+// loads an Electrum CSV file into a list of unified transactions
+pub(crate) fn load_electrum_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    let mut transactions = Vec::new();
+
+    println!("Loading {}", input_path);
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .from_path(input_path)?;
+
+    for result in rdr.deserialize() {
+        let record: ElectrumHistoryItem = result?;
+        transactions.push(record.into());
+        println!("Loaded {:?}", transactions.last().unwrap());
+    }
+
+    Ok(transactions)
 }
 
 pub(crate) fn convert_electrum_to_ctc(input_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {

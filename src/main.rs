@@ -21,6 +21,8 @@ use esplora::{blocking_esplora_client, address_transactions};
 use fifo::fifo;
 use std::error::Error;
 
+use crate::electrum::load_electrum_csv;
+
 fn run() -> Result<(), Box<dyn Error>> {
     let mut txs = Vec::new();
 
@@ -34,8 +36,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     txs.append(&mut load_bitonic_csv(bitonic_csv_file)?);
 
     let electrum_csv_file = "electrum-history.csv";
-    // let electrum_ctc_csv_file = "electrum-for-ctc.csv";
-    // convert_electrum_to_ctc(electrum_csv_file, electrum_ctc_csv_file)?;
+    txs.append(&mut load_electrum_csv(electrum_csv_file)?);
 
     // let poloniex_path = "poloniex";
     // let poloniex_ctc_csv_file = "poloniex-for-ctc.csv";

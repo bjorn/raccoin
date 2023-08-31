@@ -69,6 +69,7 @@ pub(crate) struct Transaction {
     pub operation: Operation,
     pub description: String,
     pub tx_hash: Option<String>,
+    pub fee: Option<Amount>,
 }
 
 impl Transaction {
