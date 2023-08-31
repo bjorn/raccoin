@@ -78,7 +78,14 @@ impl From<BitcoinDeAction> for Transaction {
             },
             BitcoinDeActionType::NetworkFee => Transaction::fee(utc_time, item.incoming_outgoing, &item.currency),
         };
-        tx.description = item.reference;
+        match item.type_ {
+            BitcoinDeActionType::Registration => {},
+            BitcoinDeActionType::Purchase => tx.description = item.reference,
+            BitcoinDeActionType::Disbursement => tx.tx_hash = Some(item.reference),
+            BitcoinDeActionType::Deposit => tx.tx_hash = Some(item.reference),
+            BitcoinDeActionType::Sale => tx.description = item.reference,
+            BitcoinDeActionType::NetworkFee => tx.tx_hash = Some(item.reference),
+        };
         tx
     }
 }

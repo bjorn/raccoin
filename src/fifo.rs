@@ -89,7 +89,8 @@ pub(crate) fn fifo(transactions: &Vec<Transaction>) -> Result<Vec<CapitalGain>, 
                 println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
 
                 if sold_quantity > 0.0 {
-                    panic!("Not enough holdings to sell {:?} BTC", sold_quantity);
+                    // Not enough holdings to sell, return error
+                    return Err(format!("Not enough holdings to sell {} BTC", sold_quantity).into());
                 }
             }
             Operation::FiatDeposit(_) => {},

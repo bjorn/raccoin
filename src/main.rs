@@ -56,12 +56,8 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     fifo(&txs)?;
 
-    // estimate the price for a few price points, for testing purposes
-    println!("{}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
-    println!("{}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T06:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
-    println!("{}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T12:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
-    println!("{}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T18:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
-    println!("{}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T23:59:59", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
+    // price estimate for testing purposes
+    println!("BTC price estimate for 2014-01-01T12:00:00: {}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T12:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
 
     Ok(())
 }

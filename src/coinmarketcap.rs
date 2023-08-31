@@ -76,7 +76,7 @@ pub(crate) fn load_btc_price_history_data() -> Result<Vec<PricePoint>, Box<dyn E
             });
         }
 
-        println!("Loaded {} price points from {}...", price_point_count, file);
+        println!("Loaded {} price points from {}", price_point_count, file);
     }
     Ok(prices)
 }
