@@ -48,6 +48,100 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let prices = load_btc_price_history_data()?;
 
+    // before applying FIFO, turn any unmatched Send transactions into Sell transactions
+    // and unmatched Receive transactions into Buy transactions
+    let mut unmatched_sends = Vec::new();
+    let mut unmatched_receives = Vec::new();
+    for (index, tx) in &mut txs.iter().enumerate() {
+        match &tx.operation {
+            Operation::Send(_) => {
+                unmatched_sends.push(index);
+            },
+            Operation::Receive(amount) => {
+                // try to find a matching send transaction, by reverse iterating, but no further than one day ago
+                let oldest_send_time = tx.timestamp - Duration::days(1);
+                let unmatched_send_pos = unmatched_sends.iter().rposition(|unmatched_send| {
+                    let send = txs.get(*unmatched_send).unwrap();
+
+                    // the unmatched send may not be more than one day older than the receive
+                    if send.timestamp < oldest_send_time {
+                        return false;
+                    }
+
+                    if let Operation::Send(send_amount) = &send.operation {
+                        // the send and receive transactions must have the same currency
+                        if amount.currency != send_amount.currency {
+                            return false;
+                        }
+                        // check whether the price roughly matches (sent amount can't be lower than received amount, but can be 5% higher)
+                        if amount.quantity > send_amount.quantity || amount.quantity < send_amount.quantity * 0.95 {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+
+                    true
+                });
+
+                if let Some(unmatched_send_pos) = unmatched_send_pos {
+                    // this send is now matched, so remove it from the list of unmatched sends
+                    // println!("send pos {} is send index {}", unmatched_send_pos, unmatched_sends[unmatched_send_pos]);
+                    let send_index = unmatched_sends.remove(unmatched_send_pos);
+                    println!("matched receive {} with send {}", index, send_index);
+                    println!(" send {:?}", txs[send_index]);
+                    println!(" receive {:?}", tx);
+                } else {
+                    // no send was found for this receive, so add it to the list of unmatched receives
+                    println!("unmatched receive {}: {:?}", index, tx);
+                    unmatched_receives.push(index);
+                }
+            },
+            _ => {}
+        }
+    }
+
+    // Turn all unmatched Sends into Sells based on an estimated price
+    unmatched_sends.iter().for_each(|unmatched_send| {
+        let tx = &mut txs[*unmatched_send];
+        if let Operation::Send(send_amount) = &mut tx.operation {
+            assert!(send_amount.currency == "BTC");
+            let price = estimate_btc_price(tx.timestamp, &prices).unwrap();
+
+            tx.operation = Operation::Sell {
+                incoming: Amount {
+                    quantity: send_amount.quantity * price,
+                    currency: "EUR".into(),
+                },
+                outgoing: Amount {
+                    quantity: send_amount.quantity,
+                    currency: send_amount.currency.clone(),
+                },
+            };
+        }
+    });
+
+    // Turn all unmatched Receives into Buys based on an estimated price
+    unmatched_receives.iter().for_each(|unmatched_receive| {
+        let tx = &mut txs[*unmatched_receive];
+        if let Operation::Receive(receive_amount) = &mut tx.operation {
+            assert!(receive_amount.currency == "BTC");
+            let price = estimate_btc_price(tx.timestamp, &prices).unwrap();
+
+            tx.operation = Operation::Buy {
+                incoming: Amount {
+                    quantity: receive_amount.quantity,
+                    currency: receive_amount.currency.clone(),
+                },
+                outgoing: Amount {
+                    quantity: receive_amount.quantity * price,
+                    currency: "EUR".into(),
+                },
+            }
+        }
+    });
+
+
     fifo(&txs)?;
 
     // price estimate for testing purposes
