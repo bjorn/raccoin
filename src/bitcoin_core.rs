@@ -44,7 +44,7 @@ impl From<BitcoinCoreAction> for Transaction {
                 Transaction::receive(utc_time, item.amount, "BTC")
             },
         };
-        tx.description = item.label;
+        tx.description = if item.label.is_empty() { None } else { Some(item.label) };
         tx.tx_hash = Some(item.id);
         tx
     }

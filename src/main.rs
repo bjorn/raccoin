@@ -21,28 +21,38 @@ use esplora::{blocking_esplora_client, address_transactions};
 use fifo::fifo;
 use std::error::Error;
 
-use crate::electrum::load_electrum_csv;
+use crate::{electrum::load_electrum_csv, base::{save_transactions_to_json, load_transactions_from_json}};
 
 fn run() -> Result<(), Box<dyn Error>> {
     let mut txs = Vec::new();
 
     let bitcoin_de_csv_file = "bitcoin.de/btc_account_statement_20120831-20230831.csv";
-    txs.append(&mut load_bitcoin_de_csv(bitcoin_de_csv_file)?);
+    txs.extend(load_bitcoin_de_csv(bitcoin_de_csv_file)?);
 
     let bitcoin_core_csv_file = "bitcoin-core-transactions.csv";
-    txs.append(&mut load_bitcoin_core_csv(bitcoin_core_csv_file)?);
+    txs.extend(load_bitcoin_core_csv(bitcoin_core_csv_file)?);
 
     let bitonic_csv_file = "bitonic.csv";
-    txs.append(&mut load_bitonic_csv(bitonic_csv_file)?);
+    txs.extend(load_bitonic_csv(bitonic_csv_file)?);
 
     let electrum_csv_file = "electrum-history.csv";
-    txs.append(&mut load_electrum_csv(electrum_csv_file)?);
+    txs.extend(load_electrum_csv(electrum_csv_file)?);
 
     // let poloniex_path = "poloniex";
     // let poloniex_ctc_csv_file = "poloniex-for-ctc.csv";
     // convert_poloniex_to_ctc(poloniex_path, poloniex_ctc_csv_file)?;
 
     let esplora_client = blocking_esplora_client()?;
+
+    for address in [
+        "1APN7z3TjGTr4TZHFnjmXcHc78TopGs48f",
+    ] {
+        let filename = format!("bitcoin/{}.json", address);
+        // save_transactions_to_json(
+        //     &address_transactions(&esplora_client, address)?,
+        //     &filename)?;
+        txs.extend(load_transactions_from_json(&filename)?);
+    }
 
     // sort transactions by date
     txs.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));

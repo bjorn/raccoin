@@ -28,7 +28,7 @@ impl From<ElectrumHistoryItem> for Transaction {
         } else {
             Transaction::receive(utc_time, item.value, "BTC")
         };
-        tx.description = item.label;
+        tx.description = if item.label.is_empty() { None } else { Some(item.label) };
         tx.tx_hash = Some(item.transaction_hash);
         tx.fee = item.fee.and_then(|f| Some(Amount { quantity: f, currency: "BTC".to_string() }));
         tx
@@ -39,16 +39,15 @@ impl From<ElectrumHistoryItem> for Transaction {
 pub(crate) fn load_electrum_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
-    println!("Loading {}", input_path);
-
     let mut rdr = csv::ReaderBuilder::new()
         .from_path(input_path)?;
 
     for result in rdr.deserialize() {
         let record: ElectrumHistoryItem = result?;
         transactions.push(record.into());
-        println!("Loaded {:?}", transactions.last().unwrap());
     }
+
+    println!("Imported {} transactions from {}", transactions.len(), input_path);
 
     Ok(transactions)
 }

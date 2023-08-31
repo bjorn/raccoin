@@ -1,13 +1,17 @@
-use chrono::NaiveDateTime;
+use std::error::Error;
 
-#[derive(Debug, Default)]
+use chrono::NaiveDateTime;
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct Amount {
     pub quantity: f64,
     pub currency: String,
 }
 
 /// Unified transaction type for all exchanges and wallets
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub(crate) enum Operation {
     #[default]
     Noop,
@@ -63,12 +67,15 @@ pub(crate) enum Operation {
 }
 
 /// Unified transaction type for all exchanges and wallets
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct Transaction {
     pub timestamp: NaiveDateTime,
     pub operation: Operation,
-    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fee: Option<Amount>,
 }
 
@@ -169,4 +176,22 @@ impl Transaction {
             ..Default::default()
         }
     }
+}
+
+pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_path: &str) -> Result<(), Box<dyn Error>> {
+    println!("Saving {}", output_path);
+
+    let json = serde_json::to_string_pretty(&transactions)?;
+    std::fs::write(output_path, json)?;
+
+    Ok(())
+}
+
+pub(crate) fn load_transactions_from_json(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    let json = std::fs::read_to_string(input_path)?;
+    let transactions: Vec<Transaction> = serde_json::from_str(&json)?;
+
+    println!("Loaded {} transactions from {}", transactions.len(), input_path);
+
+    Ok(transactions)
 }
