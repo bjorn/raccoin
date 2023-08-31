@@ -3,7 +3,7 @@ use bitcoin::{Address, Network};
 use chrono::NaiveDateTime;
 use esplora_client::{Builder, BlockingClient};
 
-use crate::base::Transaction;
+use crate::base::{Transaction, Amount};
 
 pub(crate) fn blocking_esplora_client() -> Result<BlockingClient, esplora_client::Error> {
     let builder = Builder::new("https://blockstream.info/api");
@@ -57,8 +57,10 @@ pub(crate) fn address_transactions(
 
         // determine if send or receive, and convert Satoshi to BTC
         let mut transaction = if total_in > total_out {
-            let spent_amount = (total_in - total_out) as f64 / 100_000_000.0;
-            Transaction::send(naive_utc, spent_amount, "BTC")
+            let spent_amount = (total_in - total_out - tx.fee) as f64 / 100_000_000.0;
+            let mut transaction = Transaction::send(naive_utc, spent_amount, "BTC");
+            transaction.fee = Some(Amount { quantity: tx.fee as f64 / 100_000_000.0, currency: "BTC".to_string() });
+            transaction
         } else {
             let received_amount = (total_out - total_in) as f64 / 100_000_000.0;
             Transaction::receive(naive_utc, received_amount, "BTC")
