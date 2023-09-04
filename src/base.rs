@@ -88,67 +88,67 @@ impl Transaction {
         }
     }
 
-    pub(crate) fn fiat_deposit(timestamp: NaiveDateTime, amount: f64, currency: &str) -> Self {
+    pub(crate) fn fiat_deposit(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
         Self {
             timestamp,
             operation: Operation::FiatDeposit(Amount {
-                quantity: amount,
+                quantity,
                 currency: currency.to_string(),
             }),
             ..Default::default()
         }
     }
 
-    pub(crate) fn fiat_withdrawal(timestamp: NaiveDateTime, amount: f64, currency: &str) -> Self {
+    pub(crate) fn fiat_withdrawal(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
         Self {
             timestamp,
             operation: Operation::FiatDeposit(Amount {
-                quantity: amount,
+                quantity,
                 currency: currency.to_string(),
             }),
             ..Default::default()
         }
     }
 
-    pub(crate) fn send(timestamp: NaiveDateTime, amount: f64, currency: &str) -> Self {
+    pub(crate) fn send(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
         Self {
             timestamp,
             operation: Operation::Send(Amount {
-                quantity: amount,
+                quantity,
                 currency: currency.to_string(),
             }),
             ..Default::default()
         }
     }
 
-    pub(crate) fn receive(timestamp: NaiveDateTime, amount: f64, currency: &str) -> Self {
+    pub(crate) fn receive(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
         Self {
             timestamp,
             operation: Operation::Receive(Amount {
-                quantity: amount,
+                quantity,
                 currency: currency.to_string(),
             }),
             ..Default::default()
         }
     }
 
-    pub(crate) fn fee(timestamp: NaiveDateTime, amount: f64, currency: &str) -> Self {
+    pub(crate) fn fee(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
         Self {
             timestamp,
             operation: Operation::Fee(Amount {
-                quantity: amount,
+                quantity,
                 currency: currency.to_string(),
             }),
             ..Default::default()
         }
     }
 
-    pub(crate) fn buy(timestamp: NaiveDateTime, amount: f64, currency: &str, price: f64, price_currency: &str) -> Self {
+    pub(crate) fn buy(timestamp: NaiveDateTime, quantity: f64, currency: &str, price: f64, price_currency: &str) -> Self {
         Self {
             timestamp,
             operation: Operation::Buy {
                 incoming: Amount {
-                    quantity: amount,
+                    quantity,
                     currency: currency.to_string(),
                 },
                 outgoing: Amount {
@@ -160,7 +160,7 @@ impl Transaction {
         }
     }
 
-    pub(crate) fn sell(timestamp: NaiveDateTime, amount: f64, currency: &str, price: f64, price_currency: &str) -> Self {
+    pub(crate) fn sell(timestamp: NaiveDateTime, quantity: f64, currency: &str, price: f64, price_currency: &str) -> Self {
         Self {
             timestamp,
             operation: Operation::Sell {
@@ -169,7 +169,7 @@ impl Transaction {
                     currency: price_currency.to_string(),
                 },
                 outgoing: Amount {
-                    quantity: amount,
+                    quantity,
                     currency: currency.to_string(),
                 }
             },

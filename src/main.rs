@@ -116,8 +116,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     unmatched_sends.iter().for_each(|unmatched_send| {
         let tx = &mut txs[*unmatched_send];
         if let Operation::Send(send_amount) = &mut tx.operation {
-            assert!(send_amount.currency == "BTC");
-            let price = estimate_btc_price(tx.timestamp, &prices).unwrap();
+            let price = if send_amount.currency == "BTC" {
+                estimate_btc_price(tx.timestamp, &prices).unwrap()
+            } else {
+                println!("can't estimate price for {}", send_amount.currency);
+                0.0
+            };
 
             tx.operation = Operation::Sell {
                 incoming: Amount {
@@ -136,8 +140,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     unmatched_receives.iter().for_each(|unmatched_receive| {
         let tx = &mut txs[*unmatched_receive];
         if let Operation::Receive(receive_amount) = &mut tx.operation {
-            assert!(receive_amount.currency == "BTC");
-            let price = estimate_btc_price(tx.timestamp, &prices).unwrap();
+            let price = if receive_amount.currency == "BTC" {
+                estimate_btc_price(tx.timestamp, &prices).unwrap()
+            } else {
+                println!("can't estimate price for {}", receive_amount.currency);
+                0.0
+            };
 
             tx.operation = Operation::Buy {
                 incoming: Amount {

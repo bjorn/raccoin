@@ -94,8 +94,6 @@ impl From<BitcoinDeAction> for Transaction {
 pub(crate) fn load_bitcoin_de_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn std::error::Error>> {
     let mut transactions = Vec::new();
 
-    println!("Loading {}", input_path);
-
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b';')
         .from_path(input_path)?;
@@ -104,6 +102,8 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &str) -> Result<Vec<Transaction>, 
         let record: BitcoinDeAction = result?;
         transactions.push(record.into());
     }
+
+    println!("Imported {} transactions from {}", transactions.len(), input_path);
 
     Ok(transactions)
 }
