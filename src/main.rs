@@ -8,8 +8,10 @@ mod ctc;
 mod electrum;
 mod esplora;
 mod fifo;
+mod mycelium;
 mod poloniex;
 mod time;
+mod trezor;
 
 use base::{Operation, Amount};
 use bitcoin_core::load_bitcoin_core_csv;
