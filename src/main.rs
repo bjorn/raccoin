@@ -15,7 +15,7 @@ mod poloniex;
 mod time;
 mod trezor;
 
-use base::{Operation, Amount};
+use base::{Operation, Amount, Transaction};
 use bitcoin_core::load_bitcoin_core_csv;
 use bitcoin_de::load_bitcoin_de_csv;
 use bitonic::load_bitonic_csv;
@@ -25,11 +25,11 @@ use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
 use esplora::{blocking_esplora_client, address_transactions};
 use fifo::{fifo, save_gains_to_csv};
 use std::{error::Error, rc::Rc};
-use slint::{Model, VecModel, StandardListViewItem, ModelRc};
+use slint::{VecModel, StandardListViewItem, ModelRc};
 
 use crate::{electrum::load_electrum_csv, base::{save_transactions_to_json, load_transactions_from_json}};
 
-fn run() -> Result<Vec<CapitalGainUi>, Box<dyn Error>> {
+fn run() -> Result<(Vec<UiCapitalGain>, Vec<Transaction>), Box<dyn Error>> {
     let mut txs = Vec::new();
 
     let bitcoin_de_csv_file = "bitcoin.de/btc_account_statement_20120831-20230831.csv";
@@ -175,11 +175,11 @@ fn run() -> Result<Vec<CapitalGainUi>, Box<dyn Error>> {
     let filename = format!("gains-{}.csv", 2013);
     save_gains_to_csv(&gains, &filename)?;
 
-    let mut entries: Vec<CapitalGainUi> = Vec::new();
+    let mut entries: Vec<UiCapitalGain> = Vec::new();
 
     // add entries from result to ui
     for gain in gains {
-        entries.push(CapitalGainUi {
+        entries.push(UiCapitalGain {
             currency: gain.amount.currency.into(),
             bought: gain.bought.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
             sold: gain.sold.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
@@ -194,7 +194,7 @@ fn run() -> Result<Vec<CapitalGainUi>, Box<dyn Error>> {
     // price estimate for testing purposes
     println!("BTC price estimate for 2014-01-01T12:00:00: {}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T12:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
 
-    Ok(entries)
+    Ok((entries, txs))
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -205,6 +205,67 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let ui = AppWindow::new()?;
     let entries = result.unwrap();
+    let (entries, transactions) = entries;
+
+    let mut ui_transactions = Vec::new();
+    for transaction in transactions {
+        // ignore Noop transactions
+        if let Operation::Noop = &transaction.operation {
+            continue
+        }
+
+        let (tx_type, sent, received) = match &transaction.operation {
+            Operation::Buy { incoming, outgoing } => {
+                (UiTransactionType::Buy, outgoing.to_string(), incoming.to_string())
+            }
+            Operation::Sell { incoming, outgoing } => {
+                (UiTransactionType::Sell, outgoing.to_string(), incoming.to_string())
+            }
+            Operation::FiatDeposit(amount) => {
+                (UiTransactionType::Deposit, "".to_owned(), amount.to_string())
+            }
+            Operation::FiatWithdrawal(amount) => {
+                (UiTransactionType::Withdrawal, amount.to_string(), "".to_owned())
+            }
+            Operation::Send(amount) => {
+                (UiTransactionType::Send, amount.to_string(), "".to_owned())
+            }
+            Operation::Receive(amount) => {
+                (UiTransactionType::Receive, "".to_owned(), amount.to_string())
+            }
+            Operation::Fee(amount) => {
+                (UiTransactionType::Fee, amount.to_string(), "".to_owned())
+            }
+            Operation::ChainSplit => {
+                (UiTransactionType::ChainSplit, "".to_owned(), "".to_owned())
+            }
+            Operation::Expense(amount) => {
+                (UiTransactionType::Expense, amount.to_string(), "".to_owned())
+            }
+            Operation::Income(amount) => {
+                (UiTransactionType::Income, "".to_owned(), amount.to_string())
+            }
+            Operation::Airdrop(amount) => {
+                (UiTransactionType::Airdrop, "".to_owned(), amount.to_string())
+            }
+            Operation::Spam(amount) => {
+                (UiTransactionType::Spam, "".to_owned(), amount.to_string())
+            }
+            _ => todo!("unsupported operation: {:?}", transaction.operation),
+        };
+
+        ui_transactions.push(UiTransaction {
+            timestamp: transaction.timestamp.to_string().into(),
+            tx_type: tx_type,
+            received: received.into(),
+            sent: sent.into(),
+            fee: if let Some(fee) = transaction.fee { fee.to_string() } else { "".to_owned() }.into(),
+            description: if let Some(description) = transaction.description { description } else { "".to_owned() }.into(),
+            tx_hash: if let Some(tx_hash) = transaction.tx_hash { tx_hash } else { "".to_owned() }.into(),
+        });
+    }
+
+    ui.set_transactions(Rc::new(VecModel::from(ui_transactions)).into());
 
     let mut gain_entries: Vec<ModelRc<StandardListViewItem>> = Vec::new();
     for entry in entries {

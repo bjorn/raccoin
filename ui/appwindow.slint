@@ -1,7 +1,32 @@
-import { VerticalBox, StandardTableView } from "std-widgets.slint";
+import { VerticalBox, StandardTableView, TabWidget, ListView, HorizontalBox } from "std-widgets.slint";
+
+export enum UiTransactionType {
+    buy,
+    sell,
+    deposit,
+    withdrawal,
+    fee,
+    receive,
+    send,
+    chain-split,
+    expense,
+    income,
+    airdrop,
+    spam,
+}
+
+export struct UiTransaction {
+    timestamp: string,
+    tx_type: UiTransactionType,
+    received: string,
+    sent: string,
+    fee: string,
+    description: string,
+    tx_hash: string,
+}
 
 // Unused by Slint for now, but might be a better way of exposing data to UI
-export struct CapitalGainUi {
+export struct UiCapitalGain {
     currency: string,
     bought: string,
     sold: string,
@@ -12,31 +37,102 @@ export struct CapitalGainUi {
     long_term: bool,
 }
 
+component ElidingText inherits Text {
+    width: 100%;
+    height: 100%;
+    overflow: elide;
+    vertical-alignment: center;
+}
+
+component Cell inherits Rectangle {
+    horizontal-stretch: 1;
+    preferred-width: 0;
+    min-width: 0;
+}
+
+component TransactionDisplay inherits Rectangle {
+    in property <UiTransaction> tx;
+    in property <bool> even;
+
+    background: even ? #000000c9 : transparent;
+
+    HorizontalLayout {
+        Cell {
+            ElidingText {
+                text: tx.tx-type == UiTransactionType.buy ? "Buy" :
+                    tx.tx-type == UiTransactionType.sell ? "Sell" :
+                    tx.tx-type == UiTransactionType.deposit ? "Deposit" :
+                    tx.tx-type == UiTransactionType.withdrawal ? "Withdrawal" :
+                    tx.tx-type == UiTransactionType.fee ? "Fee" :
+                    tx.tx-type == UiTransactionType.receive ? "Receive" :
+                    tx.tx-type == UiTransactionType.send ? "Send" :
+                    tx.tx-type == UiTransactionType.chain-split ? "Chain Split" :
+                    tx.tx-type == UiTransactionType.expense ? "Expense" :
+                    tx.tx-type == UiTransactionType.income ? "Income" :
+                    tx.tx-type == UiTransactionType.airdrop ? "Airdrop" :
+                    tx.tx-type == UiTransactionType.spam ? "Spam" :
+                    "Unknown";
+            }
+        }
+        Cell {
+            ElidingText {
+                text: tx.timestamp;
+            }
+        }
+        Cell {
+            ElidingText {
+                text: tx.sent == "" ? "" : "–\{tx.sent}";
+            }
+        }
+        Cell {
+            ElidingText {
+                text: tx.received == "" ? "" : "+\{tx.received}";
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
+    in property <[UiTransaction]> transactions;
     in property <[[StandardListViewItem]]> gain_entries;
+
+    title: "Crypto Tax Tool";
 
     min-width: 512px;
     min-height: 160px;
     preferred-width: 1200px;
     preferred-height: 640px;
 
-    VerticalBox {
-        Text {
-            text: "Entries: \{gain_entries.length}";
-        }
+    TabWidget {
+        Tab {
+            title: "Transactions";
 
-        StandardTableView {
-            columns: [
-                { title: "Currency" },
-                { title: "Bought" },
-                { title: "Sold" },
-                { title: "Quantity" },
-                { title: "Cost" },
-                { title: "Proceeds" },
-                { title: "Gain or Loss" },
-                { title: "Long Term" },
-            ];
-            rows: gain_entries;
+            transactions-view := ListView {
+                for tx[index] in transactions: TransactionDisplay {
+                    even: mod(index, 2) == 0;
+                    tx: tx;
+                }
+            }
+        }
+        Tab {
+            title: "Capital Gains";
+
+            StandardTableView {
+                width: 100%;
+                height: 100%;
+
+                columns: [
+                    { title: "Currency" },
+                    { title: "Bought" },
+                    { title: "Sold" },
+                    { title: "Quantity" },
+                    { title: "Cost" },
+                    { title: "Proceeds" },
+                    { title: "Gain or Loss" },
+                    { title: "Long Term" },
+                ];
+                rows: gain_entries;
+            }
         }
     }
 }

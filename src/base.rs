@@ -9,6 +9,12 @@ pub(crate) struct Amount {
     pub currency: String,
 }
 
+impl ToString for Amount {
+    fn to_string(&self) -> String {
+        format!("{} {}", self.quantity, self.currency)
+    }
+}
+
 /// Unified transaction type for all exchanges and wallets
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "type")]
