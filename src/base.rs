@@ -83,6 +83,8 @@ pub(crate) struct Transaction {
     pub tx_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee: Option<Amount>,
+    #[serde(skip)]
+    pub gain: f64,
 }
 
 impl Transaction {

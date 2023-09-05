@@ -15,15 +15,15 @@ struct Entry<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct CapitalGain<'a> {
-    pub bought: &'a Transaction,
-    pub sold: &'a Transaction,
+pub(crate) struct CapitalGain {
+    pub bought: NaiveDateTime,
+    pub sold: NaiveDateTime,
     pub amount: Amount,
     pub cost: f64,
     pub proceeds: f64,
 }
 
-pub(crate) fn fifo(transactions: &Vec<Transaction>) -> Result<Vec<CapitalGain>, Box<dyn Error>> {
+pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGain>, Box<dyn Error>> {
     // holdings represented as a map of currency -> deque
     let mut holdings: HashMap<&str, VecDeque<Entry>> = HashMap::new();
     let mut capital_gains: Vec<CapitalGain> = Vec::new();
@@ -54,6 +54,7 @@ pub(crate) fn fifo(transactions: &Vec<Transaction>) -> Result<Vec<CapitalGain>, 
                 // Determine the profit made with this sale based on the oldest holdings
                 // and the current price. Consume the holdings in the process.
                 let mut sold_quantity = outgoing.quantity;
+                let mut tx_gain = 0.0;
                 let sold_unit_price = incoming.quantity / sold_quantity;
 
                 while let Some(holding) = currency_holdings.front_mut() {
@@ -65,10 +66,11 @@ pub(crate) fn fifo(transactions: &Vec<Transaction>) -> Result<Vec<CapitalGain>, 
                     let processed_quantity = holding.remaining.min(sold_quantity);
                     let cost = processed_quantity * holding.unit_price;
                     let proceeds = processed_quantity * sold_unit_price;
+                    tx_gain += proceeds - cost;
 
                     capital_gains.push(CapitalGain {
-                        bought: holding.tx,
-                        sold: transaction,
+                        bought: holding.tx.timestamp,
+                        sold: transaction.timestamp,
                         amount: Amount {
                             quantity: processed_quantity,
                             currency: outgoing.currency.clone(),    // todo: isn't this duplicated from the bought tx reference?
@@ -90,6 +92,9 @@ pub(crate) fn fifo(transactions: &Vec<Transaction>) -> Result<Vec<CapitalGain>, 
                         break;
                     }
                 }
+
+                transaction.gain = tx_gain;
+
                 println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
 
                 if sold_quantity > 0.0 {
@@ -159,13 +164,13 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &str) -> 
     for gain in gains {
         wtr.serialize(CsvGain {
             currency: &gain.amount.currency,
-            bought: gain.bought.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local(),
-            sold: gain.sold.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local(),
+            bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local(),
+            sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local(),
             quantity: gain.amount.quantity,
             cost: gain.cost,
             proceeds: gain.proceeds,
             gain_or_loss: gain.proceeds - gain.cost,
-            long_term: (gain.sold.timestamp - gain.bought.timestamp) > chrono::Duration::days(365),
+            long_term: (gain.sold - gain.bought) > chrono::Duration::days(365),
         })?;
     }
 

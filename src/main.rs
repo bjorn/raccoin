@@ -169,7 +169,7 @@ fn run() -> Result<(Vec<UiCapitalGain>, Vec<Transaction>), Box<dyn Error>> {
     // filter out all transactions before 2020
     txs.retain(|tx| tx.timestamp < NaiveDateTime::parse_from_str("2020-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap());
 
-    let gains = fifo(&txs)?;
+    let gains = fifo(&mut txs)?;
 
     // output gains as CSV
     let filename = format!("gains-{}.csv", 2013);
@@ -181,13 +181,13 @@ fn run() -> Result<(Vec<UiCapitalGain>, Vec<Transaction>), Box<dyn Error>> {
     for gain in gains {
         entries.push(UiCapitalGain {
             currency: gain.amount.currency.into(),
-            bought: gain.bought.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
-            sold: gain.sold.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
+            bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
+            sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
             quantity: gain.amount.quantity as f32,
             cost: gain.cost as f32,
             proceeds: gain.proceeds as f32,
             gain_or_loss: (gain.proceeds - gain.cost) as f32,
-            long_term: (gain.sold.timestamp - gain.bought.timestamp) > chrono::Duration::days(365),
+            long_term: (gain.sold - gain.bought) > chrono::Duration::days(365),
         });
     }
 
@@ -255,11 +255,13 @@ fn main() -> Result<(), slint::PlatformError> {
         };
 
         ui_transactions.push(UiTransaction {
-            timestamp: transaction.timestamp.to_string().into(),
+            date: transaction.timestamp.date().to_string().into(),
+            time: transaction.timestamp.time().to_string().into(),
             tx_type: tx_type,
             received: received.into(),
             sent: sent.into(),
             fee: if let Some(fee) = transaction.fee { fee.to_string() } else { "".to_owned() }.into(),
+            gain: transaction.gain as f32,
             description: if let Some(description) = transaction.description { description } else { "".to_owned() }.into(),
             tx_hash: if let Some(tx_hash) = transaction.tx_hash { tx_hash } else { "".to_owned() }.into(),
         });

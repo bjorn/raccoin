@@ -1,4 +1,4 @@
-import { VerticalBox, StandardTableView, TabWidget, ListView, HorizontalBox } from "std-widgets.slint";
+import { VerticalBox, StandardTableView, TabWidget, ListView } from "std-widgets.slint";
 
 export enum UiTransactionType {
     buy,
@@ -16,11 +16,13 @@ export enum UiTransactionType {
 }
 
 export struct UiTransaction {
-    timestamp: string,
+    date: string,
+    time: string,
     tx_type: UiTransactionType,
     received: string,
     sent: string,
     fee: string,
+    gain: float,
     description: string,
     tx_hash: string,
 }
@@ -51,12 +53,25 @@ component Cell inherits Rectangle {
 }
 
 component TransactionDisplay inherits Rectangle {
-    in property <UiTransaction> tx;
+    in property <UiTransaction> tx : {
+        date: "2013-11-01",
+        time: "12:34:56",
+        tx_type: UiTransactionType.send,
+        received: "1 BTC",
+        sent: "300 EUR",
+        fee: "1 EUR",
+        gain: 0.0,
+        description: "Foo bar baz",
+        tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    };
+
     in property <bool> even;
 
-    background: even ? #000000c9 : transparent;
+    background: even ? #ffffff06 : transparent;
 
     HorizontalLayout {
+        padding-top: 2px;
+        padding-bottom: 2px;
         Cell {
             ElidingText {
                 text: tx.tx-type == UiTransactionType.buy ? "Buy" :
@@ -74,9 +89,20 @@ component TransactionDisplay inherits Rectangle {
                     "Unknown";
             }
         }
-        Cell {
-            ElidingText {
-                text: tx.timestamp;
+        HorizontalLayout {
+            alignment: start;
+            spacing: 6px;
+            padding-right: 12px;
+            Text {
+                text: tx.date;
+                overflow: elide;
+                min-width: self.preferred-width;
+            }
+            Text {
+                text: tx.time;
+                opacity: 0.5;
+                overflow: elide;
+                min-width: self.preferred-width;
             }
         }
         Cell {
@@ -87,6 +113,12 @@ component TransactionDisplay inherits Rectangle {
         Cell {
             ElidingText {
                 text: tx.received == "" ? "" : "+\{tx.received}";
+            }
+        }
+        Cell {
+            ElidingText {
+                text: tx.gain == 0 ? "–" : tx.gain;
+                color: tx.gain < 0 ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
             }
         }
     }
