@@ -1,0 +1,42 @@
+import { VerticalBox, StandardTableView } from "std-widgets.slint";
+
+// Unused by Slint for now, but might be a better way of exposing data to UI
+export struct CapitalGainUi {
+    currency: string,
+    bought: string,
+    sold: string,
+    quantity: float,
+    cost: float,
+    proceeds: float,
+    gain_or_loss: float,
+    long_term: bool,
+}
+
+export component AppWindow inherits Window {
+    in property <[[StandardListViewItem]]> gain_entries;
+
+    min-width: 512px;
+    min-height: 160px;
+    preferred-width: 1200px;
+    preferred-height: 640px;
+
+    VerticalBox {
+        Text {
+            text: "Entries: \{gain_entries.length}";
+        }
+
+        StandardTableView {
+            columns: [
+                { title: "Currency" },
+                { title: "Bought" },
+                { title: "Sold" },
+                { title: "Quantity" },
+                { title: "Cost" },
+                { title: "Proceeds" },
+                { title: "Gain or Loss" },
+                { title: "Long Term" },
+            ];
+            rows: gain_entries;
+        }
+    }
+}

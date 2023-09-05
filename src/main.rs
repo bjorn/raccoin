@@ -1,3 +1,5 @@
+slint::include_modules!();
+
 mod base;
 mod bitcoin_core;
 mod bitcoin_de;
@@ -18,14 +20,16 @@ use bitcoin_core::load_bitcoin_core_csv;
 use bitcoin_de::load_bitcoin_de_csv;
 use bitonic::load_bitonic_csv;
 use chrono::{NaiveDateTime, Duration};
+use chrono_tz::Europe;
 use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
 use esplora::{blocking_esplora_client, address_transactions};
-use fifo::fifo;
-use std::error::Error;
+use fifo::{fifo, CapitalGain};
+use std::{error::Error, rc::Rc};
+use slint::{Model, VecModel, StandardListViewItem, ModelRc};
 
 use crate::{electrum::load_electrum_csv, base::{save_transactions_to_json, load_transactions_from_json}};
 
-fn run() -> Result<(), Box<dyn Error>> {
+fn run() -> Result<Vec<CapitalGainUi>, Box<dyn Error>> {
     let mut txs = Vec::new();
 
     let bitcoin_de_csv_file = "bitcoin.de/btc_account_statement_20120831-20230831.csv";
@@ -162,17 +166,58 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     });
 
+    // filter out all transactions before 2020
+    txs.retain(|tx| tx.timestamp < NaiveDateTime::parse_from_str("2020-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap());
 
-    fifo(&txs)?;
+    let gains = fifo(&txs)?;
+
+    let mut entries: Vec<CapitalGainUi> = Vec::new();
+
+    // add entries from result to ui
+    for gain in gains {
+        entries.push(CapitalGainUi {
+            currency: gain.amount.currency.into(),
+            bought: gain.bought.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
+            sold: gain.sold.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
+            quantity: gain.amount.quantity as f32,
+            cost: gain.cost as f32,
+            proceeds: gain.proceeds as f32,
+            gain_or_loss: (gain.proceeds - gain.cost) as f32,
+            long_term: (gain.sold.timestamp - gain.bought.timestamp) > chrono::Duration::days(365),
+        });
+    }
 
     // price estimate for testing purposes
     println!("BTC price estimate for 2014-01-01T12:00:00: {}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T12:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
 
-    Ok(())
+    Ok(entries)
 }
 
-fn main() {
-    if let Err(err) = run() {
+fn main() -> Result<(), slint::PlatformError> {
+    let result = run();
+    if let Err(err) = &result {
         println!("{}", err);
     }
+
+    let ui = AppWindow::new()?;
+    let entries = result.unwrap();
+
+    let mut gain_entries: Vec<ModelRc<StandardListViewItem>> = Vec::new();
+    for entry in entries {
+        gain_entries.push(VecModel::from_slice(&[
+            StandardListViewItem::from(entry.currency),
+            StandardListViewItem::from(entry.bought.to_string().as_str()),
+            StandardListViewItem::from(entry.sold),
+            StandardListViewItem::from(entry.quantity.to_string().as_str()),
+            StandardListViewItem::from(entry.cost.to_string().as_str()),
+            StandardListViewItem::from(entry.proceeds.to_string().as_str()),
+            StandardListViewItem::from(entry.gain_or_loss.to_string().as_str()),
+            StandardListViewItem::from(if entry.long_term { "true" } else { "false" }),
+        ]));
+    }
+
+    let entries_model = Rc::new(VecModel::from(gain_entries));
+    ui.set_gain_entries(entries_model.into());
+
+    ui.run()
 }

@@ -12,11 +12,11 @@ struct Entry<'a> {
 
 #[derive(Debug)]
 pub(crate) struct CapitalGain<'a> {
-    bought: &'a Transaction,
-    sold: &'a Transaction,
-    amount: Amount,
-    cost: f64,
-    proceeds: f64,
+    pub bought: &'a Transaction,
+    pub sold: &'a Transaction,
+    pub amount: Amount,
+    pub cost: f64,
+    pub proceeds: f64,
 }
 
 pub(crate) fn fifo(transactions: &Vec<Transaction>) -> Result<Vec<CapitalGain>, Box<dyn Error>> {
