@@ -23,7 +23,7 @@ use chrono::{NaiveDateTime, Duration};
 use chrono_tz::Europe;
 use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
 use esplora::{blocking_esplora_client, address_transactions};
-use fifo::{fifo, CapitalGain};
+use fifo::{fifo, save_gains_to_csv};
 use std::{error::Error, rc::Rc};
 use slint::{Model, VecModel, StandardListViewItem, ModelRc};
 
@@ -170,6 +170,10 @@ fn run() -> Result<Vec<CapitalGainUi>, Box<dyn Error>> {
     txs.retain(|tx| tx.timestamp < NaiveDateTime::parse_from_str("2020-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap());
 
     let gains = fifo(&txs)?;
+
+    // output gains as CSV
+    let filename = format!("gains-{}.csv", 2013);
+    save_gains_to_csv(&gains, &filename)?;
 
     let mut entries: Vec<CapitalGainUi> = Vec::new();
 

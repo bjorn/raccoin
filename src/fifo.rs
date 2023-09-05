@@ -1,6 +1,10 @@
 use std::{collections::{VecDeque, HashMap}, error::Error};
 
-use crate::base::{Operation, Transaction, Amount};
+use chrono::NaiveDateTime;
+use chrono_tz::Europe;
+use serde::Serialize;
+
+use crate::{base::{Operation, Transaction, Amount}, time::serialize_date_time};
 
 // Temporary bookkeeping entry for FIFO
 #[derive(Debug)]
@@ -127,4 +131,43 @@ fn total_holdings(holdings: &VecDeque<Entry>) -> f64 {
 
 fn is_fiat(amount: &Amount) -> bool {
     amount.currency == "EUR"
+}
+
+pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &str) -> Result<(), Box<dyn Error>> {
+    let mut wtr = csv::Writer::from_path(output_path)?;
+
+    #[derive(Serialize)]
+    struct CsvGain<'a> {
+        #[serde(rename = "Currency")]
+        currency: &'a str,
+        #[serde(rename = "Bought", serialize_with = "serialize_date_time")]
+        bought: NaiveDateTime,
+        #[serde(rename = "Sold", serialize_with = "serialize_date_time")]
+        sold: NaiveDateTime,
+        #[serde(rename = "Quantity")]
+        quantity: f64,
+        #[serde(rename = "Cost")]
+        cost: f64,
+        #[serde(rename = "Proceeds")]
+        proceeds: f64,
+        #[serde(rename = "Gain or Loss")]
+        gain_or_loss: f64,
+        #[serde(rename = "Long Term")]
+        long_term: bool,
+    }
+
+    for gain in gains {
+        wtr.serialize(CsvGain {
+            currency: &gain.amount.currency,
+            bought: gain.bought.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local(),
+            sold: gain.sold.timestamp.and_utc().with_timezone(&Europe::Berlin).naive_local(),
+            quantity: gain.amount.quantity,
+            cost: gain.cost,
+            proceeds: gain.proceeds,
+            gain_or_loss: gain.proceeds - gain.cost,
+            long_term: (gain.sold.timestamp - gain.bought.timestamp) > chrono::Duration::days(365),
+        })?;
+    }
+
+    Ok(())
 }
