@@ -24,41 +24,78 @@ use chrono_tz::Europe;
 use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
 use esplora::{blocking_esplora_client, address_transactions};
 use fifo::{fifo, save_gains_to_csv};
+use serde::{Deserialize, Serialize};
 use std::{error::Error, rc::Rc};
 use slint::{VecModel, StandardListViewItem, ModelRc};
 
-use crate::{electrum::load_electrum_csv, base::{save_transactions_to_json, load_transactions_from_json}};
+use crate::{electrum::load_electrum_csv, base::{save_transactions_to_json, load_transactions_from_json}, mycelium::load_mycelium_csv, trezor::load_trezor_csv};
+
+#[derive(Serialize, Deserialize)]
+enum TransactionsSourceType {
+    BitcoinAddress,
+    BitcoinCoreCsv,
+    BitcoinDeCsv,
+    BitonicCsv,     // todo: remove custom format
+    ElectrumCsv,
+    Json,
+    MyceliumCsv,
+    PoloniexDepositsCsv,
+    PoloniexTradesCsv,
+    PoloniexWithdrawalsCsv,
+    TrezorCsv,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TransactionSource {
+    source_type: TransactionsSourceType,
+    path: String,
+}
 
 fn run() -> Result<(Vec<UiCapitalGain>, Vec<Transaction>), Box<dyn Error>> {
+    let sources_file = "sources.json";
+    let sources: Vec<TransactionSource> = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
+
+    let esplora_client = blocking_esplora_client()?;
     let mut txs = Vec::new();
 
-    let bitcoin_de_csv_file = "bitcoin.de/btc_account_statement_20120831-20230831.csv";
-    txs.extend(load_bitcoin_de_csv(bitcoin_de_csv_file)?);
+    for source in &sources {
+        match source.source_type {
+            TransactionsSourceType::BitcoinAddress => {
+                txs.extend(address_transactions(&esplora_client, &source.path)?);
+            },
+            TransactionsSourceType::BitcoinCoreCsv => {
+                txs.extend(load_bitcoin_core_csv(&source.path)?);
+            },
+            TransactionsSourceType::BitcoinDeCsv => {
+                txs.extend(load_bitcoin_de_csv(&source.path)?)
+            },
+            TransactionsSourceType::BitonicCsv => {
+                txs.extend(load_bitonic_csv(&source.path)?);
+            },
+            TransactionsSourceType::ElectrumCsv => {
+                txs.extend(load_electrum_csv(&source.path)?);
+            },
+            TransactionsSourceType::Json => {
+                txs.extend(load_transactions_from_json(&source.path)?)
+            },
+            TransactionsSourceType::MyceliumCsv => {
+                txs.extend(load_mycelium_csv(&source.path)?);
+            },
+            TransactionsSourceType::PoloniexDepositsCsv => todo!(),
+            TransactionsSourceType::PoloniexTradesCsv => todo!(),
+            TransactionsSourceType::PoloniexWithdrawalsCsv => todo!(),
+            TransactionsSourceType::TrezorCsv => {
+                txs.extend(load_trezor_csv(&source.path)?);
+            },
+        }
+    }
 
-    let bitcoin_core_csv_file = "bitcoin-core-transactions.csv";
-    txs.extend(load_bitcoin_core_csv(bitcoin_core_csv_file)?);
-
-    let bitonic_csv_file = "bitonic.csv";
-    txs.extend(load_bitonic_csv(bitonic_csv_file)?);
-
-    let electrum_csv_file = "electrum-history.csv";
-    txs.extend(load_electrum_csv(electrum_csv_file)?);
 
     // let poloniex_path = "poloniex";
     // let poloniex_ctc_csv_file = "poloniex-for-ctc.csv";
     // convert_poloniex_to_ctc(poloniex_path, poloniex_ctc_csv_file)?;
 
-    let esplora_client = blocking_esplora_client()?;
 
-    for address in [
-        "1APN7z3TjGTr4TZHFnjmXcHc78TopGs48f",
-    ] {
-        let filename = format!("bitcoin/{}.json", address);
-        // save_transactions_to_json(
-        //     &address_transactions(&esplora_client, address)?,
-        //     &filename)?;
-        txs.extend(load_transactions_from_json(&filename)?);
-    }
 
     // sort transactions by date
     txs.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
@@ -209,12 +246,11 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let mut ui_transactions = Vec::new();
     for transaction in transactions {
-        // ignore Noop transactions
-        if let Operation::Noop = &transaction.operation {
-            continue
-        }
-
         let (tx_type, sent, received) = match &transaction.operation {
+            Operation::Noop => {
+                // ignore Noop transactions
+                continue;
+            }
             Operation::Buy { incoming, outgoing } => {
                 (UiTransactionType::Buy, outgoing.to_string(), incoming.to_string())
             }
@@ -257,11 +293,11 @@ fn main() -> Result<(), slint::PlatformError> {
         ui_transactions.push(UiTransaction {
             date: transaction.timestamp.date().to_string().into(),
             time: transaction.timestamp.time().to_string().into(),
-            tx_type: tx_type,
+            tx_type,
             received: received.into(),
             sent: sent.into(),
             fee: if let Some(fee) = transaction.fee { fee.to_string() } else { "".to_owned() }.into(),
-            gain: transaction.gain as f32,
+            gain: ((transaction.gain * 100.0).round() / 100.0) as f32,
             description: if let Some(description) = transaction.description { description } else { "".to_owned() }.into(),
             tx_hash: if let Some(tx_hash) = transaction.tx_hash { tx_hash } else { "".to_owned() }.into(),
         });
