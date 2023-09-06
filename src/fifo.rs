@@ -73,7 +73,7 @@ pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGai
                         sold: transaction.timestamp,
                         amount: Amount {
                             quantity: processed_quantity,
-                            currency: outgoing.currency.clone(),    // todo: isn't this duplicated from the bought tx reference?
+                            currency: outgoing.currency.clone(),
                         },
                         cost,
                         proceeds,
@@ -93,14 +93,28 @@ pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGai
                     }
                 }
 
-                transaction.gain = tx_gain;
-
                 println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
 
                 if sold_quantity > 0.0 {
-                    // Not enough holdings to sell, return error
-                    return Err(format!("Not enough holdings to sell {} BTC", sold_quantity).into());
+                    println!("Not enough holdings to sell {} BTC, assuming short-term and cost base 0!", sold_quantity);
+
+                    let cost = 0.0;
+                    let proceeds = sold_quantity * sold_unit_price;
+                    tx_gain += proceeds - cost;
+
+                    capital_gains.push(CapitalGain {
+                        bought: transaction.timestamp,
+                        sold: transaction.timestamp,
+                        amount: Amount {
+                            quantity: sold_quantity,
+                            currency: outgoing.currency.clone(),
+                        },
+                        cost,
+                        proceeds,
+                    });
                 }
+
+                transaction.gain = tx_gain;
             }
             Operation::FiatDeposit(_) => {},
             Operation::FiatWithdrawal(_) => {},
