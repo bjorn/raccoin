@@ -11,7 +11,10 @@ pub(crate) struct Amount {
 
 impl ToString for Amount {
     fn to_string(&self) -> String {
-        format!("{} {}", self.quantity, self.currency)
+        match self.currency.as_str() {
+            "EUR" => format!("{:.2} €", self.quantity),
+            _ => format!("{} {}", self.quantity, self.currency),
+        }
     }
 }
 
