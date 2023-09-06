@@ -1,7 +1,7 @@
 use std::{error::Error, str::FromStr};
 use bitcoin::{Address, Network};
 use chrono::NaiveDateTime;
-use esplora_client::{Builder, BlockingClient};
+use esplora_client::{Builder, BlockingClient, Tx};
 
 use crate::base::{Transaction, Amount};
 
@@ -14,25 +14,13 @@ pub(crate) fn address_transactions(
     client: &BlockingClient,
     address: &str,
 ) -> Result<Vec<Transaction>, Box<dyn Error>> {
-    let script_pubkey = Address::from_str(address)?.require_network(Network::Bitcoin)?.script_pubkey();
-    let script = script_pubkey.as_script();
-
-    let mut txs = client.scripthash_txs(script, None)?;
-    txs.retain(|tx| tx.status.confirmed);
-
-    if txs.len() == 25 {
-        loop {
-            let mut more_txs = client.scripthash_txs(script, Some(txs.last().unwrap().txid))?;
-            let n = more_txs.len();
-            txs.append(&mut more_txs);
-            if n < 25 {
-                break;
-            }
-        }
-    }
+    let address = Address::from_str(address)?.require_network(Network::Bitcoin)?;
+    let script_pubkey = address.script_pubkey();
+    let txs = address_txs(client, &address)?;
 
     let mut transactions = Vec::new();
-    for tx in txs {
+    // iterate in reverse order since we want the transactions to be chronological
+    for tx in txs.iter().rev() {
         // calculate the total of inputs for this address (spent amount)
         let total_in: u64 = tx.vin.iter().filter_map(|vin| {
             if let Some(prevout) = &vin.prevout {
@@ -74,4 +62,31 @@ pub(crate) fn address_transactions(
     println!("Imported {} transactions for address {}", transactions.len(), address);
 
     Ok(transactions)
+}
+
+pub(crate) fn address_txs(
+    client: &BlockingClient,
+    address: &Address,
+) -> Result<Vec<Tx>, Box<dyn Error>> {
+    let script_pubkey = address.script_pubkey();
+    let script = script_pubkey.as_script();
+
+    let mut txs = client.scripthash_txs(script, None)?;
+
+    // we may get up to 50 unconfirmed transactions, so filter them
+    txs.retain(|tx| tx.status.confirmed);
+
+    // repeat the request until we have all transactions
+    if txs.len() == 25 {
+        loop {
+            let mut more_txs = client.scripthash_txs(script, Some(txs.last().unwrap().txid))?;
+            let n = more_txs.len();
+            txs.append(&mut more_txs);
+            if n < 25 {
+                break;
+            }
+        }
+    }
+
+    Ok(txs)
 }
