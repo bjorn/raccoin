@@ -137,7 +137,7 @@ export component AppWindow inherits Window {
 
     TabWidget {
         Tab {
-            title: "Transactions";
+            title: "Transactions (\{transactions.length})";
 
             transactions-view := ListView {
                 for tx[index] in transactions: TransactionDisplay {
@@ -147,7 +147,7 @@ export component AppWindow inherits Window {
             }
         }
         Tab {
-            title: "Capital Gains";
+            title: "Capital Gains (\{gain_entries.length})";
 
             StandardTableView {
                 width: 100%;
