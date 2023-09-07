@@ -1,4 +1,4 @@
-import { VerticalBox, StandardTableView, TabWidget, ListView } from "std-widgets.slint";
+import { VerticalBox, StandardTableView, TabWidget, ListView, HorizontalBox, CheckBox, ComboBox} from "std-widgets.slint";
 
 export enum UiTransactionType {
     buy,
@@ -13,6 +13,11 @@ export enum UiTransactionType {
     income,
     airdrop,
     spam,
+}
+
+export struct UiTransactionSource {
+    source_type: string,
+    path: string,
 }
 
 export struct UiTransaction {
@@ -125,6 +130,8 @@ component TransactionDisplay inherits Rectangle {
 }
 
 export component AppWindow inherits Window {
+    in property <[UiTransactionSource]> sources;
+    in property <[string]> source_types;
     in property <[UiTransaction]> transactions;
     in property <[[StandardListViewItem]]> gain_entries;
 
@@ -136,6 +143,26 @@ export component AppWindow inherits Window {
     preferred-height: 640px;
 
     TabWidget {
+        Tab {
+            title: "Sources (\{sources.length})";
+
+            ListView {
+                for source in sources: HorizontalBox {
+                    CheckBox {
+                        checked: true;
+                        text: source.path;
+                        horizontal-stretch: 1;
+                        enabled: false;
+                    }
+                    ComboBox {
+                        model: source_types;
+                        horizontal-stretch: 0;
+                        current-value: source.source_type;
+                        enabled: false;
+                    }
+                }
+            }
+        }
         Tab {
             title: "Transactions (\{transactions.length})";
 

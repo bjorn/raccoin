@@ -26,7 +26,7 @@ use esplora::{blocking_esplora_client, address_transactions};
 use fifo::{fifo, save_gains_to_csv};
 use serde::{Deserialize, Serialize};
 use std::{error::Error, rc::Rc, path::Path};
-use slint::{VecModel, StandardListViewItem, ModelRc};
+use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
 
 use crate::{electrum::load_electrum_csv, base::{save_transactions_to_json, load_transactions_from_json}, mycelium::load_mycelium_csv, trezor::load_trezor_csv};
 
@@ -45,13 +45,31 @@ enum TransactionsSourceType {
     TrezorCsv,
 }
 
+impl ToString for TransactionsSourceType {
+    fn to_string(&self) -> String {
+        match self {
+            TransactionsSourceType::BitcoinAddress => "Bitcoin Address".to_owned(),
+            TransactionsSourceType::BitcoinCoreCsv => "Bitcoin Core (CSV)".to_owned(),
+            TransactionsSourceType::BitcoinDeCsv => "bitcoin.de (CSV)".to_owned(),
+            TransactionsSourceType::BitonicCsv => "Bitonic (CSV)".to_owned(),
+            TransactionsSourceType::ElectrumCsv => "Electrum (CSV)".to_owned(),
+            TransactionsSourceType::Json => "JSON".to_owned(),
+            TransactionsSourceType::MyceliumCsv => "Mycelium (CSV)".to_owned(),
+            TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
+            TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
+            TransactionsSourceType::PoloniexWithdrawalsCsv => "Poloniex Withdrawals (CSV)".to_owned(),
+            TransactionsSourceType::TrezorCsv => "Trezor (CSV)".to_owned(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct TransactionSource {
     source_type: TransactionsSourceType,
     path: String,
 }
 
-fn run() -> Result<(Vec<UiCapitalGain>, Vec<Transaction>), Box<dyn Error>> {
+fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>), Box<dyn Error>> {
     let sources_file = Path::new("sources.json");
     let sources_path = sources_file.parent().unwrap_or(Path::new(""));
     let sources: Vec<TransactionSource> = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
@@ -233,7 +251,7 @@ fn run() -> Result<(Vec<UiCapitalGain>, Vec<Transaction>), Box<dyn Error>> {
     // price estimate for testing purposes
     println!("BTC price estimate for 2014-01-01T12:00:00: {}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T12:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
 
-    Ok((entries, txs))
+    Ok((sources, txs, entries))
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -244,7 +262,31 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let ui = AppWindow::new()?;
     let entries = result.unwrap();
-    let (entries, transactions) = entries;
+    let (sources, transactions, entries) = entries;
+
+    let source_types: Vec<SharedString> = vec![
+        TransactionsSourceType::BitcoinAddress,
+        TransactionsSourceType::BitcoinCoreCsv,
+        TransactionsSourceType::BitcoinDeCsv,
+        TransactionsSourceType::BitonicCsv,
+        TransactionsSourceType::ElectrumCsv,
+        TransactionsSourceType::Json,
+        TransactionsSourceType::MyceliumCsv,
+        TransactionsSourceType::PoloniexDepositsCsv,
+        TransactionsSourceType::PoloniexTradesCsv,
+        TransactionsSourceType::PoloniexWithdrawalsCsv,
+        TransactionsSourceType::TrezorCsv,
+    ].iter().map(|s| SharedString::from(s.to_string())).collect();
+    ui.set_source_types(Rc::new(VecModel::from(source_types)).into());
+
+    let mut ui_sources = Vec::new();
+    for source in sources {
+        ui_sources.push(UiTransactionSource {
+            source_type: source.source_type.to_string().into(),
+            path: source.path.into(),
+        });
+    }
+    ui.set_sources(Rc::new(VecModel::from(ui_sources)).into());
 
     let mut ui_transactions = Vec::new();
     for transaction in transactions {
