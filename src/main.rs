@@ -25,7 +25,7 @@ use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
 use esplora::{blocking_esplora_client, address_transactions};
 use fifo::{fifo, save_gains_to_csv};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, rc::Rc};
+use std::{error::Error, rc::Rc, path::Path};
 use slint::{VecModel, StandardListViewItem, ModelRc};
 
 use crate::{electrum::load_electrum_csv, base::{save_transactions_to_json, load_transactions_from_json}, mycelium::load_mycelium_csv, trezor::load_trezor_csv};
@@ -52,40 +52,42 @@ struct TransactionSource {
 }
 
 fn run() -> Result<(Vec<UiCapitalGain>, Vec<Transaction>), Box<dyn Error>> {
-    let sources_file = "sources.json";
+    let sources_file = Path::new("sources.json");
+    let sources_path = sources_file.parent().unwrap_or(Path::new(""));
     let sources: Vec<TransactionSource> = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
 
     let esplora_client = blocking_esplora_client()?;
     let mut txs = Vec::new();
 
     for source in &sources {
+        let full_path = sources_path.join(&source.path);
         match source.source_type {
             TransactionsSourceType::BitcoinAddress => {
                 txs.extend(address_transactions(&esplora_client, &source.path)?);
             },
             TransactionsSourceType::BitcoinCoreCsv => {
-                txs.extend(load_bitcoin_core_csv(&source.path)?);
+                txs.extend(load_bitcoin_core_csv(&full_path)?);
             },
             TransactionsSourceType::BitcoinDeCsv => {
-                txs.extend(load_bitcoin_de_csv(&source.path)?)
+                txs.extend(load_bitcoin_de_csv(&full_path)?)
             },
             TransactionsSourceType::BitonicCsv => {
-                txs.extend(load_bitonic_csv(&source.path)?);
+                txs.extend(load_bitonic_csv(&full_path)?);
             },
             TransactionsSourceType::ElectrumCsv => {
-                txs.extend(load_electrum_csv(&source.path)?);
+                txs.extend(load_electrum_csv(&full_path)?);
             },
             TransactionsSourceType::Json => {
-                txs.extend(load_transactions_from_json(&source.path)?)
+                txs.extend(load_transactions_from_json(&full_path)?)
             },
             TransactionsSourceType::MyceliumCsv => {
-                txs.extend(load_mycelium_csv(&source.path)?);
+                txs.extend(load_mycelium_csv(&full_path)?);
             },
             TransactionsSourceType::PoloniexDepositsCsv => todo!(),
             TransactionsSourceType::PoloniexTradesCsv => todo!(),
             TransactionsSourceType::PoloniexWithdrawalsCsv => todo!(),
             TransactionsSourceType::TrezorCsv => {
-                txs.extend(load_trezor_csv(&source.path)?);
+                txs.extend(load_trezor_csv(&full_path)?);
             },
         }
     }

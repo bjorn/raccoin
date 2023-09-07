@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use chrono::NaiveDateTime;
 use serde::Deserialize;
@@ -69,7 +69,7 @@ impl<'a> From<TrezorTransaction<'a>> for Transaction {
 }
 
 // loads a TREZOR Suite CSV file into a list of unified transactions
-pub(crate) fn load_trezor_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -83,7 +83,7 @@ pub(crate) fn load_trezor_csv(input_path: &str) -> Result<Vec<Transaction>, Box<
         transactions.push(record.into());
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path);
+    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
 }

@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -36,7 +36,7 @@ impl From<ElectrumHistoryItem> for Transaction {
 }
 
 // loads an Electrum CSV file into a list of unified transactions
-pub(crate) fn load_electrum_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -47,13 +47,13 @@ pub(crate) fn load_electrum_csv(input_path: &str) -> Result<Vec<Transaction>, Bo
         transactions.push(record.into());
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path);
+    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
 }
 
-pub(crate) fn convert_electrum_to_ctc(input_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
-    println!("Converting {} to {}", input_path, output_path);
+pub(crate) fn convert_electrum_to_ctc(input_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
+    println!("Converting {} to {}", input_path.display(), output_path.display());
     let mut rdr = csv::ReaderBuilder::new()
         .from_path(input_path)?;
 

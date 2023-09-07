@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -51,7 +51,7 @@ impl From<BitcoinCoreAction> for Transaction {
 }
 
 // loads a bitcoin.de CSV file into a list of unified transactions
-pub(crate) fn load_bitcoin_core_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -62,14 +62,14 @@ pub(crate) fn load_bitcoin_core_csv(input_path: &str) -> Result<Vec<Transaction>
         transactions.push(record.into());
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path);
+    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
 }
 
 // converts the Bitcoin Core CSV file to one for CryptoTaxCalculator
-pub(crate) fn convert_bitcoin_core_to_ctc(input_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
-    println!("Converting {} to {}", input_path, output_path);
+pub(crate) fn convert_bitcoin_core_to_ctc(input_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
+    println!("Converting {} to {}", input_path.display(), output_path.display());
     let mut rdr = csv::ReaderBuilder::new()
         .from_path(input_path)?;
 

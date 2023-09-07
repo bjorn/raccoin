@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use chrono::NaiveDateTime;
 use serde::{Serialize, Deserialize};
@@ -189,8 +189,8 @@ impl Transaction {
     }
 }
 
-pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_path: &str) -> Result<(), Box<dyn Error>> {
-    println!("Saving {}", output_path);
+pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_path: &Path) -> Result<(), Box<dyn Error>> {
+    println!("Saving {}", output_path.display());
 
     let json = serde_json::to_string_pretty(&transactions)?;
     std::fs::write(output_path, json)?;
@@ -198,11 +198,11 @@ pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_
     Ok(())
 }
 
-pub(crate) fn load_transactions_from_json(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let json = std::fs::read_to_string(input_path)?;
     let transactions: Vec<Transaction> = serde_json::from_str(&json)?;
 
-    println!("Loaded {} transactions from {}", transactions.len(), input_path);
+    println!("Loaded {} transactions from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
 }

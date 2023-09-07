@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -49,7 +49,7 @@ impl From<BitonicAction> for Transaction {
 }
 
 // loads a bitonic CSV file into a list of unified transactions
-pub(crate) fn load_bitonic_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -90,7 +90,7 @@ pub(crate) fn load_bitonic_csv(input_path: &str) -> Result<Vec<Transaction>, Box
         transactions.push(transaction)
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path);
+    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
 }

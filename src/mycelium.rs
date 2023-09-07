@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use chrono::NaiveDateTime;
 use csv::Trim;
@@ -55,7 +55,7 @@ impl From<MyceliumTransaction> for Transaction {
 }
 
 // loads a Mycelium CSV file into a list of unified transactions
-pub(crate) fn load_mycelium_csv(input_path: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -67,7 +67,7 @@ pub(crate) fn load_mycelium_csv(input_path: &str) -> Result<Vec<Transaction>, Bo
         transactions.push(record.into());
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path);
+    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
 }
