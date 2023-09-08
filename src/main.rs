@@ -67,6 +67,8 @@ impl ToString for TransactionsSourceType {
 struct TransactionSource {
     source_type: TransactionsSourceType,
     path: String,
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    name: String,
 }
 
 fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>), Box<dyn Error>> {
@@ -77,37 +79,43 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     let esplora_client = blocking_esplora_client()?;
     let mut txs = Vec::new();
 
-    for source in &sources {
+    for (index, source) in sources.iter().enumerate() {
         let full_path = sources_path.join(&source.path);
-        match source.source_type {
+        let mut source_txs = match source.source_type {
             TransactionsSourceType::BitcoinAddress => {
-                txs.extend(address_transactions(&esplora_client, &source.path)?);
+                address_transactions(&esplora_client, &source.path)?
             },
             TransactionsSourceType::BitcoinCoreCsv => {
-                txs.extend(load_bitcoin_core_csv(&full_path)?);
+                load_bitcoin_core_csv(&full_path)?
             },
             TransactionsSourceType::BitcoinDeCsv => {
-                txs.extend(load_bitcoin_de_csv(&full_path)?)
+                load_bitcoin_de_csv(&full_path)?
             },
             TransactionsSourceType::BitonicCsv => {
-                txs.extend(load_bitonic_csv(&full_path)?);
+                load_bitonic_csv(&full_path)?
             },
             TransactionsSourceType::ElectrumCsv => {
-                txs.extend(load_electrum_csv(&full_path)?);
+                load_electrum_csv(&full_path)?
             },
             TransactionsSourceType::Json => {
-                txs.extend(load_transactions_from_json(&full_path)?)
+                load_transactions_from_json(&full_path)?
             },
             TransactionsSourceType::MyceliumCsv => {
-                txs.extend(load_mycelium_csv(&full_path)?);
+                load_mycelium_csv(&full_path)?
             },
             TransactionsSourceType::PoloniexDepositsCsv => todo!(),
             TransactionsSourceType::PoloniexTradesCsv => todo!(),
             TransactionsSourceType::PoloniexWithdrawalsCsv => todo!(),
             TransactionsSourceType::TrezorCsv => {
-                txs.extend(load_trezor_csv(&full_path)?);
+                load_trezor_csv(&full_path)?
             },
+        };
+
+        for tx in source_txs.iter_mut() {
+            tx.source_index = index;
         }
+
+        txs.extend(source_txs);
     }
 
 
@@ -280,10 +288,11 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
     let mut ui_sources = Vec::new();
-    for source in sources {
+    for source in &sources {
         ui_sources.push(UiTransactionSource {
             source_type: source.source_type.to_string().into(),
-            path: source.path.into(),
+            name: source.name.clone().into(),
+            path: source.path.clone().into(),
         });
     }
     ui.set_sources(Rc::new(VecModel::from(ui_sources)).into());
@@ -334,7 +343,10 @@ fn main() -> Result<(), slint::PlatformError> {
             _ => todo!("unsupported operation: {:?}", transaction.operation),
         };
 
+        let source = sources.get(transaction.source_index);
+
         ui_transactions.push(UiTransaction {
+            source: source.and_then(|source| Some(source.name.clone())).unwrap_or_default().into(),
             date: transaction.timestamp.date().to_string().into(),
             time: transaction.timestamp.time().to_string().into(),
             tx_type,

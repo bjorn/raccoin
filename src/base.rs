@@ -88,6 +88,8 @@ pub(crate) struct Transaction {
     pub fee: Option<Amount>,
     #[serde(skip)]
     pub gain: f64,
+    #[serde(skip)]
+    pub source_index: usize,
 }
 
 impl Transaction {
