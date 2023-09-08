@@ -378,5 +378,9 @@ fn main() -> Result<(), slint::PlatformError> {
     let entries_model = Rc::new(VecModel::from(gain_entries));
     ui.set_gain_entries(entries_model.into());
 
+    ui.on_open_transaction(move |tx_hash| {
+        let _ = open::that(format!("http://blockchair.com/bitcoin/transaction/{}", tx_hash));
+    });
+
     ui.run()
 }
