@@ -963,11 +963,19 @@ dependencies = [
  "bitcoin",
  "chrono",
  "chrono-tz",
+ "cryptotax_ui",
  "csv",
  "esplora-client",
  "open",
  "serde",
  "serde_json",
+ "slint",
+]
+
+[[package]]
+name = "cryptotax_ui"
+version = "0.1.0"
+dependencies = [
  "slint",
  "slint-build",
 ]

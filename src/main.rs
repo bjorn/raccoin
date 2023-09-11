@@ -1,5 +1,3 @@
-slint::include_modules!();
-
 mod base;
 mod bitcoin_core;
 mod bitcoin_de;
@@ -19,14 +17,15 @@ use base::{Operation, Amount, Transaction};
 use bitcoin_core::load_bitcoin_core_csv;
 use bitcoin_de::load_bitcoin_de_csv;
 use bitonic::load_bitonic_csv;
-use chrono::{NaiveDateTime, Duration};
 use chrono_tz::Europe;
+use chrono::{NaiveDateTime, Duration};
 use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
+use cryptotax_ui::*;
 use esplora::{blocking_esplora_client, address_transactions};
 use fifo::{fifo, save_gains_to_csv};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, rc::Rc, path::Path};
 use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
+use std::{error::Error, rc::Rc, path::Path};
 
 use crate::{
     electrum::load_electrum_csv,
