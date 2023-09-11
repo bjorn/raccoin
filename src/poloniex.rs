@@ -1,9 +1,13 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use chrono::{NaiveDateTime, FixedOffset, DateTime};
 use serde::Deserialize;
 
-use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time};
+use crate::{
+    ctc::save_transactions_to_ctc_csv,
+    time::deserialize_date_time,
+    base::{Transaction, Amount}
+};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct PoloniexDeposit {
@@ -30,7 +34,7 @@ pub(crate) struct PoloniexWithdrawal {
     // #[serde(rename = "Amount")]
     // amount: f64,
     #[serde(rename = "Amount-Fee")]
-    amount_fee: f64,
+    amount_minus_fee: f64,
     #[serde(rename = "Address")]
     address: String,
     // #[serde(rename = "Status")]
@@ -72,79 +76,103 @@ pub(crate) struct PoloniexTrade {
     // fee_total: f64,  // always same as fee
 }
 
-pub(crate) fn convert_poloniex_to_ctc(input_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
-    let mut wtr = csv::Writer::from_path(output_path)?;
-
-    // deposits
-    let deposits_file = input_path.to_owned() + "/deposit.csv";
-    println!("Converting {} to {}", deposits_file, output_path);
-    let mut rdr = csv::ReaderBuilder::new()
-        .from_path(deposits_file)?;
-
-    for result in rdr.deserialize() {
-        let record: PoloniexDeposit = result?;
-        // let utc_time = Berlin.from_local_datetime(&record.date).unwrap().naive_utc();
-        wtr.serialize(CtcTx {
-            description: Some(&record.address),
-            ..CtcTx::new(
-                record.date,
-                CtcTxType::Receive,
-                &record.currency,
-                record.amount)
-        })?;
+impl From<PoloniexDeposit> for Transaction {
+    fn from(item: PoloniexDeposit) -> Self {
+        let mut tx = Transaction::receive(item.date, item.amount, &item.currency);
+        tx.description = Some(item.address);
+        tx
     }
+}
 
-    // withdrawals
-    let withdrawals_file = input_path.to_owned() + "/withdrawal.csv";
-    println!("Converting {} to {}", withdrawals_file, output_path);
-    let mut rdr = csv::ReaderBuilder::new()
-        .from_path(withdrawals_file)?;
-
-    for result in rdr.deserialize() {
-        let record: PoloniexWithdrawal = result?;
-        // let utc_time = Berlin.from_local_datetime(&record.date).unwrap().naive_utc();
-        wtr.serialize(CtcTx {
-            description: Some(&record.address),
-            fee_amount: Some(record.fee_deducted),
-            fee_currency: Some(&record.currency),
-            ..CtcTx::new(
-                record.date,
-                CtcTxType::Send,
-                &record.currency,
-                record.amount_fee)
-        })?;
+impl From<PoloniexWithdrawal> for Transaction {
+    fn from(item: PoloniexWithdrawal) -> Self {
+        let mut tx = Transaction::send(item.date, item.amount_minus_fee, &item.currency);
+        tx.fee = Some(Amount { quantity: item.fee_deducted, currency: item.currency });
+        tx.description = Some(item.address);
+        tx
     }
+}
 
-    // trades
-    let trades_file = input_path.to_owned() + "/all-trades.csv";
-    println!("Converting {} to {}", trades_file, output_path);
-    let mut rdr = csv::ReaderBuilder::new()
-        .from_path(trades_file)?;
-
-    for result in rdr.deserialize() {
-        let record: PoloniexTrade = result?;
-
+impl From<PoloniexTrade> for Transaction {
+    fn from(item: PoloniexTrade) -> Self {
         // split record.market at the underscore to obtain the base_currency and the quote_currency
-        let collect = record.market.split("_").collect::<Vec<&str>>();
+        let collect = item.market.split("_").collect::<Vec<&str>>();
         let base_currency = collect[0];
         let quote_currency = collect[1];
 
-        wtr.serialize(CtcTx {
-            description: Some(&record.order_number),
-            quote_amount: Some(record.total),
-            quote_currency: Some(quote_currency),
-            fee_amount: Some(record.fee),
-            fee_currency: Some(&record.fee_currency),
-            ..CtcTx::new(
-                record.date.naive_utc(),
-                match record.side {
-                    Operation::Buy => CtcTxType::Buy,
-                    Operation::Sell => CtcTxType::Sell,
-                },
-                base_currency,
-                record.amount)
-        })?;
+        let timestamp = item.date.naive_utc();
+
+        let mut tx = match item.side {
+            Operation::Buy => Transaction::buy(timestamp, item.amount, base_currency, item.total, quote_currency),
+            Operation::Sell => Transaction::sell(timestamp, item.amount, base_currency, item.total, quote_currency),
+        };
+        tx.fee = Some(Amount { quantity: item.fee, currency: item.fee_currency });
+        tx.description = Some(item.order_number);
+        tx
     }
+}
+
+// loads a Poloniex Deposits CSV file into a list of unified transactions
+pub(crate) fn load_poloniex_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
+    let mut transactions = Vec::new();
+
+    for result in rdr.deserialize() {
+        let record: PoloniexDeposit = result?;
+        transactions.push(record.into());
+    }
+
+    println!("Imported {} deposits from {}", transactions.len(), input_path.display());
+
+    Ok(transactions)
+}
+
+// loads a Poloniex Withdrawals CSV file into a list of unified transactions
+pub(crate) fn load_poloniex_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
+    let mut transactions = Vec::new();
+
+    for result in rdr.deserialize() {
+        let record: PoloniexWithdrawal = result?;
+        transactions.push(record.into());
+    }
+
+    println!("Imported {} withdrawals from {}", transactions.len(), input_path.display());
+
+    Ok(transactions)
+}
+
+// loads a Poloniex Trades CSV file into a list of unified transactions
+pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
+    let mut transactions = Vec::new();
+
+    for result in rdr.deserialize() {
+        let record: PoloniexTrade = result?;
+        transactions.push(record.into());
+    }
+
+    println!("Imported {} trades from {}", transactions.len(), input_path.display());
+
+    Ok(transactions)
+}
+
+pub(crate) fn convert_poloniex_to_ctc(input_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut txs = Vec::new();
+
+    // deposits
+    let deposits_file = input_path.join("deposit.csv");
+    txs.extend(load_poloniex_deposits_csv(&deposits_file)?);
+
+    // withdrawals
+    let withdrawals_file = input_path.join("withdrawal.csv");
+    txs.extend(load_poloniex_withdrawals_csv(&withdrawals_file)?);
+
+    // trades
+    let trades_file = input_path.join("all-trades.csv");
+    txs.extend(load_poloniex_trades_csv(&trades_file)?);
+
+    save_transactions_to_ctc_csv(&txs, output_path)?;
 
     Ok(())
 }

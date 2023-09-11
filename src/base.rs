@@ -38,7 +38,7 @@ pub(crate) enum Operation {
     // Approval,
     Receive(Amount),
     Send(Amount),
-    ChainSplit,
+    ChainSplit(Amount),
     Expense(Amount),
     // Stolen(Amount),
     // Lost(Amount),

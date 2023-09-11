@@ -127,7 +127,7 @@ pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGai
             Operation::Send(_) => {
                 // todo: print a warning if this Send was not matched with a Receive
             },
-            Operation::ChainSplit => todo!(),
+            Operation::ChainSplit(_) => todo!(),
             Operation::Expense(_) => todo!(),
             Operation::Income(_) => todo!(),
             Operation::Airdrop(_) => todo!(),

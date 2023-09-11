@@ -4,7 +4,7 @@ use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use serde::Deserialize;
 
-use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time, base::Transaction};
+use crate::{time::deserialize_date_time, base::Transaction};
 
 #[derive(Debug, Deserialize)]
 pub(crate) enum BitcoinDeActionType {
@@ -108,102 +108,4 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>,
     println!("Imported {} transactions from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
-}
-
-// converts the bitcoin.de csv file to one for CryptoTaxCalculator
-pub(crate) fn convert_bitcoin_de_to_ctc(input_path: &Path, output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Converting {} to {}", input_path.display(), output_path.display());
-    let mut rdr = csv::ReaderBuilder::new()
-        .delimiter(b';')
-        .from_path(input_path)?;
-
-    let mut wtr = csv::Writer::from_path(output_path)?;
-
-    for result in rdr.deserialize() {
-        let record: BitcoinDeAction = result?;
-        let utc_time = Berlin.from_local_datetime(&record.date).unwrap().naive_utc();
-
-        // handle various record type
-        match record.type_ {
-            BitcoinDeActionType::Registration => {},
-            BitcoinDeActionType::Purchase => {
-                // When purchasing on Bitcoin.de, the EUR amount is actually sent directly to the seller.
-                // To avoid building up a negative EUR balance, we add a fiat deposit.
-                wtr.serialize(CtcTx::new(
-                    utc_time - chrono::Duration::minutes(1),
-                    CtcTxType::FiatDeposit,
-                    &record.unit_amount_after_bitcoin_de_fee,
-                    record.amount_after_bitcoin_de_fee.expect("Purchase should have an amount")))?;
-
-                wtr.serialize(CtcTx {
-                    id: Some(&record.reference),
-                    quote_currency: Some(&record.unit_amount_after_bitcoin_de_fee),
-                    quote_amount: record.amount_after_bitcoin_de_fee,
-                    // reference_price_per_unit: record.price,
-                    ..CtcTx::new(
-                        utc_time,
-                        CtcTxType::Buy,
-                        &record.currency,
-                        record.incoming_outgoing
-                    )
-                })?;
-            },
-            BitcoinDeActionType::Disbursement => {
-                wtr.serialize(CtcTx {
-                    description: Some(&record.btc_address),
-                    id: Some(&record.reference),
-                    ..CtcTx::new(
-                        utc_time,
-                        CtcTxType::Send,
-                        &record.currency,
-                        -record.incoming_outgoing)
-                })?;
-            },
-            BitcoinDeActionType::Deposit => {
-                wtr.serialize(CtcTx {
-                    description: Some(&record.btc_address),
-                    id: Some(&record.reference),
-                    ..CtcTx::new(
-                        utc_time,
-                        CtcTxType::Receive,
-                        &record.currency,
-                        record.incoming_outgoing)
-                })?;
-            },
-            BitcoinDeActionType::Sale => {
-                // When selling on Bitcoin.de, the EUR amount is actually sent directly to the buyer.
-                // To avoid building up a positive EUR balance, we add a fiat withdrawal.
-                wtr.serialize(CtcTx {
-                    id: Some(&record.reference),
-                    quote_currency: Some(&record.unit_amount_after_bitcoin_de_fee),
-                    quote_amount: record.amount_after_bitcoin_de_fee,
-                    // reference_price_per_unit: record.price,
-                    ..CtcTx::new(
-                        utc_time,
-                        CtcTxType::Sell,
-                        &record.currency,
-                        -record.incoming_outgoing
-                    )
-                })?;
-                wtr.serialize(CtcTx::new(
-                    utc_time + chrono::Duration::minutes(1),
-                    CtcTxType::FiatWithdrawal,
-                    &record.unit_amount_after_bitcoin_de_fee,
-                    record.amount_after_bitcoin_de_fee.expect("Sale should have an amount")))?;
-            },
-            BitcoinDeActionType::NetworkFee => {
-                wtr.serialize(CtcTx {
-                    description: Some(&record.btc_address),
-                    id: Some(&record.reference),
-                    ..CtcTx::new(
-                        utc_time,
-                        CtcTxType::Fee,
-                        &record.currency,
-                        -record.incoming_outgoing)
-                })?;
-            },
-        }
-    }
-
-    Ok(())
 }

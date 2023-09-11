@@ -28,7 +28,20 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, rc::Rc, path::Path};
 use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
 
-use crate::{electrum::load_electrum_csv, base::{save_transactions_to_json, load_transactions_from_json}, mycelium::load_mycelium_csv, trezor::load_trezor_csv};
+use crate::{
+    electrum::load_electrum_csv,
+    base::{
+        save_transactions_to_json,
+        load_transactions_from_json
+    },
+    mycelium::load_mycelium_csv,
+    trezor::load_trezor_csv,
+    poloniex::{
+        load_poloniex_deposits_csv,
+        load_poloniex_trades_csv,
+        load_poloniex_withdrawals_csv
+    }
+};
 
 #[derive(Serialize, Deserialize)]
 enum TransactionsSourceType {
@@ -103,9 +116,15 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
             TransactionsSourceType::MyceliumCsv => {
                 load_mycelium_csv(&full_path)?
             },
-            TransactionsSourceType::PoloniexDepositsCsv => todo!(),
-            TransactionsSourceType::PoloniexTradesCsv => todo!(),
-            TransactionsSourceType::PoloniexWithdrawalsCsv => todo!(),
+            TransactionsSourceType::PoloniexDepositsCsv => {
+                load_poloniex_deposits_csv(&full_path)?
+            },
+            TransactionsSourceType::PoloniexTradesCsv => {
+                load_poloniex_trades_csv(&full_path)?
+            },
+            TransactionsSourceType::PoloniexWithdrawalsCsv => {
+                load_poloniex_withdrawals_csv(&full_path)?
+            },
             TransactionsSourceType::TrezorCsv => {
                 load_trezor_csv(&full_path)?
             },
@@ -119,8 +138,8 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     }
 
 
-    // let poloniex_path = "poloniex";
-    // let poloniex_ctc_csv_file = "poloniex-for-ctc.csv";
+    // let poloniex_path = Path::new("archive/poloniex");
+    // let poloniex_ctc_csv_file = Path::new("poloniex-for-ctc.csv");
     // convert_poloniex_to_ctc(poloniex_path, poloniex_ctc_csv_file)?;
 
 
@@ -325,8 +344,8 @@ fn main() -> Result<(), slint::PlatformError> {
             Operation::Fee(amount) => {
                 (UiTransactionType::Fee, amount.to_string(), "".to_owned())
             }
-            Operation::ChainSplit => {
-                (UiTransactionType::ChainSplit, "".to_owned(), "".to_owned())
+            Operation::ChainSplit(amount) => {
+                (UiTransactionType::ChainSplit, amount.to_string(), "".to_owned())
             }
             Operation::Expense(amount) => {
                 (UiTransactionType::Expense, amount.to_string(), "".to_owned())

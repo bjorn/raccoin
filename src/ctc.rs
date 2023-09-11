@@ -1,7 +1,9 @@
+use std::{path::Path, error::Error};
+
 use chrono::NaiveDateTime;
 use serde::{Serialize, Deserialize};
 
-use crate::time::{serialize_date_time, deserialize_date_time};
+use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation}};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)] // we want to represent all possible values, not just used ones
@@ -271,4 +273,65 @@ impl<'a> CtcTx<'a> {
             reference_price_currency: None,
         }
     }
+}
+
+impl<'a> TryFrom<&'a Transaction> for CtcTx<'a> {
+    type Error = &'static str;
+
+    fn try_from(item: &'a Transaction) -> Result<Self, Self::Error> {
+        match item.operation {
+            Operation::Noop => Err("Noop operation not supported!"),
+            _ => {
+                let (operation, base, quote) = match &item.operation {
+                    Operation::Noop => unreachable!(),
+                    Operation::Buy { incoming, outgoing } => (CtcTxType::Buy, incoming, Some(outgoing)),
+                    Operation::Sell { incoming, outgoing } => (CtcTxType::Sell, outgoing, Some(incoming)),
+                    Operation::FiatDeposit(amount) => (CtcTxType::FiatDeposit, amount, None),
+                    Operation::FiatWithdrawal(amount) => (CtcTxType::FiatWithdrawal, amount, None),
+                    Operation::Fee(amount) => (CtcTxType::Fee, amount, None),
+                    Operation::Receive(amount) => (CtcTxType::Receive, amount, None),
+                    Operation::Send(amount) => (CtcTxType::Send, amount, None),
+                    Operation::ChainSplit(amount) => (CtcTxType::ChainSplit, amount, None),
+                    Operation::Expense(amount) => (CtcTxType::Expense, amount, None),
+                    Operation::Income(amount) => (CtcTxType::Income, amount, None),
+                    Operation::Airdrop(amount) => (CtcTxType::Airdrop, amount, None),
+                    Operation::IncomingGift(amount) => (CtcTxType::IncomingGift, amount, None),
+                    Operation::OutgoingGift(amount) => (CtcTxType::OutgoingGift, amount, None),
+                    Operation::Spam(amount) => (CtcTxType::Spam, amount, None),
+                };
+                Ok(Self {
+                    timestamp: item.timestamp,
+                    operation,
+                    base_currency: &base.currency,
+                    base_amount: base.quantity,
+                    quote_currency: quote.map(|item| item.currency.as_str()),
+                    quote_amount: quote.map(|item| item.quantity),
+                    fee_currency: item.fee.as_ref().map(|fee| fee.currency.as_str()),
+                    fee_amount: item.fee.as_ref().map(|fee| fee.quantity),
+                    from: None,
+                    to: None,
+                    blockchain: None,
+                    id: item.tx_hash.as_ref().map(|s| s.as_str()),
+                    description: item.description.as_ref().map(|s| s.as_str()),
+                    reference_price_per_unit: None,
+                    reference_price_currency: None,
+                })
+            },
+        }
+    }
+}
+
+pub(crate) fn save_transactions_to_ctc_csv(transactions: &Vec<Transaction>, output_path: &Path) -> Result<(), Box<dyn Error>> {
+    println!("Saving {}", output_path.display());
+
+    let mut wtr = csv::Writer::from_path(output_path)?;
+
+    for tx in transactions {
+        match CtcTx::try_from(tx) {
+            Ok(ctc_tx) => wtr.serialize(ctc_tx)?,
+            Err(_e) => continue,
+        }
+    }
+
+    Ok(())
 }

@@ -4,7 +4,7 @@ use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use serde::Deserialize;
 
-use crate::{ctc::{CtcTx, CtcTxType}, time::deserialize_date_time, base::{Transaction, Amount}};
+use crate::{time::deserialize_date_time, base::{Transaction, Amount}};
 
 #[derive(Debug, Deserialize)]
 struct ElectrumHistoryItem {
@@ -50,32 +50,4 @@ pub(crate) fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>, B
     println!("Imported {} transactions from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
-}
-
-pub(crate) fn convert_electrum_to_ctc(input_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
-    println!("Converting {} to {}", input_path.display(), output_path.display());
-    let mut rdr = csv::ReaderBuilder::new()
-        .from_path(input_path)?;
-
-    let mut wtr = csv::Writer::from_path(output_path)?;
-
-    for result in rdr.deserialize() {
-        let record: ElectrumHistoryItem = result?;
-        let utc_time = Berlin.from_local_datetime(&record.timestamp).unwrap().naive_utc();
-
-        wtr.serialize(CtcTx {
-            id: Some(&record.transaction_hash),
-            description: Some(&record.label),
-            fee_amount: record.fee,
-            fee_currency: if record.fee.is_none() { None } else { Some("BTC") },
-            blockchain: Some("BTC"),
-            ..CtcTx::new(
-                utc_time,
-                if record.value < 0.0 { CtcTxType::Send } else { CtcTxType::Receive },
-                "BTC",
-                record.value.abs() - record.fee.unwrap_or(0.0))
-        })?;
-    }
-
-    Ok(())
 }
