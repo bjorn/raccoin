@@ -1,12 +1,37 @@
-use std::{error::Error, path::Path};
+use std::{error::Error, path::Path, fmt};
 
 use chrono::NaiveDateTime;
 use serde::{Serialize, Deserialize};
+
+#[derive(Debug)]
+pub enum GainError {
+    InvalidTransactionOrder,    // should only happen in case of a bug
+    NoReferencePrice,
+    InvalidReferencePrice,
+    InsufficientBalance,
+}
+
+impl fmt::Display for GainError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            GainError::InvalidTransactionOrder => f.write_str("Invalid transaction order"),
+            GainError::NoReferencePrice => f.write_str("No reference price"),
+            GainError::InvalidReferencePrice => f.write_str("Invalid reference price (not fiat?)"),
+            GainError::InsufficientBalance => f.write_str("Insufficient balance"),
+        }
+    }
+}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct Amount {
     pub quantity: f64,
     pub currency: String,
+}
+
+impl Amount {
+    pub(crate) fn is_fiat(&self) -> bool {
+        self.currency == "EUR"
+    }
 }
 
 impl ToString for Amount {
@@ -87,9 +112,11 @@ pub(crate) struct Transaction {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee: Option<Amount>,
     #[serde(skip)]
-    pub gain: f64,
+    pub gain: Option<Result<f64, GainError>>,
     #[serde(skip)]
     pub source_index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference_price_per_unit: Option<Amount>,
 }
 
 impl Transaction {

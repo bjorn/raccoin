@@ -362,6 +362,11 @@ fn main() -> Result<(), slint::PlatformError> {
         };
 
         let source = sources.get(transaction.source_index);
+        let (gain, gain_error) = match transaction.gain {
+            Some(Ok(gain)) => (gain, None),
+            Some(Err(e)) => (0.0, Some(e.to_string())),
+            None => (0.0, None),
+        };
 
         ui_transactions.push(UiTransaction {
             source: source.and_then(|source| Some(source.name.clone())).unwrap_or_default().into(),
@@ -371,7 +376,8 @@ fn main() -> Result<(), slint::PlatformError> {
             received: received.into(),
             sent: sent.into(),
             fee: if let Some(fee) = transaction.fee { fee.to_string() } else { "".to_owned() }.into(),
-            gain: ((transaction.gain * 100.0).round() / 100.0) as f32,
+            gain: ((gain * 100.0).round() / 100.0) as f32,
+            gain_error: gain_error.unwrap_or_default().into(),
             description: if let Some(description) = transaction.description { description } else { "".to_owned() }.into(),
             tx_hash: if let Some(tx_hash) = transaction.tx_hash { tx_hash } else { "".to_owned() }.into(),
         });

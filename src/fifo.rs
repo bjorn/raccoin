@@ -4,7 +4,7 @@ use chrono::NaiveDateTime;
 use chrono_tz::Europe;
 use serde::Serialize;
 
-use crate::{base::{Operation, Transaction, Amount}, time::serialize_date_time};
+use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_date_time};
 
 // Temporary bookkeeping entry for FIFO
 #[derive(Debug)]
@@ -23,6 +23,60 @@ pub(crate) struct CapitalGain {
     pub proceeds: f64,
 }
 
+/// Determines the capital gains made with this sale based on the oldest
+/// holdings and the current price. Consumes the holdings in the process.
+fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveDateTime, outgoing: &'a Amount, incoming_fiat: f64) -> Result<Vec<CapitalGain>, GainError> {
+    // todo: find a way to not insert an empty deque?
+    let currency_holdings = holdings.entry(&outgoing.currency).or_default();
+
+    let mut capital_gains: Vec<CapitalGain> = Vec::new();
+    let mut sold_quantity = outgoing.quantity;
+    let sold_unit_price = incoming_fiat / sold_quantity;
+
+    while let Some(holding) = currency_holdings.front_mut() {
+        if holding.tx.timestamp > timestamp {
+            return Err(GainError::InvalidTransactionOrder);
+        }
+
+        // we can process up to the amount in the holding entry
+        let processed_quantity = holding.remaining.min(sold_quantity);
+        let cost = processed_quantity * holding.unit_price;
+        let proceeds = processed_quantity * sold_unit_price;
+
+        capital_gains.push(CapitalGain {
+            bought: holding.tx.timestamp,
+            sold: timestamp,
+            amount: Amount {
+                quantity: processed_quantity,
+                currency: outgoing.currency.clone(),
+            },
+            cost,
+            proceeds,
+        });
+
+        println!("    {:?}", capital_gains.last().unwrap());
+
+        sold_quantity -= processed_quantity;
+
+        if holding.remaining == processed_quantity {
+            // consume the holding and keep processing the remaining quantity
+            currency_holdings.pop_front();
+        } else {
+            // we finished processing the sale
+            holding.remaining -= processed_quantity;
+            break;
+        }
+    }
+
+    println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
+
+    if sold_quantity > 0.0 {
+        return Err(GainError::InsufficientBalance);
+    }
+
+    Ok(capital_gains)
+}
+
 pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGain>, Box<dyn Error>> {
     // holdings represented as a map of currency -> deque
     let mut holdings: HashMap<&str, VecDeque<Entry>> = HashMap::new();
@@ -33,88 +87,67 @@ pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGai
 
         match &transaction.operation {
             Operation::Noop => {},
-            Operation::Buy{incoming, outgoing} => {
-                assert!(is_fiat(outgoing));
+            Operation::Buy{incoming, outgoing} | Operation::Sell{incoming, outgoing} => {
+                if incoming.is_fiat() && outgoing.is_fiat() {
+                    return Err("Fiat to fiat trade not supported".into());
+                } else if outgoing.is_fiat() {
+                    // When we're buying crypto with fiat, we just need to remember
+                    // the unit price, which determines the cost base when we later
+                    // sell the crypto.
+                    let unit_price = outgoing.quantity / incoming.quantity;
+                    let currency_holdings = holdings.entry(&incoming.currency).or_default();
 
-                let unit_price = outgoing.quantity / incoming.quantity;
-                let currency_holdings = holdings.entry(&incoming.currency).or_default();
-
-                currency_holdings.push_back(Entry {
-                    tx: transaction,
-                    unit_price,
-                    remaining: incoming.quantity,
-                });
-
-                println!("  {:} holdings: {:} ({:} entries)", incoming.currency, total_holdings(&currency_holdings), currency_holdings.len());
-            }
-            Operation::Sell{incoming, outgoing} => {
-                // todo: find a way to not insert an empty deque?
-                let currency_holdings = holdings.entry(&outgoing.currency).or_default();
-
-                // Determine the profit made with this sale based on the oldest holdings
-                // and the current price. Consume the holdings in the process.
-                let mut sold_quantity = outgoing.quantity;
-                let mut tx_gain = 0.0;
-                let sold_unit_price = incoming.quantity / sold_quantity;
-
-                while let Some(holding) = currency_holdings.front_mut() {
-                    if holding.tx.timestamp > transaction.timestamp {
-                        panic!("Oldest holding is newer than sale");
-                    }
-
-                    // we can process up to the amount in the holding entry
-                    let processed_quantity = holding.remaining.min(sold_quantity);
-                    let cost = processed_quantity * holding.unit_price;
-                    let proceeds = processed_quantity * sold_unit_price;
-                    tx_gain += proceeds - cost;
-
-                    capital_gains.push(CapitalGain {
-                        bought: holding.tx.timestamp,
-                        sold: transaction.timestamp,
-                        amount: Amount {
-                            quantity: processed_quantity,
-                            currency: outgoing.currency.clone(),
-                        },
-                        cost,
-                        proceeds,
+                    currency_holdings.push_back(Entry {
+                        tx: transaction,
+                        unit_price,
+                        remaining: incoming.quantity,
                     });
 
-                    println!("    {:?}", capital_gains.last().unwrap());
-
-                    sold_quantity -= processed_quantity;
-
-                    if holding.remaining == processed_quantity {
-                        // consume the holding and keep processing the remaining quantity
-                        currency_holdings.pop_front();
+                    println!("  {:} holdings: {:} ({:} entries)", incoming.currency, total_holdings(&currency_holdings), currency_holdings.len());
+                } else {
+                    let incoming = if incoming.is_fiat() {
+                        // When we're selling crypto for fiat, we just calculate
+                        // the capital gain on the disposed crypto by comparing
+                        // the fiat obtained by the cost base.
+                        Amount {
+                            quantity: incoming.quantity,
+                            currency: incoming.currency.clone(),
+                        }
+                    } else if let Some(reference_price) = &transaction.reference_price_per_unit {
+                        // When we're trading crypto for crypto, it is
+                        // technically handled as if we sold one crypto for fiat
+                        // and then used fiat to buy another crypto. This means
+                        // we need to calculate the capital gain on the disposed
+                        // crypto by comparing its current value to its cost
+                        // base. To do this, we need to estimate the value of
+                        // either the disposed crypto or the crypto we're
+                        // buying.
+                        //
+                        // This should be done before running this function, and
+                        // setting the reference_price_per_unit.
+                        if !reference_price.is_fiat() {
+                            transaction.gain = Some(Err(GainError::InvalidReferencePrice));
+                            continue;
+                        }
+                        Amount {
+                            quantity: reference_price.quantity * incoming.quantity,
+                            currency: reference_price.currency.clone(),
+                        }
                     } else {
-                        // we finished processing the sale
-                        holding.remaining -= processed_quantity;
-                        break;
-                    }
-                }
+                        transaction.gain = Some(Err(GainError::NoReferencePrice));
+                        continue;
+                    };
 
-                println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
-
-                if sold_quantity > 0.0 {
-                    println!("Not enough holdings to sell {} BTC, assuming short-term and cost base 0!", sold_quantity);
-
-                    let cost = 0.0;
-                    let proceeds = sold_quantity * sold_unit_price;
-                    tx_gain += proceeds - cost;
-
-                    capital_gains.push(CapitalGain {
-                        bought: transaction.timestamp,
-                        sold: transaction.timestamp,
-                        amount: Amount {
-                            quantity: sold_quantity,
-                            currency: outgoing.currency.clone(),
+                    let tx_gains = gains(&mut holdings, transaction.timestamp, outgoing, incoming.quantity);
+                    transaction.gain = Some(match tx_gains {
+                        Ok(gains) => {
+                            let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
+                            capital_gains.extend(gains);
+                            Ok(gain)
                         },
-                        cost,
-                        proceeds,
+                        Err(e) => Err(e),
                     });
                 }
-
-                transaction.gain = tx_gain;
             }
             Operation::FiatDeposit(_) => {},
             Operation::FiatWithdrawal(_) => {},
@@ -146,10 +179,6 @@ fn total_holdings(holdings: &VecDeque<Entry>) -> f64 {
         total_amount += h.remaining;
     }
     total_amount
-}
-
-fn is_fiat(amount: &Amount) -> bool {
-    amount.currency == "EUR"
 }
 
 pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &str) -> Result<(), Box<dyn Error>> {

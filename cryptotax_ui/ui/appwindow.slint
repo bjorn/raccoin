@@ -30,6 +30,7 @@ export struct UiTransaction {
     sent: string,
     fee: string,
     gain: float,
+    gain_error: string,
     description: string,
     tx_hash: string,
 }
@@ -194,8 +195,8 @@ component TransactionDisplay inherits Rectangle {
         }
         Cell {
             ElidingText {
-                text: tx.gain == 0 ? "–" : tx.gain;
-                color: tx.gain < 0 ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
+                text: tx.gain-error == "" ? tx.gain : tx.gain_error;
+                color: tx.gain < 0 || tx.gain-error != "" ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
             }
         }
         VerticalLayout {
