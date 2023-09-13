@@ -201,56 +201,76 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
         }
     }
 
-    // Turn all unmatched Sends into Sells based on an estimated price
+    // Turn all unmatched Sends into Sells
     unmatched_sends.iter().for_each(|unmatched_send| {
         let tx = &mut txs[*unmatched_send];
-        if let Operation::Send(send_amount) = &mut tx.operation {
-            let price = if send_amount.currency == "BTC" {
-                estimate_btc_price(tx.timestamp, &prices).unwrap()
-            } else {
-                println!("can't estimate price for {}", send_amount.currency);
-                0.0
-            };
-
-            tx.operation = Operation::Sell {
-                incoming: Amount {
-                    quantity: send_amount.quantity * price,
-                    currency: "EUR".into(),
-                },
-                outgoing: Amount {
-                    quantity: send_amount.quantity,
-                    currency: send_amount.currency.clone(),
-                },
-            };
+        if let Operation::Send(amount) = &tx.operation {
+            tx.operation = Operation::Sell(amount.clone());
         }
     });
 
-    // Turn all unmatched Receives into Buys based on an estimated price
+    // Turn all unmatched Receives into Buys
     unmatched_receives.iter().for_each(|unmatched_receive| {
         let tx = &mut txs[*unmatched_receive];
-        if let Operation::Receive(receive_amount) = &mut tx.operation {
-            let price = if receive_amount.currency == "BTC" {
-                estimate_btc_price(tx.timestamp, &prices).unwrap()
-            } else {
-                println!("can't estimate price for {}", receive_amount.currency);
-                0.0
-            };
-
-            tx.operation = Operation::Buy {
-                incoming: Amount {
-                    quantity: receive_amount.quantity,
-                    currency: receive_amount.currency.clone(),
-                },
-                outgoing: Amount {
-                    quantity: receive_amount.quantity * price,
-                    currency: "EUR".into(),
-                },
-            }
+        if let Operation::Receive(amount) = &tx.operation {
+            tx.operation = Operation::Buy(amount.clone());
         }
     });
 
-    // filter out all transactions before 2020
-    txs.retain(|tx| tx.timestamp < NaiveDateTime::parse_from_str("2020-01-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap());
+    let estimate_value = |timestamp: NaiveDateTime, amount: &Amount| -> Option<Amount> {
+        match amount.currency.as_str() {
+            "BTC" => estimate_btc_price(timestamp, &prices),
+            "EUR" => Some(1.),
+            _ => {
+                println!("todo: estimate value for {} at {}", amount.currency, timestamp);
+                None
+            }
+        }.map(|price| Amount {
+            quantity: price * amount.quantity,
+            currency: "EUR".to_owned()
+        })
+    };
+
+    let estimate_transaction_value = |tx: &mut Transaction| {
+        if tx.value.is_some() {
+            return;
+        }
+
+        tx.value = match &tx.operation {
+            Operation::Noop => None,
+            Operation::Trade { incoming, outgoing } => {
+                if incoming.is_fiat() {
+                    Some(incoming.clone())
+                } else if outgoing.is_fiat() {
+                    Some(outgoing.clone())
+                } else {
+                    let value_incoming = estimate_value(tx.timestamp, incoming);
+                    let value_outgoing = estimate_value(tx.timestamp, outgoing);
+                    println!("incoming {:?} EUR ({}), outgoing {:?} EUR ({})", value_incoming, incoming, value_outgoing, outgoing);
+                    value_incoming.or(value_outgoing)
+                }
+            },
+            Operation::Buy(amount) |
+            Operation::Sell(amount) |
+            Operation::FiatDeposit(amount) |
+            Operation::FiatWithdrawal(amount) |
+            Operation::Fee(amount) |
+            Operation::Receive(amount) |
+            Operation::Send(amount) |
+            Operation::ChainSplit(amount) |
+            Operation::Expense(amount) |
+            Operation::Income(amount) |
+            Operation::Airdrop(amount) |
+            Operation::IncomingGift(amount) |
+            Operation::OutgoingGift(amount) |
+            Operation::Spam(amount) => {
+                estimate_value(tx.timestamp, amount)
+            },
+        };
+    };
+
+    // Estimate the value for all transactions
+    txs.iter_mut().for_each(estimate_transaction_value);
 
     let gains = fifo(&mut txs)?;
 
@@ -322,11 +342,18 @@ fn main() -> Result<(), slint::PlatformError> {
                 // ignore Noop transactions
                 continue;
             }
-            Operation::Buy { incoming, outgoing } => {
-                (UiTransactionType::Buy, outgoing.to_string(), incoming.to_string())
-            }
-            Operation::Sell { incoming, outgoing } => {
-                (UiTransactionType::Sell, outgoing.to_string(), incoming.to_string())
+            Operation::Buy(amount) => (UiTransactionType::Buy, "".to_owned(), amount.to_string()),
+            Operation::Sell(amount) => (UiTransactionType::Sell, amount.to_string(), "".to_owned()),
+            Operation::Trade { incoming, outgoing } => {
+                // Categorize as buy or sell depending on whether fiat is involved
+                let tx_type = if outgoing.is_fiat() {
+                    UiTransactionType::Buy
+                } else if incoming.is_fiat() {
+                    UiTransactionType::Sell
+                } else {
+                    UiTransactionType::Trade
+                };
+                (tx_type, outgoing.to_string(), incoming.to_string())
             }
             Operation::FiatDeposit(amount) => {
                 (UiTransactionType::Deposit, "".to_owned(), amount.to_string())
@@ -376,6 +403,7 @@ fn main() -> Result<(), slint::PlatformError> {
             received: received.into(),
             sent: sent.into(),
             fee: if let Some(fee) = transaction.fee { fee.to_string() } else { "".to_owned() }.into(),
+            value: if let Some(value) = transaction.value { value.to_string() } else { "".to_owned() }.into(),
             gain: ((gain * 100.0).round() / 100.0) as f32,
             gain_error: gain_error.unwrap_or_default().into(),
             description: if let Some(description) = transaction.description { description } else { "".to_owned() }.into(),

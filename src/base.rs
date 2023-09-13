@@ -6,8 +6,8 @@ use serde::{Serialize, Deserialize};
 #[derive(Debug)]
 pub enum GainError {
     InvalidTransactionOrder,    // should only happen in case of a bug
-    NoReferencePrice,
-    InvalidReferencePrice,
+    MissingTransactionValue,
+    InvalidTransactionValue,
     InsufficientBalance,
 }
 
@@ -15,14 +15,14 @@ impl fmt::Display for GainError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             GainError::InvalidTransactionOrder => f.write_str("Invalid transaction order"),
-            GainError::NoReferencePrice => f.write_str("No reference price"),
-            GainError::InvalidReferencePrice => f.write_str("Invalid reference price (not fiat?)"),
+            GainError::MissingTransactionValue => f.write_str("Missing transaction value"),
+            GainError::InvalidTransactionValue => f.write_str("Invalid transaction value (not fiat?)"),
             GainError::InsufficientBalance => f.write_str("Insufficient balance"),
         }
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct Amount {
     pub quantity: f64,
     pub currency: String,
@@ -34,11 +34,11 @@ impl Amount {
     }
 }
 
-impl ToString for Amount {
-    fn to_string(&self) -> String {
+impl fmt::Display for Amount {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.currency.as_str() {
-            "EUR" => format!("{:.2} €", self.quantity),
-            _ => format!("{} {}", self.quantity, self.currency),
+            "EUR" => write!(f, "{:.2} €", self.quantity),
+            _ => write!(f, "{} {}", self.quantity, self.currency),
         }
     }
 }
@@ -49,11 +49,9 @@ impl ToString for Amount {
 pub(crate) enum Operation {
     #[default]
     Noop,
-    Buy {
-        incoming: Amount,
-        outgoing: Amount,
-    },
-    Sell {
+    Buy(Amount),
+    Sell(Amount),
+    Trade {
         incoming: Amount,
         outgoing: Amount,
     },
@@ -116,7 +114,7 @@ pub(crate) struct Transaction {
     #[serde(skip)]
     pub source_index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reference_price_per_unit: Option<Amount>,
+    pub value: Option<Amount>,
 }
 
 impl Transaction {
@@ -183,19 +181,28 @@ impl Transaction {
         }
     }
 
+    pub(crate) fn trade(timestamp: NaiveDateTime, incoming: Amount, outgoing: Amount) -> Self {
+        Self {
+            timestamp,
+            operation: Operation::Trade {
+                incoming,
+                outgoing,
+            },
+            ..Default::default()
+        }
+    }
+
     pub(crate) fn buy(timestamp: NaiveDateTime, quantity: f64, currency: &str, price: f64, price_currency: &str) -> Self {
         Self {
             timestamp,
-            operation: Operation::Buy {
-                incoming: Amount {
-                    quantity,
-                    currency: currency.to_string(),
-                },
-                outgoing: Amount {
-                    quantity: price,
-                    currency: price_currency.to_string(),
-                }
-            },
+            operation: Operation::Buy(Amount {
+                quantity,
+                currency: currency.to_string(),
+            }),
+            value: Some(Amount {
+                quantity: price,
+                currency: price_currency.to_string(),
+            }),
             ..Default::default()
         }
     }
@@ -203,16 +210,14 @@ impl Transaction {
     pub(crate) fn sell(timestamp: NaiveDateTime, quantity: f64, currency: &str, price: f64, price_currency: &str) -> Self {
         Self {
             timestamp,
-            operation: Operation::Sell {
-                incoming: Amount {
-                    quantity: price,
-                    currency: price_currency.to_string(),
-                },
-                outgoing: Amount {
-                    quantity,
-                    currency: currency.to_string(),
-                }
-            },
+            operation: Operation::Sell(Amount {
+                quantity,
+                currency: currency.to_string(),
+            }),
+            value: Some(Amount {
+                quantity: price,
+                currency: price_currency.to_string(),
+            }),
             ..Default::default()
         }
     }

@@ -4,7 +4,7 @@ use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use serde::Deserialize;
 
-use crate::{base::{Transaction, Operation}, time::deserialize_date_time};
+use crate::{base::{Transaction, Operation, Amount}, time::deserialize_date_time};
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) enum BitonicActionType {
@@ -29,20 +29,18 @@ impl From<BitonicAction> for Transaction {
         let utc_time = Berlin.from_local_datetime(&item.date).unwrap().naive_utc();
         match item.action {
             BitonicActionType::Buy => {
-                Transaction::buy(
+                Transaction::trade(
                     utc_time,
-                    item.amount,
-                    "BTC",
-                    -item.price,
-                    "EUR")
+                    Amount { quantity: item.amount, currency: "BTC".to_owned() },
+                    Amount { quantity: -item.price, currency: "EUR".to_owned() }
+                )
             },
             BitonicActionType::Sell => {
-                Transaction::sell(
+                Transaction::trade(
                     utc_time,
-                    -item.amount,
-                    "BTC",
-                    item.price,
-                    "EUR")
+                    Amount { quantity: item.price, currency: "EUR".to_owned() },
+                    Amount { quantity: -item.amount, currency: "BTC".to_owned() },
+                )
             },
         }
     }
@@ -61,19 +59,8 @@ pub(crate) fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>, Bo
 
         // Since Bitonic does not hold any fiat or crypto, we add dummy deposit and send transactions
         // for each buy/sell transaction.
-        match &transaction.operation {
-            Operation::Buy { incoming, outgoing } => {
-                transactions.push(Transaction::fiat_deposit(
-                    transaction.timestamp - chrono::Duration::minutes(1),
-                    outgoing.quantity,
-                    &outgoing.currency));
-
-                transactions.push(Transaction::send(
-                    transaction.timestamp + chrono::Duration::minutes(1),
-                    incoming.quantity,
-                    &incoming.currency));
-            },
-            Operation::Sell { incoming, outgoing } => {
+        if let Operation::Trade { incoming, outgoing } = &transaction.operation {
+            if incoming.is_fiat() {
                 transactions.push(Transaction::receive(
                     transaction.timestamp - chrono::Duration::minutes(1),
                     outgoing.quantity,
@@ -83,8 +70,18 @@ pub(crate) fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>, Bo
                     transaction.timestamp + chrono::Duration::minutes(1),
                     incoming.quantity,
                     &incoming.currency));
-            },
-            _ => {}
+            }
+            else if outgoing.is_fiat() {
+                transactions.push(Transaction::fiat_deposit(
+                    transaction.timestamp - chrono::Duration::minutes(1),
+                    outgoing.quantity,
+                    &outgoing.currency));
+
+                transactions.push(Transaction::send(
+                    transaction.timestamp + chrono::Duration::minutes(1),
+                    incoming.quantity,
+                    &incoming.currency));
+            }
         }
 
         transactions.push(transaction)

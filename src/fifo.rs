@@ -8,8 +8,8 @@ use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_d
 
 // Temporary bookkeeping entry for FIFO
 #[derive(Debug)]
-struct Entry<'a> {
-    tx: &'a Transaction,
+struct Entry {
+    timestamp: NaiveDateTime,
     unit_price: f64,
     remaining: f64,
 }
@@ -34,7 +34,7 @@ fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveD
     let sold_unit_price = incoming_fiat / sold_quantity;
 
     while let Some(holding) = currency_holdings.front_mut() {
-        if holding.tx.timestamp > timestamp {
+        if holding.timestamp > timestamp {
             return Err(GainError::InvalidTransactionOrder);
         }
 
@@ -44,7 +44,7 @@ fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveD
         let proceeds = processed_quantity * sold_unit_price;
 
         capital_gains.push(CapitalGain {
-            bought: holding.tx.timestamp,
+            bought: holding.timestamp,
             sold: timestamp,
             amount: Amount {
                 quantity: processed_quantity,
@@ -77,6 +77,40 @@ fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveD
     Ok(capital_gains)
 }
 
+fn fiat_value(amount: &Option<Amount>) -> Result<f64, GainError> {
+    match amount {
+        Some(amount) => {
+            if amount.is_fiat() {
+                Ok(amount.quantity)
+            } else {
+                Err(GainError::InvalidTransactionValue)
+            }
+        },
+        None => Err(GainError::MissingTransactionValue),
+    }
+}
+
+fn add_holdings<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, tx: &Transaction, amount: &'a Amount, value: &Option<Amount>) -> Result<f64, GainError> {
+    holdings.entry(&amount.currency).or_default().push_back(Entry {
+        timestamp: tx.timestamp,
+        unit_price: fiat_value(value)? / amount.quantity,
+        remaining: amount.quantity,
+    });
+    Ok(0.0)
+}
+
+fn dispose_holdings<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, capital_gains: &mut Vec<CapitalGain>, timestamp: NaiveDateTime, outgoing: &'a Amount, value: &Option<Amount>) -> Result<f64, GainError> {
+    let tx_gains = gains(holdings, timestamp, outgoing, fiat_value(value)?);
+    match tx_gains {
+        Ok(gains) => {
+            let gain: f64 = gains.iter().map(|f| f.proceeds - f.cost).sum();
+            capital_gains.extend(gains);
+            Ok(gain)
+        },
+        Err(e) => Err(e),
+    }
+}
+
 pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGain>, Box<dyn Error>> {
     // holdings represented as a map of currency -> deque
     let mut holdings: HashMap<&str, VecDeque<Entry>> = HashMap::new();
@@ -86,87 +120,45 @@ pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGai
         println!("{:?}", transaction);
 
         match &transaction.operation {
-            Operation::Noop => {},
-            Operation::Buy{incoming, outgoing} | Operation::Sell{incoming, outgoing} => {
-                if incoming.is_fiat() && outgoing.is_fiat() {
-                    return Err("Fiat to fiat trade not supported".into());
-                } else if outgoing.is_fiat() {
-                    // When we're buying crypto with fiat, we just need to remember
-                    // the unit price, which determines the cost base when we later
-                    // sell the crypto.
-                    let unit_price = outgoing.quantity / incoming.quantity;
-                    let currency_holdings = holdings.entry(&incoming.currency).or_default();
+            Operation::IncomingGift(amount) |
+            Operation::Airdrop(amount) |
+            Operation::Buy(amount) |
+            Operation::Income(amount) => {
+                transaction.gain = Some(add_holdings(&mut holdings, transaction, amount, &transaction.value));
+            },
+            Operation::Trade{incoming, outgoing} => {
+                // When we're trading crypto for crypto, it is
+                // technically handled as if we sold one crypto for fiat
+                // and then used fiat to buy another crypto.
+                if !outgoing.is_fiat() {
+                    transaction.gain = Some(dispose_holdings(&mut holdings, &mut capital_gains, transaction.timestamp, outgoing, &transaction.value));
+                }
 
-                    currency_holdings.push_back(Entry {
-                        tx: transaction,
-                        unit_price,
-                        remaining: incoming.quantity,
-                    });
-
-                    println!("  {:} holdings: {:} ({:} entries)", incoming.currency, total_holdings(&currency_holdings), currency_holdings.len());
-                } else {
-                    let incoming = if incoming.is_fiat() {
-                        // When we're selling crypto for fiat, we just calculate
-                        // the capital gain on the disposed crypto by comparing
-                        // the fiat obtained by the cost base.
-                        Amount {
-                            quantity: incoming.quantity,
-                            currency: incoming.currency.clone(),
-                        }
-                    } else if let Some(reference_price) = &transaction.reference_price_per_unit {
-                        // When we're trading crypto for crypto, it is
-                        // technically handled as if we sold one crypto for fiat
-                        // and then used fiat to buy another crypto. This means
-                        // we need to calculate the capital gain on the disposed
-                        // crypto by comparing its current value to its cost
-                        // base. To do this, we need to estimate the value of
-                        // either the disposed crypto or the crypto we're
-                        // buying.
-                        //
-                        // This should be done before running this function, and
-                        // setting the reference_price_per_unit.
-                        if !reference_price.is_fiat() {
-                            transaction.gain = Some(Err(GainError::InvalidReferencePrice));
-                            continue;
-                        }
-                        Amount {
-                            quantity: reference_price.quantity * incoming.quantity,
-                            currency: reference_price.currency.clone(),
-                        }
-                    } else {
-                        transaction.gain = Some(Err(GainError::NoReferencePrice));
-                        continue;
-                    };
-
-                    let tx_gains = gains(&mut holdings, transaction.timestamp, outgoing, incoming.quantity);
-                    transaction.gain = Some(match tx_gains {
-                        Ok(gains) => {
-                            let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
-                            capital_gains.extend(gains);
-                            Ok(gain)
-                        },
-                        Err(e) => Err(e),
-                    });
+                if !incoming.is_fiat() {
+                    let result = add_holdings(&mut holdings, transaction, incoming, &transaction.value);
+                    if result.is_err() && transaction.gain.is_none() {
+                        transaction.gain = Some(result);
+                    }
                 }
             }
-            Operation::FiatDeposit(_) => {},
-            Operation::FiatWithdrawal(_) => {},
-            Operation::Fee(_) => {
-                println!("warning: calculating capital gains on fees not yet implemented!")
+            Operation::Fee(amount) |
+            Operation::Expense(amount) |
+            Operation::Sell(amount) |
+            Operation::OutgoingGift(amount) => {
+                transaction.gain = Some(dispose_holdings(&mut holdings, &mut capital_gains, transaction.timestamp, amount, &transaction.value));
             },
-            Operation::Receive(_) => {
-                // todo: print a warning if this Receive was not matched with a Send
+            Operation::Noop |
+            Operation::FiatDeposit(_) |
+            Operation::FiatWithdrawal(_) |
+            Operation::Receive(_) |
+            Operation::Send(_) |
+            Operation::Spam(_) => {
+                // Non-taxable events
             },
-            Operation::Send(_) => {
-                // todo: print a warning if this Send was not matched with a Receive
+            Operation::ChainSplit(amount) => {
+                // Chain split is special in that it adds holdings with 0 cost base
+                transaction.gain = Some(add_holdings(&mut holdings, transaction, amount, &Some(Amount { quantity: 0.0, currency: "EUR".to_owned() })));
             },
-            Operation::ChainSplit(_) => todo!(),
-            Operation::Expense(_) => todo!(),
-            Operation::Income(_) => todo!(),
-            Operation::Airdrop(_) => todo!(),
-            Operation::IncomingGift(_) => todo!(),
-            Operation::OutgoingGift(_) => todo!(),
-            Operation::Spam(_) => todo!(),
         }
     }
 

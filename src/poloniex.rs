@@ -103,11 +103,31 @@ impl From<PoloniexTrade> for Transaction {
         let timestamp = item.date.naive_utc();
 
         let mut tx = match item.side {
-            Operation::Buy => Transaction::buy(timestamp, item.amount, base_currency, item.total, quote_currency),
-            Operation::Sell => Transaction::sell(timestamp, item.amount, base_currency, item.total, quote_currency),
+            Operation::Buy => Transaction::trade(
+                timestamp,
+                Amount {
+                    quantity: item.amount,
+                    currency: base_currency.to_owned(),
+                },
+                Amount {
+                    quantity: item.total,
+                    currency: quote_currency.to_owned(),
+                }
+            ),
+            Operation::Sell => Transaction::trade(
+                timestamp,
+                Amount {
+                    quantity: item.total,
+                    currency: quote_currency.to_owned(),
+                },
+                Amount {
+                    quantity: item.amount,
+                    currency: base_currency.to_owned(),
+                }
+            ),
         };
         tx.fee = Some(Amount { quantity: item.fee, currency: item.fee_currency });
-        tx.description = Some(item.order_number);
+        tx.description = Some(format!("Order #{}", item.order_number));
         tx
     }
 }

@@ -214,13 +214,13 @@ pub(crate) struct CtcTx<'a> {
     #[serde(rename = "Fee Amount (Optional)")]
     pub fee_amount: Option<f64>,
 
-    /// The name of the Exchange/Wallet you are transferring from, if left blank, will default to CSV exchange name.
+    /// The name of the Exchange/Wallet you are transferring from. If left blank, will default to CSV exchange name.
     ///
     /// Note: One CSV should only have the transactions for one wallet/exchange.
     #[serde(rename = "From (Optional)")]
     pub from: Option<&'a str>,
 
-    /// The name of the Exchange/Wallet you are transferring to if left blank, will default to CSV exchange name.
+    /// The name of the Exchange/Wallet you are transferring to. If left blank, will default to CSV exchange name.
     ///
     /// Note: One CSV should only have the transactions for one wallet/exchange.
     #[serde(rename = "To (Optional)")]
@@ -284,8 +284,15 @@ impl<'a> TryFrom<&'a Transaction> for CtcTx<'a> {
             _ => {
                 let (operation, base, quote) = match &item.operation {
                     Operation::Noop => unreachable!(),
-                    Operation::Buy { incoming, outgoing } => (CtcTxType::Buy, incoming, Some(outgoing)),
-                    Operation::Sell { incoming, outgoing } => (CtcTxType::Sell, outgoing, Some(incoming)),
+                    Operation::Buy(amount) => (CtcTxType::Buy, amount, item.value.as_ref()),
+                    Operation::Sell(amount) => (CtcTxType::Sell, amount, item.value.as_ref()),
+                    Operation::Trade { incoming, outgoing } => {
+                        if outgoing.is_fiat() {
+                            (CtcTxType::Buy, incoming, Some(outgoing))
+                        } else {
+                            (CtcTxType::Sell, outgoing, Some(incoming))
+                        }
+                    }
                     Operation::FiatDeposit(amount) => (CtcTxType::FiatDeposit, amount, None),
                     Operation::FiatWithdrawal(amount) => (CtcTxType::FiatWithdrawal, amount, None),
                     Operation::Fee(amount) => (CtcTxType::Fee, amount, None),

@@ -3,6 +3,7 @@ import { StandardTableView, TabWidget, ListView, HorizontalBox, CheckBox, ComboB
 export enum UiTransactionType {
     buy,
     sell,
+    trade,
     deposit,
     withdrawal,
     fee,
@@ -29,6 +30,7 @@ export struct UiTransaction {
     received: string,
     sent: string,
     fee: string,
+    value: string,
     gain: float,
     gain_error: string,
     description: string,
@@ -126,9 +128,11 @@ component TransactionDisplay inherits Rectangle {
         time: "12:34:56",
         tx_type: UiTransactionType.buy,
         received: "1 BTC",
-        sent: "300 EUR",
-        fee: "1 EUR",
+        sent: "300 €",
+        fee: "1 €",
+        value: "300 €",
         gain: 0.0,
+        gain_error: "",
         description: "Foo bar baz",
         tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
     };
@@ -163,6 +167,7 @@ component TransactionDisplay inherits Rectangle {
             ElidingText {
                 text: tx.tx-type == UiTransactionType.buy ? "Buy" :
                     tx.tx-type == UiTransactionType.sell ? "Sell" :
+                    tx.tx-type == UiTransactionType.trade ? "Trade" :
                     tx.tx-type == UiTransactionType.deposit ? "Deposit" :
                     tx.tx-type == UiTransactionType.withdrawal ? "Withdrawal" :
                     tx.tx-type == UiTransactionType.fee ? "Fee" :
@@ -191,6 +196,13 @@ component TransactionDisplay inherits Rectangle {
         Cell {
             ElidingText {
                 text: tx.received == "" ? "" : "+\{tx.received}";
+            }
+        }
+        Cell {
+            ElidingText {
+                text: tx.value;
+                font-size: 10px;
+                opacity: 0.5;
             }
         }
         Cell {
