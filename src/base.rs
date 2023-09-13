@@ -191,36 +191,6 @@ impl Transaction {
             ..Default::default()
         }
     }
-
-    pub(crate) fn buy(timestamp: NaiveDateTime, quantity: f64, currency: &str, price: f64, price_currency: &str) -> Self {
-        Self {
-            timestamp,
-            operation: Operation::Buy(Amount {
-                quantity,
-                currency: currency.to_string(),
-            }),
-            value: Some(Amount {
-                quantity: price,
-                currency: price_currency.to_string(),
-            }),
-            ..Default::default()
-        }
-    }
-
-    pub(crate) fn sell(timestamp: NaiveDateTime, quantity: f64, currency: &str, price: f64, price_currency: &str) -> Self {
-        Self {
-            timestamp,
-            operation: Operation::Sell(Amount {
-                quantity,
-                currency: currency.to_string(),
-            }),
-            value: Some(Amount {
-                quantity: price,
-                currency: price_currency.to_string(),
-            }),
-            ..Default::default()
-        }
-    }
 }
 
 pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_path: &Path) -> Result<(), Box<dyn Error>> {

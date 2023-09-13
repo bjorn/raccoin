@@ -4,7 +4,7 @@ use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::Transaction};
+use crate::{time::deserialize_date_time, base::{Transaction, Amount}};
 
 #[derive(Debug, Deserialize)]
 pub(crate) enum BitcoinDeActionType {
@@ -61,22 +61,32 @@ impl From<BitcoinDeAction> for Transaction {
         let mut tx = match item.type_ {
             BitcoinDeActionType::Registration => Transaction::noop(utc_time),
             BitcoinDeActionType::Purchase => {
-                Transaction::buy(
+                Transaction::trade(
                     utc_time,
-                    item.incoming_outgoing,
-                    &item.currency,
-                    item.amount_after_bitcoin_de_fee.expect("Purchase should have an amount"),
-                    &item.unit_amount_after_bitcoin_de_fee)
+                    Amount {
+                        quantity: item.incoming_outgoing,
+                        currency: item.currency,
+                    },
+                    Amount {
+                        quantity: item.amount_after_bitcoin_de_fee.expect("Purchase should have an amount"),
+                        currency: item.unit_amount_after_bitcoin_de_fee
+                    },
+                )
             },
             BitcoinDeActionType::Disbursement => Transaction::send(utc_time, -item.incoming_outgoing, &item.currency),
             BitcoinDeActionType::Deposit => Transaction::receive(utc_time, item.incoming_outgoing, &item.currency),
             BitcoinDeActionType::Sale => {
-                Transaction::sell(
+                Transaction::trade(
                     utc_time,
-                    -item.incoming_outgoing,
-                    &item.currency,
-                    item.amount_after_bitcoin_de_fee.expect("Sale should have an amount"),
-                    &item.unit_amount_after_bitcoin_de_fee)
+                    Amount {
+                        quantity: item.amount_after_bitcoin_de_fee.expect("Sale should have an amount"),
+                        currency: item.unit_amount_after_bitcoin_de_fee
+                    },
+                    Amount {
+                        quantity: -item.incoming_outgoing,
+                        currency: item.currency,
+                    },
+                )
             },
             BitcoinDeActionType::NetworkFee => Transaction::fee(utc_time, item.incoming_outgoing, &item.currency),
         };
