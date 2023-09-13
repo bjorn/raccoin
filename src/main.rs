@@ -81,17 +81,19 @@ struct TransactionSource {
     path: String,
     #[serde(skip_serializing_if = "String::is_empty", default)]
     name: String,
+    #[serde(skip)]
+    transaction_count: usize,
 }
 
 fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>), Box<dyn Error>> {
     let sources_file = Path::new("sources.json");
     let sources_path = sources_file.parent().unwrap_or(Path::new(""));
-    let sources: Vec<TransactionSource> = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
+    let mut sources: Vec<TransactionSource> = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
 
     let esplora_client = blocking_esplora_client()?;
     let mut txs = Vec::new();
 
-    for (index, source) in sources.iter().enumerate() {
+    for (index, source) in sources.iter_mut().enumerate() {
         let full_path = sources_path.join(&source.path);
         let mut source_txs = match source.source_type {
             TransactionsSourceType::BitcoinAddress => {
@@ -132,6 +134,7 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
         for tx in source_txs.iter_mut() {
             tx.source_index = index;
         }
+        source.transaction_count = source_txs.len();
 
         txs.extend(source_txs);
     }
@@ -294,9 +297,6 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
         });
     }
 
-    // price estimate for testing purposes
-    println!("BTC price estimate for 2014-01-01T12:00:00: {}", estimate_btc_price(NaiveDateTime::parse_from_str("2014-01-01T12:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(), &prices).unwrap());
-
     Ok((sources, txs, entries))
 }
 
@@ -331,6 +331,7 @@ fn main() -> Result<(), slint::PlatformError> {
             source_type: source.source_type.to_string().into(),
             name: source.name.clone().into(),
             path: source.path.clone().into(),
+            transaction_count: source.transaction_count as i32,
         });
     }
     ui.set_sources(Rc::new(VecModel::from(ui_sources)).into());

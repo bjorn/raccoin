@@ -142,8 +142,6 @@ pub(crate) fn load_poloniex_deposits_csv(input_path: &Path) -> Result<Vec<Transa
         transactions.push(record.into());
     }
 
-    println!("Imported {} deposits from {}", transactions.len(), input_path.display());
-
     Ok(transactions)
 }
 
@@ -157,8 +155,6 @@ pub(crate) fn load_poloniex_withdrawals_csv(input_path: &Path) -> Result<Vec<Tra
         transactions.push(record.into());
     }
 
-    println!("Imported {} withdrawals from {}", transactions.len(), input_path.display());
-
     Ok(transactions)
 }
 
@@ -171,8 +167,6 @@ pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transact
         let record: PoloniexTrade = result?;
         transactions.push(record.into());
     }
-
-    println!("Imported {} trades from {}", transactions.len(), input_path.display());
 
     Ok(transactions)
 }

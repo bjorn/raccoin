@@ -105,7 +105,5 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>,
         transactions.push(record.into());
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
-
     Ok(transactions)
 }

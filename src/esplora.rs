@@ -59,8 +59,6 @@ pub(crate) fn address_transactions(
         transactions.push(transaction);
     }
 
-    println!("Imported {} transactions for address {}", transactions.len(), address);
-
     Ok(transactions)
 }
 

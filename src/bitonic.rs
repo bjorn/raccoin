@@ -87,7 +87,5 @@ pub(crate) fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>, Bo
         transactions.push(transaction)
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
-
     Ok(transactions)
 }

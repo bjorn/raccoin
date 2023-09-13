@@ -47,7 +47,5 @@ pub(crate) fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>, B
         transactions.push(record.into());
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
-
     Ok(transactions)
 }

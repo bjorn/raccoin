@@ -83,7 +83,5 @@ pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>, Box
         transactions.push(record.into());
     }
 
-    println!("Imported {} transactions from {}", transactions.len(), input_path.display());
-
     Ok(transactions)
 }
