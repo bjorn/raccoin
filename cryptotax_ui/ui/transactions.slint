@@ -1,0 +1,181 @@
+import { ListView } from "std-widgets.slint";
+
+export enum UiTransactionType {
+    buy,
+    sell,
+    trade,
+    deposit,
+    withdrawal,
+    fee,
+    receive,
+    send,
+    chain-split,
+    expense,
+    income,
+    airdrop,
+    spam,
+}
+
+export struct UiTransaction {
+    source: string,
+    date: string,
+    time: string,
+    tx_type: UiTransactionType,
+    received: string,
+    sent: string,
+    fee: string,
+    value: string,
+    gain: float,
+    gain_error: string,
+    description: string,
+    tx_hash: string,
+}
+
+component TextCell inherits Text {
+    horizontal-stretch: 1;
+    preferred-width: 0;
+    min-width: 0;
+    overflow: elide;
+    vertical-alignment: center;
+}
+
+component TransactionDisplay inherits Rectangle {
+    callback open-transaction(string);
+
+    in property <UiTransaction> tx : {
+        source: "Foo Wallet",
+        date: "2013-11-01",
+        time: "12:34:56",
+        tx_type: UiTransactionType.buy,
+        received: "1 BTC",
+        sent: "300 €",
+        fee: "1 €",
+        value: "300 €",
+        gain: 0.0,
+        gain_error: "",
+        description: "Foo bar baz",
+        tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    };
+
+    in property <bool> even;
+
+    background: even ? #ffffff06 : transparent;
+
+    HorizontalLayout {
+        padding-top: 2px;
+        padding-bottom: 2px;
+        HorizontalLayout {
+            alignment: start;
+            spacing: 6px;
+            padding-left: 10px;
+            padding-right: 12px;
+            Text {
+                text: tx.date;
+                overflow: elide;
+                min-width: self.preferred-width;
+                vertical-alignment: center;
+            }
+            Text {
+                text: tx.time;
+                opacity: 0.5;
+                overflow: elide;
+                min-width: self.preferred-width;
+                vertical-alignment: center;
+            }
+        }
+        TextCell {
+            text: tx.tx-type == UiTransactionType.buy ? "Buy" :
+                tx.tx-type == UiTransactionType.sell ? "Sell" :
+                tx.tx-type == UiTransactionType.trade ? "Trade" :
+                tx.tx-type == UiTransactionType.deposit ? "Deposit" :
+                tx.tx-type == UiTransactionType.withdrawal ? "Withdrawal" :
+                tx.tx-type == UiTransactionType.fee ? "Fee" :
+                tx.tx-type == UiTransactionType.receive ? "Receive" :
+                tx.tx-type == UiTransactionType.send ? "Send" :
+                tx.tx-type == UiTransactionType.chain-split ? "Chain Split" :
+                tx.tx-type == UiTransactionType.expense ? "Expense" :
+                tx.tx-type == UiTransactionType.income ? "Income" :
+                tx.tx-type == UiTransactionType.airdrop ? "Airdrop" :
+                tx.tx-type == UiTransactionType.spam ? "Spam" :
+                "Unknown";
+        }
+        TextCell {
+            text: tx.source;
+            font-size: 10px;
+            opacity: 0.5;
+        }
+        TextCell {
+            text: tx.sent == "" ? "" : "–\{tx.sent}";
+        }
+        TextCell {
+            text: tx.received == "" ? "" : "+\{tx.received}";
+        }
+        TextCell {
+            text: tx.fee;
+            font-size: 10px;
+            opacity: 0.5;
+        }
+        TextCell {
+            text: tx.value;
+            font-size: 10px;
+            opacity: 0.5;
+        }
+        TextCell {
+            text: tx.gain-error == "" ? tx.gain : tx.gain_error;
+            color: tx.gain < 0 || tx.gain-error != "" ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
+        }
+        VerticalLayout {
+            alignment: center;
+            padding-right: 10px;
+
+            tx-btn-rect := Rectangle {
+                border-radius: 2px;
+                background: tx-btn-touch.has-hover ? #5e5e5e : #2e2e2e;
+                visible: tx.tx-hash != "";
+                width: hash.preferred-width + 5px;
+                height: hash.preferred-height + 5px;
+
+                hash := Text {
+                    text: "#";
+                    vertical-alignment: center;
+                }
+                tx-btn-touch := TouchArea {
+                    clicked => {
+                        root.open-transaction(tx.tx-hash);
+                    }
+                    mouse-cursor: pointer;
+                }
+
+                Rectangle {
+                    background: #000000;
+                    border-radius: 2px;
+                    opacity: tx-btn-touch.has-hover ? 1.0 : 0;
+                    width: hash-text.preferred-width + 8px;
+                    height: hash-text.preferred-height + 4px;
+                    x: -(tx-btn-touch.has-hover ? 5px : 0) - self.width;
+                    y: (tx-btn-rect.height - self.height) / 2;
+
+                    animate opacity, x {
+                        duration: 100ms;
+                    }
+
+                    hash-text := Text {
+                        text: tx.tx-hash;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component Transactions inherits ListView {
+    in property <[UiTransaction]> transactions;
+
+    callback open-transaction(string);
+
+    for tx[index] in transactions: TransactionDisplay {
+        even: mod(index, 2) == 0;
+        tx: tx;
+        open-transaction => { root.open-transaction(tx.tx_hash); }
+    }
+}

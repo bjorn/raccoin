@@ -1,0 +1,37 @@
+import { ListView, HorizontalBox, CheckBox, ComboBox } from "std-widgets.slint";
+
+export struct UiTransactionSource {
+    source_type: string,
+    name: string,
+    path: string,
+    transaction_count: int,
+}
+
+export component Sources inherits ListView {
+    in property <[UiTransactionSource]> sources;
+    in property <[string]> source_types;
+
+    for source in sources: HorizontalBox {
+        CheckBox {
+            checked: true;
+            text: source.name;
+            enabled: false;
+        }
+        Text {
+            text: source.path;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "(\{source.transaction-count} transactions)";
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+            opacity: 0.5;
+        }
+        ComboBox {
+            model: source_types;
+            horizontal-stretch: 0;
+            current-value: source.source_type;
+            enabled: false;
+        }
+    }
+}
