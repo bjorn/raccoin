@@ -84,7 +84,7 @@ pub(crate) fn load_btc_price_history_data() -> Result<Vec<PricePoint>, Box<dyn E
 pub(crate) fn estimate_btc_price(time: NaiveDateTime, prices: &Vec<PricePoint>) -> Option<f64> {
     let index = prices.partition_point(|p| p.timestamp < time);
     let next_price_point = prices.get(index).or_else(|| prices.last());
-    let prev_price_point = prices.get(index - 1);
+    let prev_price_point = if index > 0 { prices.get(index - 1) } else { None };
 
     if let (Some(next_price), Some(prev_price)) = (next_price_point, prev_price_point) {
         // calculate the most probable price, by linear iterpolation based on the previous and next price

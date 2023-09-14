@@ -150,7 +150,7 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     // sort transactions by date
     txs.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
-    let prices = load_btc_price_history_data()?;
+    let prices = load_btc_price_history_data().unwrap_or_default();
 
     // before applying FIFO, turn any unmatched Send transactions into Sell transactions
     // and unmatched Receive transactions into Buy transactions
