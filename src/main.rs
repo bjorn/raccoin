@@ -24,11 +24,6 @@ use serde::{Deserialize, Serialize};
 use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
 use std::{error::Error, rc::Rc, path::Path};
 
-use crate::base::{
-    save_transactions_to_json,
-    load_transactions_from_json
-};
-
 #[derive(Serialize, Deserialize)]
 enum TransactionsSourceType {
     BitcoinAddress,
@@ -103,7 +98,7 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
                 electrum::load_electrum_csv(&full_path)
             },
             TransactionsSourceType::Json => {
-                load_transactions_from_json(&full_path)
+                base::load_transactions_from_json(&full_path)
             },
             TransactionsSourceType::CtcImportCsv => {
                 ctc::load_ctc_csv(&full_path)
@@ -151,70 +146,79 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
 
     // before applying FIFO, turn any unmatched Send transactions into Sell transactions
     // and unmatched Receive transactions into Buy transactions
-    let mut unmatched_sends = Vec::new();
-    let mut unmatched_receives = Vec::new();
+    let mut unmatched_sends_receives = Vec::new();
     for (index, tx) in &mut txs.iter().enumerate() {
         match &tx.operation {
-            Operation::Send(_) => {
-                unmatched_sends.push(index);
-            },
-            Operation::Receive(amount) => {
-                // try to find a matching send transaction, by reverse iterating, but no further than one day ago
-                let oldest_send_time = tx.timestamp - Duration::days(1);
-                let unmatched_send_pos = unmatched_sends.iter().rposition(|unmatched_send| {
-                    let send = txs.get(*unmatched_send).unwrap();
+            Operation::Send(_) | Operation::Receive(_) => {
+                // try to find a matching transaction, by reverse iterating, but no further than one day ago (for receive) or one hour ago (for send)
+                let oldest_match_time = tx.timestamp - if tx.operation.is_send() {
+                    Duration::hours(1)
+                } else {
+                    Duration::days(1)
+                };
 
-                    // the unmatched send may not be more than one day older than the receive
-                    if send.timestamp < oldest_send_time {
-                        return false;
+                let matching_index = unmatched_sends_receives.iter().enumerate().rev().take_while(|(_, tx_index)| -> bool {
+                    // the unmatched send may not be too old
+                    let tx: &Transaction = &txs[**tx_index];
+                    tx.timestamp >= oldest_match_time
+                }).find(|(_, tx_index)| {
+                    let candidate_tx: &Transaction = &txs[**tx_index];
+
+                    match (&candidate_tx.operation, &tx.operation) {
+                        (Operation::Send(send_amount), Operation::Receive(receive_amount)) |
+                        (Operation::Receive(receive_amount), Operation::Send(send_amount)) => {
+                            // the send and receive transactions must have the same currency
+                            if receive_amount.currency != send_amount.currency {
+                                return false;
+                            }
+
+                            // if both transactions have a tx_hash set, it must be equal
+                            if let (Some(candidate_tx_hash), Some(tx_hash)) = (&candidate_tx.tx_hash, &tx.tx_hash) {
+                                if candidate_tx_hash != tx_hash {
+                                    return false;
+                                }
+                            }
+
+                            // check whether the price roughly matches (sent amount can't be lower than received amount, but can be 5% higher)
+                            if receive_amount.quantity > send_amount.quantity || receive_amount.quantity < send_amount.quantity * 0.95 {
+                                return false;
+                            }
+
+                            true
+                        },
+                        _ => false,
                     }
+                }).map(|(i, _)| i);
 
-                    if let Operation::Send(send_amount) = &send.operation {
-                        // the send and receive transactions must have the same currency
-                        if amount.currency != send_amount.currency {
-                            return false;
-                        }
-                        // check whether the price roughly matches (sent amount can't be lower than received amount, but can be 5% higher)
-                        if amount.quantity > send_amount.quantity || amount.quantity < send_amount.quantity * 0.95 {
-                            return false;
-                        }
-                    } else {
-                        return false;
-                    }
-
-                    true
-                });
-
-                if let Some(unmatched_send_pos) = unmatched_send_pos {
+                if let Some(matching_index) = matching_index {
                     // this send is now matched, so remove it from the list of unmatched sends
                     // println!("send pos {} is send index {}", unmatched_send_pos, unmatched_sends[unmatched_send_pos]);
-                    let send_index = unmatched_sends.remove(unmatched_send_pos);
-                    println!("matched receive {} with send {}", index, send_index);
-                    println!(" send {:?}", txs[send_index]);
-                    println!(" receive {:?}", tx);
+                    let matching_tx_index = unmatched_sends_receives.remove(matching_index);
+                    println!("matched tx {} with tx {}", index, matching_tx_index);
+                    println!(" {:?}", txs[matching_tx_index]);
+                    println!(" {:?}", tx);
                 } else {
-                    // no send was found for this receive, so add it to the list of unmatched receives
-                    println!("unmatched receive {}: {:?}", index, tx);
-                    unmatched_receives.push(index);
+                    // no match was found for this transactions, so add it to the unmatched list
+                    println!("unmatched transaction {}: {:?}", index, tx);
+                    unmatched_sends_receives.push(index);
                 }
             },
             _ => {}
         }
     }
 
-    // Turn all unmatched Sends into Sells
-    unmatched_sends.iter().for_each(|unmatched_send| {
+    unmatched_sends_receives.iter().for_each(|unmatched_send| {
         let tx = &mut txs[*unmatched_send];
-        if let Operation::Send(amount) = &tx.operation {
-            tx.operation = Operation::Sell(amount.clone());
-        }
-    });
-
-    // Turn all unmatched Receives into Buys
-    unmatched_receives.iter().for_each(|unmatched_receive| {
-        let tx = &mut txs[*unmatched_receive];
-        if let Operation::Receive(amount) = &tx.operation {
-            tx.operation = Operation::Buy(amount.clone());
+        match &tx.operation {
+            // Turn unmatched Sends into Sells
+            Operation::Send(amount) => {
+                tx.operation = Operation::Sell(amount.clone());
+            },
+            // Turn unmatched Receives into Buys
+            Operation::Receive(amount) => {
+                tx.operation = Operation::Buy(amount.clone());
+            },
+            _ => unreachable!("only Send and Receive transactions can be unmatched"),
         }
     });
 

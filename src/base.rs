@@ -98,6 +98,16 @@ pub(crate) enum Operation {
     Spam(Amount),
 }
 
+impl Operation {
+    /// Returns `true` if the operation is [`Send`].
+    ///
+    /// [`Send`]: Operation::Send
+    #[must_use]
+    pub(crate) fn is_send(&self) -> bool {
+        matches!(self, Self::Send(..))
+    }
+}
+
 /// Unified transaction type for all exchanges and wallets
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct Transaction {
