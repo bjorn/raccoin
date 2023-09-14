@@ -3,7 +3,7 @@ use std::{path::Path, error::Error};
 use chrono::NaiveDateTime;
 use serde::{Serialize, Deserialize};
 
-use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation}};
+use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation, Amount}};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[allow(dead_code)] // we want to represent all possible values, not just used ones
@@ -328,6 +328,84 @@ impl<'a> TryFrom<&'a Transaction> for CtcTx<'a> {
     }
 }
 
+impl<'a> From<CtcTx<'a>> for Transaction {
+    fn from(item: CtcTx<'a>) -> Self {
+        let base_amount = Amount {
+            quantity: item.base_amount,
+            currency: item.base_currency.to_owned(),
+        };
+
+        let quote_amount = if let (Some(quote_amount), Some(quote_currency)) = (item.quote_amount, item.quote_currency) {
+            Some(Amount {
+                quantity: quote_amount,
+                currency: quote_currency.to_owned(),
+            })
+        } else {
+            None
+        };
+
+        Self {
+            timestamp: item.timestamp,
+            operation: match item.operation {
+                CtcTxType::Buy => Operation::Trade { incoming: base_amount, outgoing: quote_amount.expect("Buy or Sell should have quote") },
+                CtcTxType::Sell => Operation::Trade { incoming: quote_amount.expect("Buy or Sell should have quote"), outgoing: base_amount },
+                CtcTxType::FiatDeposit => Operation::FiatDeposit(base_amount),
+                CtcTxType::FiatWithdrawal => Operation::FiatWithdrawal(base_amount),
+                CtcTxType::Fee => Operation::Fee(base_amount),
+                CtcTxType::Approval => todo!(),
+                CtcTxType::Receive => Operation::Receive(base_amount),
+                CtcTxType::Send => Operation::Send(base_amount),
+                CtcTxType::ChainSplit => Operation::ChainSplit(base_amount),
+                CtcTxType::Expense => Operation::Expense(base_amount),
+                CtcTxType::Stolen => todo!(),
+                CtcTxType::Lost => todo!(),
+                CtcTxType::Burn => todo!(),
+                CtcTxType::Income => Operation::Income(base_amount),
+                CtcTxType::Interest => todo!(),
+                CtcTxType::Mining => todo!(),
+                CtcTxType::Airdrop => Operation::Airdrop(base_amount),
+                CtcTxType::Staking => todo!(),
+                CtcTxType::StakingDeposit => todo!(),
+                CtcTxType::StakingWithdrawal => todo!(),
+                CtcTxType::Cashback => todo!(),
+                CtcTxType::Royalties => todo!(),
+                CtcTxType::PersonalUse => todo!(),
+                CtcTxType::IncomingGift => Operation::IncomingGift(base_amount),
+                CtcTxType::OutgoingGift => Operation::OutgoingGift(base_amount),
+                CtcTxType::Borrow => todo!(),
+                CtcTxType::LoanRepayment => todo!(),
+                CtcTxType::Liquidate => todo!(),
+                CtcTxType::RealizedProfit => todo!(),
+                CtcTxType::RealizedLoss => todo!(),
+                CtcTxType::MarginFee => todo!(),
+                CtcTxType::BridgeIn => todo!(),
+                CtcTxType::BridgeOut => todo!(),
+                CtcTxType::Mint => todo!(),
+                CtcTxType::CollateralWithdrawal => todo!(),
+                CtcTxType::CollateralDeposit => todo!(),
+                CtcTxType::AddLiquidity => todo!(),
+                CtcTxType::ReceiveLpToken => todo!(),
+                CtcTxType::RemoveLiquidity => todo!(),
+                CtcTxType::ReturnLpToken => todo!(),
+                CtcTxType::FailedIn => todo!(),
+                CtcTxType::FailedOut => todo!(),
+                CtcTxType::Spam => Operation::Spam(base_amount),
+            },
+            description: item.description.map(|s| s.to_owned()),
+            tx_hash: item.id.map(|s| s.to_owned()),
+            fee: if let (Some(fee_amount), Some(fee_currency)) = (item.fee_amount, item.fee_currency) {
+                Some(Amount { quantity: fee_amount, currency: fee_currency.to_owned() })
+            } else {
+                None
+            },
+            fee_value: None,
+            gain: None,
+            source_index: 0,
+            value: None,
+        }
+    }
+}
+
 pub(crate) fn save_transactions_to_ctc_csv(transactions: &Vec<Transaction>, output_path: &Path) -> Result<(), Box<dyn Error>> {
     println!("Saving {}", output_path.display());
 
@@ -341,4 +419,21 @@ pub(crate) fn save_transactions_to_ctc_csv(transactions: &Vec<Transaction>, outp
     }
 
     Ok(())
+}
+
+// loads a CSV file that was prepared in CryptoTaxCalculator import format
+pub(crate) fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn std::error::Error>> {
+    let mut transactions = Vec::new();
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .from_path(input_path)?;
+    let mut raw_record = csv::StringRecord::new();
+    let headers = rdr.headers()?.clone();
+
+    while rdr.read_record(&mut raw_record)? {
+        let record: CtcTx = raw_record.deserialize(Some(&headers))?;
+        transactions.push(record.into());
+    }
+
+    Ok(transactions)
 }

@@ -14,9 +14,6 @@ mod time;
 mod trezor;
 
 use base::{Operation, Amount, Transaction};
-use bitcoin_core::load_bitcoin_core_csv;
-use bitcoin_de::load_bitcoin_de_csv;
-use bitonic::load_bitonic_csv;
 use chrono_tz::Europe;
 use chrono::{NaiveDateTime, Duration};
 use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
@@ -27,19 +24,9 @@ use serde::{Deserialize, Serialize};
 use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
 use std::{error::Error, rc::Rc, path::Path};
 
-use crate::{
-    electrum::load_electrum_csv,
-    base::{
-        save_transactions_to_json,
-        load_transactions_from_json
-    },
-    mycelium::load_mycelium_csv,
-    trezor::load_trezor_csv,
-    poloniex::{
-        load_poloniex_deposits_csv,
-        load_poloniex_trades_csv,
-        load_poloniex_withdrawals_csv
-    }
+use crate::base::{
+    save_transactions_to_json,
+    load_transactions_from_json
 };
 
 #[derive(Serialize, Deserialize)]
@@ -48,9 +35,11 @@ enum TransactionsSourceType {
     BitcoinCoreCsv,
     BitcoinDeCsv,
     BitonicCsv,     // todo: remove custom format
+    CtcImportCsv,
     ElectrumCsv,
     Json,
     MyceliumCsv,
+    PeercoinCsv,
     PoloniexDepositsCsv,
     PoloniexTradesCsv,
     PoloniexWithdrawalsCsv,
@@ -66,7 +55,9 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::BitonicCsv => "Bitonic (CSV)".to_owned(),
             TransactionsSourceType::ElectrumCsv => "Electrum (CSV)".to_owned(),
             TransactionsSourceType::Json => "JSON".to_owned(),
+            TransactionsSourceType::CtcImportCsv => "CryptoTaxCalculator import (CSV)".to_owned(),
             TransactionsSourceType::MyceliumCsv => "Mycelium (CSV)".to_owned(),
+            TransactionsSourceType::PeercoinCsv => "Peercoin Qt (CSV)".to_owned(),
             TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
             TransactionsSourceType::PoloniexWithdrawalsCsv => "Poloniex Withdrawals (CSV)".to_owned(),
@@ -100,34 +91,40 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
                 address_transactions(&esplora_client, &source.path)
             },
             TransactionsSourceType::BitcoinCoreCsv => {
-                load_bitcoin_core_csv(&full_path)
+                bitcoin_core::load_bitcoin_core_csv(&full_path)
             },
             TransactionsSourceType::BitcoinDeCsv => {
-                load_bitcoin_de_csv(&full_path)
+                bitcoin_de::load_bitcoin_de_csv(&full_path)
             },
             TransactionsSourceType::BitonicCsv => {
-                load_bitonic_csv(&full_path)
+                bitonic::load_bitonic_csv(&full_path)
             },
             TransactionsSourceType::ElectrumCsv => {
-                load_electrum_csv(&full_path)
+                electrum::load_electrum_csv(&full_path)
             },
             TransactionsSourceType::Json => {
                 load_transactions_from_json(&full_path)
             },
-            TransactionsSourceType::MyceliumCsv => {
-                load_mycelium_csv(&full_path)
+            TransactionsSourceType::CtcImportCsv => {
+                ctc::load_ctc_csv(&full_path)
             },
+            TransactionsSourceType::MyceliumCsv => {
+                mycelium::load_mycelium_csv(&full_path)
+            },
+            TransactionsSourceType::PeercoinCsv => {
+                bitcoin_core::load_peercoin_csv(&full_path)
+            }
             TransactionsSourceType::PoloniexDepositsCsv => {
-                load_poloniex_deposits_csv(&full_path)
+                poloniex::load_poloniex_deposits_csv(&full_path)
             },
             TransactionsSourceType::PoloniexTradesCsv => {
-                load_poloniex_trades_csv(&full_path)
+                poloniex::load_poloniex_trades_csv(&full_path)
             },
             TransactionsSourceType::PoloniexWithdrawalsCsv => {
-                load_poloniex_withdrawals_csv(&full_path)
+                poloniex::load_poloniex_withdrawals_csv(&full_path)
             },
             TransactionsSourceType::TrezorCsv => {
-                load_trezor_csv(&full_path)
+                trezor::load_trezor_csv(&full_path)
             },
         };
 

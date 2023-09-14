@@ -26,32 +26,32 @@ struct BitcoinCoreAction {
     label: String,
     #[serde(rename = "Address")]
     address: String,
-    #[serde(rename = "Amount (BTC)")]
+    #[serde(rename = "Amount (BTC)", alias = "Amount (PPC)")]
     amount: f64,
     #[serde(rename = "ID")]
     id: String,
 }
 
-impl From<BitcoinCoreAction> for Transaction {
+impl BitcoinCoreAction {
     // todo: translate address?
-    fn from(item: BitcoinCoreAction) -> Self {
-        let utc_time = Berlin.from_local_datetime(&item.date).unwrap().naive_utc();
-        let mut tx = match item.type_ {
+    fn to_tx(self, currency: &str) -> Transaction {
+        let utc_time = Berlin.from_local_datetime(&self.date).unwrap().naive_utc();
+        let mut tx = match self.type_ {
             TransferType::SentTo => {
-                Transaction::send(utc_time, -item.amount, "BTC")
+                Transaction::send(utc_time, -self.amount, currency)
             },
             TransferType::ReceivedWith => {
-                Transaction::receive(utc_time, item.amount, "BTC")
+                Transaction::receive(utc_time, self.amount, currency)
             },
         };
-        tx.description = if item.label.is_empty() { None } else { Some(item.label) };
-        tx.tx_hash = Some(item.id);
+        tx.description = if self.label.is_empty() { None } else { Some(self.label) };
+        tx.tx_hash = Some(self.id);
         tx
     }
 }
 
-// loads a bitcoin.de CSV file into a list of unified transactions
-pub(crate) fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+// loads a Bitcoin Core CSV file into a list of unified transactions
+fn load_transactions(input_path: &Path, currency: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -59,8 +59,18 @@ pub(crate) fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction
 
     for result in rdr.deserialize() {
         let record: BitcoinCoreAction = result?;
-        transactions.push(record.into());
+        transactions.push(record.to_tx(currency));
     }
 
     Ok(transactions)
+}
+
+// loads a Bitcoin Core CSV file into a list of unified transactions
+pub(crate) fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    load_transactions(input_path, "BTC")
+}
+
+// loads a Peercoin CSV file into a list of unified transactions
+pub(crate) fn load_peercoin_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+    load_transactions(input_path, "PPC")
 }
