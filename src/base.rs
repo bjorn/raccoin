@@ -235,8 +235,5 @@ pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_
 pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let json = std::fs::read_to_string(input_path)?;
     let transactions: Vec<Transaction> = serde_json::from_str(&json)?;
-
-    println!("Loaded {} transactions from {}", transactions.len(), input_path.display());
-
     Ok(transactions)
 }

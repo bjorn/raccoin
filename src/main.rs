@@ -95,56 +95,57 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
 
     for (index, source) in sources.iter_mut().enumerate() {
         let full_path = sources_path.join(&source.path);
-        let mut source_txs = match source.source_type {
+        let source_txs = match source.source_type {
             TransactionsSourceType::BitcoinAddress => {
-                address_transactions(&esplora_client, &source.path)?
+                address_transactions(&esplora_client, &source.path)
             },
             TransactionsSourceType::BitcoinCoreCsv => {
-                load_bitcoin_core_csv(&full_path)?
+                load_bitcoin_core_csv(&full_path)
             },
             TransactionsSourceType::BitcoinDeCsv => {
-                load_bitcoin_de_csv(&full_path)?
+                load_bitcoin_de_csv(&full_path)
             },
             TransactionsSourceType::BitonicCsv => {
-                load_bitonic_csv(&full_path)?
+                load_bitonic_csv(&full_path)
             },
             TransactionsSourceType::ElectrumCsv => {
-                load_electrum_csv(&full_path)?
+                load_electrum_csv(&full_path)
             },
             TransactionsSourceType::Json => {
-                load_transactions_from_json(&full_path)?
+                load_transactions_from_json(&full_path)
             },
             TransactionsSourceType::MyceliumCsv => {
-                load_mycelium_csv(&full_path)?
+                load_mycelium_csv(&full_path)
             },
             TransactionsSourceType::PoloniexDepositsCsv => {
-                load_poloniex_deposits_csv(&full_path)?
+                load_poloniex_deposits_csv(&full_path)
             },
             TransactionsSourceType::PoloniexTradesCsv => {
-                load_poloniex_trades_csv(&full_path)?
+                load_poloniex_trades_csv(&full_path)
             },
             TransactionsSourceType::PoloniexWithdrawalsCsv => {
-                load_poloniex_withdrawals_csv(&full_path)?
+                load_poloniex_withdrawals_csv(&full_path)
             },
             TransactionsSourceType::TrezorCsv => {
-                load_trezor_csv(&full_path)?
+                load_trezor_csv(&full_path)
             },
         };
 
-        for tx in source_txs.iter_mut() {
-            tx.source_index = index;
+        match source_txs {
+            Ok(mut source_txs) => {
+                for tx in source_txs.iter_mut() {
+                    tx.source_index = index;
+                }
+                source.transaction_count = source_txs.len();
+                txs.extend(source_txs);
+            },
+            Err(e) => println!("Error loading source {}: {}", full_path.display(), e),
         }
-        source.transaction_count = source_txs.len();
-
-        txs.extend(source_txs);
     }
-
 
     // let poloniex_path = Path::new("archive/poloniex");
     // let poloniex_ctc_csv_file = Path::new("poloniex-for-ctc.csv");
     // convert_poloniex_to_ctc(poloniex_path, poloniex_ctc_csv_file)?;
-
-
 
     // sort transactions by date
     txs.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
@@ -300,15 +301,11 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     Ok((sources, txs, entries))
 }
 
-fn main() -> Result<(), slint::PlatformError> {
-    let result = run();
-    if let Err(err) = &result {
-        println!("{}", err);
-    }
+fn main() -> Result<(), Box<dyn Error>> {
+    let result = run()?;
 
     let ui = AppWindow::new()?;
-    let entries = result.unwrap();
-    let (sources, transactions, entries) = entries;
+    let (sources, transactions, entries) = result;
 
     let source_types: Vec<SharedString> = vec![
         TransactionsSourceType::BitcoinAddress,
@@ -435,5 +432,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let _ = open::that(format!("http://blockchair.com/bitcoin/transaction/{}", tx_hash));
     });
 
-    ui.run()
+    ui.run()?;
+
+    Ok(())
 }
