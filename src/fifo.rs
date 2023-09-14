@@ -160,6 +160,25 @@ pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGai
                 transaction.gain = Some(add_holdings(&mut holdings, transaction, amount, &Some(Amount { quantity: 0.0, currency: "EUR".to_owned() })));
             },
         }
+
+        if let Some(fee) = &transaction.fee {
+            if !fee.is_fiat() {
+                match dispose_holdings(&mut holdings, &mut capital_gains, transaction.timestamp, &fee, &transaction.fee_value) {
+                    Ok(gain) => {
+                        match &mut transaction.gain {
+                            Some(Ok(g)) => {
+                                *g += gain;
+                            }
+                            Some(Err(_)) => {},
+                            None => transaction.gain = Some(Ok(gain)),
+                        }
+                    },
+                    Err(err) => if transaction.gain.is_none() {
+                        transaction.gain = Some(Err(err));
+                    },
+                }
+            }
+        }
     }
 
     Ok(capital_gains)

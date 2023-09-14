@@ -236,41 +236,46 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     };
 
     let estimate_transaction_value = |tx: &mut Transaction| {
-        if tx.value.is_some() {
-            return;
+        if tx.value.is_none() {
+            tx.value = match &tx.operation {
+                Operation::Noop => None,
+                Operation::Trade { incoming, outgoing } => {
+                    if incoming.is_fiat() {
+                        Some(incoming.clone())
+                    } else if outgoing.is_fiat() {
+                        Some(outgoing.clone())
+                    } else {
+                        let value_incoming = estimate_value(tx.timestamp, incoming);
+                        let value_outgoing = estimate_value(tx.timestamp, outgoing);
+                        println!("incoming {:?} EUR ({}), outgoing {:?} EUR ({})", value_incoming, incoming, value_outgoing, outgoing);
+                        value_incoming.or(value_outgoing)
+                    }
+                },
+                Operation::Buy(amount) |
+                Operation::Sell(amount) |
+                Operation::FiatDeposit(amount) |
+                Operation::FiatWithdrawal(amount) |
+                Operation::Fee(amount) |
+                Operation::Receive(amount) |
+                Operation::Send(amount) |
+                Operation::ChainSplit(amount) |
+                Operation::Expense(amount) |
+                Operation::Income(amount) |
+                Operation::Airdrop(amount) |
+                Operation::IncomingGift(amount) |
+                Operation::OutgoingGift(amount) |
+                Operation::Spam(amount) => {
+                    estimate_value(tx.timestamp, amount)
+                },
+            };
         }
 
-        tx.value = match &tx.operation {
-            Operation::Noop => None,
-            Operation::Trade { incoming, outgoing } => {
-                if incoming.is_fiat() {
-                    Some(incoming.clone())
-                } else if outgoing.is_fiat() {
-                    Some(outgoing.clone())
-                } else {
-                    let value_incoming = estimate_value(tx.timestamp, incoming);
-                    let value_outgoing = estimate_value(tx.timestamp, outgoing);
-                    println!("incoming {:?} EUR ({}), outgoing {:?} EUR ({})", value_incoming, incoming, value_outgoing, outgoing);
-                    value_incoming.or(value_outgoing)
-                }
-            },
-            Operation::Buy(amount) |
-            Operation::Sell(amount) |
-            Operation::FiatDeposit(amount) |
-            Operation::FiatWithdrawal(amount) |
-            Operation::Fee(amount) |
-            Operation::Receive(amount) |
-            Operation::Send(amount) |
-            Operation::ChainSplit(amount) |
-            Operation::Expense(amount) |
-            Operation::Income(amount) |
-            Operation::Airdrop(amount) |
-            Operation::IncomingGift(amount) |
-            Operation::OutgoingGift(amount) |
-            Operation::Spam(amount) => {
-                estimate_value(tx.timestamp, amount)
-            },
-        };
+        if tx.fee_value.is_none() {
+            tx.fee_value = match &tx.fee {
+                Some(amount) => estimate_value(tx.timestamp, amount),
+                None => None,
+            };
+        }
     };
 
     // Estimate the value for all transactions
