@@ -39,6 +39,44 @@ component TextCell inherits Text {
     vertical-alignment: center;
 }
 
+component SmallButton inherits Rectangle {
+    in property text <=> i-text.text;
+    in property tooltip <=> i-tooltip.text;
+    out property <bool> has-hover: i-touch.has-hover;
+
+    callback clicked;
+
+    border-radius: 2px;
+    background: i-touch.has-hover ? #5e5e5e : #2e2e2e;
+    preferred-width: i-text.preferred-width + 5px;
+    min-width: self.height;
+    height: i-text.preferred-height + 5px;
+
+    i-text := Text {
+        vertical-alignment: center;
+    }
+    i-touch := TouchArea {
+        clicked => { root.clicked() }
+        mouse-cursor: pointer;
+    }
+
+    Rectangle {
+        background: #000000;
+        border-radius: 2px;
+        opacity: root.has-hover ? 1.0 : 0;
+        width: i-tooltip.preferred-width + 8px;
+        height: i-tooltip.preferred-height + 4px;
+        x: -(root.has-hover ? 5px : 0) - self.width;
+        y: (root.height - self.height) / 2;
+
+        animate opacity, x {
+            duration: 100ms;
+        }
+
+        i-tooltip := Text {}
+    }
+}
+
 component TransactionDisplay inherits Rectangle {
     callback open-transaction(string);
 
@@ -59,7 +97,17 @@ component TransactionDisplay inherits Rectangle {
 
     in property <bool> even;
 
-    background: even ? #ffffff06 : transparent;
+    background: {
+        if (touch.has-hover || tx-btn.has-hover || desc-btn.has-hover) {
+            return #8c96ff2d;
+        }
+        if (even) {
+            return #ffffff06;
+        }
+        transparent
+    }
+
+    touch := TouchArea {}
 
     HorizontalLayout {
         padding-top: 2px;
@@ -124,45 +172,22 @@ component TransactionDisplay inherits Rectangle {
             text: tx.gain-error == "" ? tx.gain : tx.gain_error;
             color: tx.gain < 0 || tx.gain-error != "" ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
         }
-        VerticalLayout {
-            alignment: center;
-            padding-right: 10px;
+        HorizontalLayout {
+            padding-right: 5px;
+            spacing: 5px;
 
-            tx-btn-rect := Rectangle {
-                border-radius: 2px;
-                background: tx-btn-touch.has-hover ? #5e5e5e : #2e2e2e;
+            tx-btn := SmallButton {
                 visible: tx.tx-hash != "";
-                width: hash.preferred-width + 5px;
-                height: hash.preferred-height + 5px;
+                text: "#";
+                tooltip: tx.tx-hash;
 
-                hash := Text {
-                    text: "#";
-                    vertical-alignment: center;
-                }
-                tx-btn-touch := TouchArea {
-                    clicked => {
-                        root.open-transaction(tx.tx-hash);
-                    }
-                    mouse-cursor: pointer;
-                }
+                clicked => { root.open-transaction(tx.tx-hash) }
+            }
 
-                Rectangle {
-                    background: #000000;
-                    border-radius: 2px;
-                    opacity: tx-btn-touch.has-hover ? 1.0 : 0;
-                    width: hash-text.preferred-width + 8px;
-                    height: hash-text.preferred-height + 4px;
-                    x: -(tx-btn-touch.has-hover ? 5px : 0) - self.width;
-                    y: (tx-btn-rect.height - self.height) / 2;
-
-                    animate opacity, x {
-                        duration: 100ms;
-                    }
-
-                    hash-text := Text {
-                        text: tx.tx-hash;
-                    }
-                }
+            desc-btn := SmallButton {
+                visible: tx.description != "";
+                text: "?";
+                tooltip: tx.description;
             }
         }
     }
