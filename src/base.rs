@@ -154,7 +154,7 @@ impl Transaction {
     pub(crate) fn fiat_withdrawal(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
         Self {
             timestamp,
-            operation: Operation::FiatDeposit(Amount {
+            operation: Operation::FiatWithdrawal(Amount {
                 quantity,
                 currency: currency.to_string(),
             }),
