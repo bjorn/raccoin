@@ -32,6 +32,10 @@ fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveD
 
     let mut capital_gains: Vec<CapitalGain> = Vec::new();
     let mut sold_quantity = outgoing.quantity;
+    if sold_quantity.is_zero() {
+        return Ok(capital_gains);
+    }
+
     let sold_unit_price = incoming_fiat / sold_quantity;
 
     while let Some(holding) = currency_holdings.front_mut() {
