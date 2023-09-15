@@ -2,6 +2,7 @@ use std::{error::Error, path::Path, fmt};
 
 use chrono::NaiveDateTime;
 use serde::{Serialize, Deserialize};
+use rust_decimal::prelude::*;
 
 #[derive(Debug)]
 pub enum GainError {
@@ -24,11 +25,32 @@ impl fmt::Display for GainError {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct Amount {
-    pub quantity: f64,
+    pub quantity: Decimal,
     pub currency: String,
 }
 
 impl Amount {
+    pub(crate) fn new(quantity: Decimal, currency: String) -> Self {
+        Self {
+            quantity,
+            currency,
+        }
+    }
+
+    pub(crate) fn from_f64(quantity: f64, currency: String) -> Self {
+        Self {
+            quantity: Decimal::from_f64(quantity).unwrap(),
+            currency: currency,
+        }
+    }
+
+    pub(crate) fn from_satoshis(quantity: u64) -> Self {
+        Self {
+            quantity: Decimal::new(quantity as i64, 8),
+            currency: "BTC".to_owned(),
+        }
+    }
+
     pub(crate) fn is_fiat(&self) -> bool {
         self.currency == "EUR"
     }
@@ -122,7 +144,7 @@ pub(crate) struct Transaction {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_value: Option<Amount>,
     #[serde(skip)]
-    pub gain: Option<Result<f64, GainError>>,
+    pub gain: Option<Result<Decimal, GainError>>,
     #[serde(skip)]
     pub source_index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,57 +162,42 @@ impl Transaction {
         }
     }
 
-    pub(crate) fn fiat_deposit(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
+    pub(crate) fn fiat_deposit(timestamp: NaiveDateTime, amount: Amount) -> Self {
         Self {
             timestamp,
-            operation: Operation::FiatDeposit(Amount {
-                quantity,
-                currency: currency.to_string(),
-            }),
+            operation: Operation::FiatDeposit(amount),
             ..Default::default()
         }
     }
 
-    pub(crate) fn fiat_withdrawal(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
+    pub(crate) fn fiat_withdrawal(timestamp: NaiveDateTime, amount: Amount) -> Self {
         Self {
             timestamp,
-            operation: Operation::FiatWithdrawal(Amount {
-                quantity,
-                currency: currency.to_string(),
-            }),
+            operation: Operation::FiatWithdrawal(amount),
             ..Default::default()
         }
     }
 
-    pub(crate) fn send(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
+    pub(crate) fn send(timestamp: NaiveDateTime, amount: Amount) -> Self {
         Self {
             timestamp,
-            operation: Operation::Send(Amount {
-                quantity,
-                currency: currency.to_string(),
-            }),
+            operation: Operation::Send(amount),
             ..Default::default()
         }
     }
 
-    pub(crate) fn receive(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
+    pub(crate) fn receive(timestamp: NaiveDateTime, amount: Amount) -> Self {
         Self {
             timestamp,
-            operation: Operation::Receive(Amount {
-                quantity,
-                currency: currency.to_string(),
-            }),
+            operation: Operation::Receive(amount),
             ..Default::default()
         }
     }
 
-    pub(crate) fn fee(timestamp: NaiveDateTime, quantity: f64, currency: &str) -> Self {
+    pub(crate) fn fee(timestamp: NaiveDateTime, amount: Amount) -> Self {
         Self {
             timestamp,
-            operation: Operation::Fee(Amount {
-                quantity,
-                currency: currency.to_string(),
-            }),
+            operation: Operation::Fee(amount),
             ..Default::default()
         }
     }

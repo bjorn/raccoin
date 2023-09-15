@@ -1,6 +1,7 @@
 use std::{error::Error, path::Path};
 
 use chrono::{NaiveDateTime, FixedOffset, DateTime};
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::{
@@ -14,7 +15,7 @@ pub(crate) struct PoloniexDeposit {
     #[serde(rename = "Currency")]
     currency: String,
     #[serde(rename = "Amount")]
-    amount: f64,
+    amount: Decimal,
     #[serde(rename = "Address")]
     address: String,
     #[serde(rename = "Date", deserialize_with = "deserialize_date_time")]
@@ -26,15 +27,15 @@ pub(crate) struct PoloniexDeposit {
 #[derive(Debug, Deserialize)]
 pub(crate) struct PoloniexWithdrawal {
     #[serde(rename = "Fee Deducted")]
-    fee_deducted: f64,
+    fee_deducted: Decimal,
     #[serde(rename = "Date", deserialize_with = "deserialize_date_time")]
     date: NaiveDateTime,
     #[serde(rename = "Currency")]
     currency: String,
     // #[serde(rename = "Amount")]
-    // amount: f64,
+    // amount: Decimal,
     #[serde(rename = "Amount-Fee")]
-    amount_minus_fee: f64,
+    amount_minus_fee: Decimal,
     #[serde(rename = "Address")]
     address: String,
     // #[serde(rename = "Status")]
@@ -61,24 +62,24 @@ pub(crate) struct PoloniexTrade {
     #[serde(rename = "Side")]
     side: Operation,
     // #[serde(rename = "Price")]
-    // price: f64,
+    // price: Decimal,
     #[serde(rename = "Amount")]
-    amount: f64,
+    amount: Decimal,
     #[serde(rename = "Total")]
-    total: f64,
+    total: Decimal,
     #[serde(rename = "Fee")]
-    fee: f64,
+    fee: Decimal,
     #[serde(rename = "Order Number")]
     order_number: String,
     #[serde(rename = "Fee Currency")]
     fee_currency: String,
     // #[serde(rename = "Fee Total")]
-    // fee_total: f64,  // always same as fee
+    // fee_total: Decimal,  // always same as fee
 }
 
 impl From<PoloniexDeposit> for Transaction {
     fn from(item: PoloniexDeposit) -> Self {
-        let mut tx = Transaction::receive(item.date, item.amount, &item.currency);
+        let mut tx = Transaction::receive(item.date, Amount::new(item.amount, item.currency));
         tx.description = Some(item.address);
         tx
     }
@@ -86,7 +87,7 @@ impl From<PoloniexDeposit> for Transaction {
 
 impl From<PoloniexWithdrawal> for Transaction {
     fn from(item: PoloniexWithdrawal) -> Self {
-        let mut tx = Transaction::send(item.date, item.amount_minus_fee, &item.currency);
+        let mut tx = Transaction::send(item.date, Amount::new(item.amount_minus_fee, item.currency.clone()));
         tx.fee = Some(Amount { quantity: item.fee_deducted, currency: item.currency });
         tx.description = Some(item.address);
         tx

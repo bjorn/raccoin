@@ -2,9 +2,10 @@ use std::{error::Error, path::Path};
 
 use chrono::NaiveDateTime;
 use csv::Trim;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::Transaction;
+use crate::base::{Transaction, Amount};
 
 // serialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -33,7 +34,7 @@ struct MyceliumTransaction {
     #[serde(rename = "Timestamp", deserialize_with = "deserialize_date_time")]
     timestamp: NaiveDateTime,
     #[serde(rename = "Value")]
-    value: f64,
+    value: Decimal,
     // #[serde(rename = "Currency")]
     // currency: String,
     #[serde(rename = "Transaction Label")]
@@ -43,10 +44,10 @@ struct MyceliumTransaction {
 impl From<MyceliumTransaction> for Transaction {
     // todo: translate address?
     fn from(item: MyceliumTransaction) -> Self {
-        let mut tx = if item.value < 0.0 {
-            Transaction::send(item.timestamp, -item.value, "BTC")
+        let mut tx = if item.value < Decimal::ZERO {
+            Transaction::send(item.timestamp, Amount::new(-item.value, "BTC".to_owned()))
         } else {
-            Transaction::receive(item.timestamp, item.value, "BTC")
+            Transaction::receive(item.timestamp, Amount::new(item.value, "BTC".to_owned()))
         };
         tx.description = if item.label.is_empty() { None } else { Some(item.label) };
         tx.tx_hash = Some(item.id);

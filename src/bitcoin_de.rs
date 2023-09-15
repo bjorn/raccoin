@@ -2,6 +2,7 @@ use std::path::Path;
 
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::{time::deserialize_date_time, base::{Transaction, Amount}};
@@ -32,25 +33,25 @@ pub(crate) struct BitcoinDeAction {
     // #[serde(rename = "BTC-address")]
     // pub btc_address: String,
     // #[serde(rename = "Price")]
-    // pub price: Option<f64>,
+    // pub price: Option<Decimal>,
     // #[serde(rename = "unit (rate)")]
     // pub unit_rate: String,
     // #[serde(rename = "BTC incl. fee")]
-    // pub btc_incl_fee: Option<f64>,
+    // pub btc_incl_fee: Option<Decimal>,
     // #[serde(rename = "amount before fee")]
-    // pub amount_before_fee: Option<f64>,
+    // pub amount_before_fee: Option<Decimal>,
     // #[serde(rename = "unit (amount before fee)")]
     // pub unit_amount_before_fee: String,
     // #[serde(rename = "BTC excl. Bitcoin.de fee")]
-    // pub btc_excl_bitcoin_de_fee: Option<f64>,
+    // pub btc_excl_bitcoin_de_fee: Option<Decimal>,
     #[serde(rename = "amount after Bitcoin.de-fee")]
-    pub amount_after_bitcoin_de_fee: Option<f64>,
+    pub amount_after_bitcoin_de_fee: Option<Decimal>,
     #[serde(rename = "unit (amount after Bitcoin.de-fee)")]
     pub unit_amount_after_bitcoin_de_fee: String,
     #[serde(rename = "Incoming / Outgoing")]
-    pub incoming_outgoing: f64,
+    pub incoming_outgoing: Decimal,
     // #[serde(rename = "Account balance")]
-    // pub account_balance: f64,
+    // pub account_balance: Decimal,
 }
 
 impl From<BitcoinDeAction> for Transaction {
@@ -73,8 +74,8 @@ impl From<BitcoinDeAction> for Transaction {
                     },
                 )
             },
-            BitcoinDeActionType::Disbursement => Transaction::send(utc_time, -item.incoming_outgoing, &item.currency),
-            BitcoinDeActionType::Deposit => Transaction::receive(utc_time, item.incoming_outgoing, &item.currency),
+            BitcoinDeActionType::Disbursement => Transaction::send(utc_time, Amount::new(-item.incoming_outgoing, item.currency)),
+            BitcoinDeActionType::Deposit => Transaction::receive(utc_time, Amount::new(item.incoming_outgoing, item.currency)),
             BitcoinDeActionType::Sale => {
                 Transaction::trade(
                     utc_time,
@@ -88,7 +89,7 @@ impl From<BitcoinDeAction> for Transaction {
                     },
                 )
             },
-            BitcoinDeActionType::NetworkFee => Transaction::fee(utc_time, -item.incoming_outgoing, &item.currency),
+            BitcoinDeActionType::NetworkFee => Transaction::fee(utc_time, Amount::new(-item.incoming_outgoing, item.currency)),
         };
         match item.type_ {
             BitcoinDeActionType::Registration => {},

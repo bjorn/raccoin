@@ -2,6 +2,7 @@ use std::{error::Error, str::FromStr};
 use bitcoin::{Address, Network};
 use chrono::NaiveDateTime;
 use esplora_client::{Builder, BlockingClient, Tx};
+use rust_decimal::Decimal;
 
 use crate::base::{Transaction, Amount};
 
@@ -45,13 +46,13 @@ pub(crate) fn address_transactions(
 
         // determine if send or receive, and convert Satoshi to BTC
         let mut transaction = if total_in > total_out {
-            let spent_amount = (total_in - total_out - tx.fee) as f64 / 100_000_000.0;
-            let mut transaction = Transaction::send(naive_utc, spent_amount, "BTC");
-            transaction.fee = Some(Amount { quantity: tx.fee as f64 / 100_000_000.0, currency: "BTC".to_string() });
+            let spent_amount = (total_in - total_out - tx.fee);
+            let mut transaction = Transaction::send(naive_utc, Amount::from_satoshis(spent_amount));
+            transaction.fee = Some(Amount::from_satoshis(tx.fee));
             transaction
         } else {
-            let received_amount = (total_out - total_in) as f64 / 100_000_000.0;
-            Transaction::receive(naive_utc, received_amount, "BTC")
+            let received_amount = (total_out - total_in);
+            Transaction::receive(naive_utc, Amount::from_satoshis(received_amount))
         };
 
         transaction.tx_hash = Some(tx.txid.to_string());

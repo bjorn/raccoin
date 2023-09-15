@@ -1,6 +1,7 @@
 use std::{error::Error, path::Path};
 
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 // struct to deserialize the following json data:
@@ -44,19 +45,19 @@ struct CmcQuote {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Quote {
-    open: f64,
-    // high: f64,
-    // low: f64,
-    // close: f64,
-    // volume: f64,
-    // market_cap: f64,
+    open: Decimal,
+    // high: Decimal,
+    // low: Decimal,
+    // close: Decimal,
+    // volume: Decimal,
+    // market_cap: Decimal,
     // timestamp: DateTime<FixedOffset>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct PricePoint {
     timestamp: NaiveDateTime,
-    price: f64,
+    price: Decimal,
 }
 
 // command to download BTC price history for 2023:
@@ -108,7 +109,7 @@ pub(crate) fn load_btc_price_history_data() -> Result<Vec<PricePoint>, Box<dyn E
     Ok(prices)
 }
 
-pub(crate) fn estimate_btc_price(time: NaiveDateTime, prices: &Vec<PricePoint>) -> Option<f64> {
+pub(crate) fn estimate_btc_price(time: NaiveDateTime, prices: &Vec<PricePoint>) -> Option<Decimal> {
     let index = prices.partition_point(|p| p.timestamp < time);
     let next_price_point = prices.get(index).or_else(|| prices.last());
     let prev_price_point = if index > 0 { prices.get(index - 1) } else { None };
@@ -117,8 +118,8 @@ pub(crate) fn estimate_btc_price(time: NaiveDateTime, prices: &Vec<PricePoint>) 
         // calculate the most probable price, by linear iterpolation based on the previous and next price
         let price_difference = next_price.price - prev_price.price;
 
-        let total_duration = (next_price.timestamp - prev_price.timestamp).num_seconds() as f64;
-        let time_since_prev = (time - prev_price.timestamp).num_seconds() as f64;
+        let total_duration: Decimal = (next_price.timestamp - prev_price.timestamp).num_seconds().into();
+        let time_since_prev: Decimal = (time - prev_price.timestamp).num_seconds().into();
         let time_ratio = time_since_prev / total_duration;
 
         Some(prev_price.price + time_ratio * price_difference)

@@ -1,6 +1,7 @@
 use std::{error::Error, path::Path};
 
 use chrono::NaiveDateTime;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::base::{Transaction, Amount};
@@ -28,7 +29,7 @@ struct TrezorTransaction<'a> {
     #[serde(rename = "Transaction ID")]
     id: &'a str,
     #[serde(rename = "Fee")]
-    fee: Option<f64>,
+    fee: Option<Decimal>,
     #[serde(rename = "Fee unit")]
     fee_unit: Option<&'a str>,
     // #[serde(rename = "Address")]
@@ -36,11 +37,11 @@ struct TrezorTransaction<'a> {
     #[serde(rename = "Label")]
     label: &'a str,
     #[serde(rename = "Amount")]
-    amount: f64,
+    amount: Decimal,
     #[serde(rename = "Amount unit")]
     amount_unit: &'a str,
     // #[serde(rename = "Fiat (EUR)")]
-    // fiat_eur: f64,
+    // fiat_eur: Decimal,
     // #[serde(rename = "Other")]
     // other: &'a str,
 }
@@ -51,10 +52,10 @@ impl<'a> From<TrezorTransaction<'a>> for Transaction {
         let date_time = NaiveDateTime::from_timestamp_opt(item.timestamp, 0).expect("valid timestamp");
         let mut tx = match item.type_ {
             TrezorTransactionType::Sent => {
-                Transaction::send(date_time, item.amount, &item.amount_unit)
+                Transaction::send(date_time, Amount::new(item.amount, item.amount_unit.to_owned()))
             },
             TrezorTransactionType::Received => {
-                Transaction::receive(date_time, item.amount, &item.amount_unit)
+                Transaction::receive(date_time, Amount::new(item.amount, item.amount_unit.to_owned()))
             },
         };
         tx.description = if item.label.is_empty() { None } else { Some(item.label.to_owned()) };

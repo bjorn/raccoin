@@ -2,6 +2,7 @@ use std::{error::Error, path::Path};
 
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::{base::{Transaction, Operation, Amount}, time::deserialize_date_time};
@@ -19,9 +20,9 @@ pub(crate) struct BitonicAction {
     #[serde(rename = "Action")]
     pub action: BitonicActionType,
     #[serde(rename = "Amount")]
-    pub amount: f64,
+    pub amount: Decimal,
     #[serde(rename = "Price")]
-    pub price: f64,
+    pub price: Decimal,
 }
 
 impl From<BitonicAction> for Transaction {
@@ -63,24 +64,20 @@ pub(crate) fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>, Bo
             if incoming.is_fiat() {
                 transactions.push(Transaction::receive(
                     transaction.timestamp - chrono::Duration::minutes(1),
-                    outgoing.quantity,
-                    &outgoing.currency));
+                    Amount::new(outgoing.quantity, outgoing.currency.clone())));
 
                 transactions.push(Transaction::fiat_withdrawal(
                     transaction.timestamp + chrono::Duration::minutes(1),
-                    incoming.quantity,
-                    &incoming.currency));
+                    Amount::new(incoming.quantity, incoming.currency.clone())));
             }
             else if outgoing.is_fiat() {
                 transactions.push(Transaction::fiat_deposit(
                     transaction.timestamp - chrono::Duration::minutes(1),
-                    outgoing.quantity,
-                    &outgoing.currency));
+                    Amount::new(outgoing.quantity, outgoing.currency.clone())));
 
                 transactions.push(Transaction::send(
                     transaction.timestamp + chrono::Duration::minutes(1),
-                    incoming.quantity,
-                    &incoming.currency));
+                    Amount::new(incoming.quantity, incoming.currency.clone())));
             }
         }
 

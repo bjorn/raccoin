@@ -1,6 +1,7 @@
 use std::error::Error;
 
 use chrono::NaiveDateTime;
+use rust_decimal::Decimal;
 use serde::Serialize;
 
 use crate::{ctc::{CtcTxType, CtcTx}, time::serialize_date_time};
@@ -27,7 +28,7 @@ struct CoinpandaTx<'a> {
 
     /// The amount sold/withdrawn/sent (outgoing)
     #[serde(rename = "Sent Amount")]
-    sent_amount: Option<f64>,
+    sent_amount: Option<Decimal>,
 
     /// Currency sold/withdrawn/sent (outgoing)
     #[serde(rename = "Sent Currency")]
@@ -35,7 +36,7 @@ struct CoinpandaTx<'a> {
 
     /// The amount bought/deposited/received (incoming)
     #[serde(rename = "Received Amount")]
-    received_amount: Option<f64>,
+    received_amount: Option<Decimal>,
 
     /// Currency bought/deposited/received (incoming)
     #[serde(rename = "Received Currency")]
@@ -43,7 +44,7 @@ struct CoinpandaTx<'a> {
 
     /// Any associated fee amount
     #[serde(rename = "Fee Amount")]
-    fee_amount: Option<f64>,
+    fee_amount: Option<Decimal>,
 
     /// Fee currency if you paid any fee
     #[serde(rename = "Fee Currency")]
@@ -51,7 +52,7 @@ struct CoinpandaTx<'a> {
 
     /// The value of the transaction in a fiat currency
     #[serde(rename = "Net Worth Amount")]
-    net_worth_amount: Option<f64>,
+    net_worth_amount: Option<Decimal>,
 
     /// The fiat currency used to value the transaction
     #[serde(rename = "Net Worth Currency")]
@@ -71,7 +72,7 @@ struct CoinpandaTx<'a> {
 }
 
 impl<'a> CoinpandaTx<'a> {
-    fn trade(timestamp: NaiveDateTime, received_amount: f64, received_currency: &'a str, sent_amount: f64, sent_currency: &'a str) -> Self {
+    fn trade(timestamp: NaiveDateTime, received_amount: Decimal, received_currency: &'a str, sent_amount: Decimal, sent_currency: &'a str) -> Self {
         Self {
             timestamp,
             type_: CoinpandaTxType::Trade,
@@ -89,7 +90,7 @@ impl<'a> CoinpandaTx<'a> {
         }
     }
 
-    fn send(timestamp: NaiveDateTime, sent_amount: f64, sent_currency: &'a str) -> Self {
+    fn send(timestamp: NaiveDateTime, sent_amount: Decimal, sent_currency: &'a str) -> Self {
         Self {
             timestamp,
             type_: CoinpandaTxType::Send,
@@ -107,7 +108,7 @@ impl<'a> CoinpandaTx<'a> {
         }
     }
 
-    fn receive(timestamp: NaiveDateTime, received_amount: f64, received_currency: &'a str) -> Self {
+    fn receive(timestamp: NaiveDateTime, received_amount: Decimal, received_currency: &'a str) -> Self {
         Self {
             timestamp,
             type_: CoinpandaTxType::Receive,

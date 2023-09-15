@@ -20,6 +20,8 @@ use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
 use cryptotax_ui::*;
 use esplora::{blocking_esplora_client, address_transactions};
 use fifo::{fifo, save_gains_to_csv};
+use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
 use std::{error::Error, rc::Rc, path::Path};
@@ -182,7 +184,7 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
                             }
 
                             // check whether the price roughly matches (sent amount can't be lower than received amount, but can be 5% higher)
-                            if receive_amount.quantity > send_amount.quantity || receive_amount.quantity < send_amount.quantity * 0.95 {
+                            if receive_amount.quantity > send_amount.quantity || receive_amount.quantity < send_amount.quantity * dec!(0.95) {
                                 return false;
                             }
 
@@ -228,7 +230,7 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     let estimate_value = |timestamp: NaiveDateTime, amount: &Amount| -> Option<Amount> {
         match amount.currency.as_str() {
             "BTC" => estimate_btc_price(timestamp, &prices),
-            "EUR" => Some(1.),
+            "EUR" => Some(Decimal::ONE),
             _ => {
                 println!("todo: estimate value for {} at {}", amount.currency, timestamp);
                 None
@@ -299,10 +301,11 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
             currency: gain.amount.currency.into(),
             bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
             sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
-            quantity: gain.amount.quantity as f32,
-            cost: gain.cost as f32,
-            proceeds: gain.proceeds as f32,
-            gain_or_loss: (gain.proceeds - gain.cost) as f32,
+            // todo: something else than unwrap()?
+            quantity: gain.amount.quantity.try_into().unwrap(),
+            cost: gain.cost.try_into().unwrap(),
+            proceeds: gain.proceeds.try_into().unwrap(),
+            gain_or_loss: (gain.proceeds - gain.cost).try_into().unwrap(),
             long_term: (gain.sold - gain.bought) > chrono::Duration::days(365),
         });
     }
@@ -415,8 +418,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let (gain, gain_error) = match &transaction.gain {
             Some(Ok(gain)) => (*gain, None),
-            Some(Err(e)) => (0.0, Some(e.to_string())),
-            None => (0.0, None),
+            Some(Err(e)) => (Decimal::ZERO, Some(e.to_string())),
+            None => (Decimal::ZERO, None),
         };
 
         ui_transactions.push(UiTransaction {
@@ -429,7 +432,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             sent: sent.map_or_else(String::default, Amount::to_string).into(),
             fee: transaction.fee.as_ref().map_or_else(String::default, Amount::to_string).into(),
             value: value.map_or_else(String::default, Amount::to_string).into(),
-            gain: ((gain * 100.0).round() / 100.0) as f32,
+            gain: gain.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
             gain_error: gain_error.unwrap_or_default().into(),
             description: description.unwrap_or_default().into(),
             tx_hash: tx_hash.map(|s| s.as_str()).unwrap_or_default().to_owned().into(),

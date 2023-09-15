@@ -16,4 +16,6 @@ esplora-client = { version = "0.6", default-features = false, features = ["block
 bitcoin = "0.30.1"
 slint = "1.2"
 open = "5.0.0"
+rust_decimal = "1.32"
+rust_decimal_macros = "1.32"
 cryptotax_ui = { path = "cryptotax_ui" }

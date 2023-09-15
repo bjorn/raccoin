@@ -2,6 +2,7 @@ use std::{collections::{VecDeque, HashMap}, error::Error};
 
 use chrono::NaiveDateTime;
 use chrono_tz::Europe;
+use rust_decimal::Decimal;
 use serde::Serialize;
 
 use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_date_time};
@@ -10,8 +11,8 @@ use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_d
 #[derive(Debug)]
 struct Entry {
     timestamp: NaiveDateTime,
-    unit_price: f64,
-    remaining: f64,
+    unit_price: Decimal,
+    remaining: Decimal,
 }
 
 #[derive(Debug)]
@@ -19,13 +20,13 @@ pub(crate) struct CapitalGain {
     pub bought: NaiveDateTime,
     pub sold: NaiveDateTime,
     pub amount: Amount,
-    pub cost: f64,
-    pub proceeds: f64,
+    pub cost: Decimal,
+    pub proceeds: Decimal,
 }
 
 /// Determines the capital gains made with this sale based on the oldest
 /// holdings and the current price. Consumes the holdings in the process.
-fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveDateTime, outgoing: &'a Amount, incoming_fiat: f64) -> Result<Vec<CapitalGain>, GainError> {
+fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveDateTime, outgoing: &'a Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
     // todo: find a way to not insert an empty deque?
     let currency_holdings = holdings.entry(&outgoing.currency).or_default();
 
@@ -70,14 +71,14 @@ fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveD
 
     println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
 
-    if sold_quantity > 0.0 {
+    if sold_quantity > Decimal::ZERO {
         return Err(GainError::InsufficientBalance);
     }
 
     Ok(capital_gains)
 }
 
-fn fiat_value(amount: &Option<Amount>) -> Result<f64, GainError> {
+fn fiat_value(amount: &Option<Amount>) -> Result<Decimal, GainError> {
     match amount {
         Some(amount) => {
             if amount.is_fiat() {
@@ -90,20 +91,20 @@ fn fiat_value(amount: &Option<Amount>) -> Result<f64, GainError> {
     }
 }
 
-fn add_holdings<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, tx: &Transaction, amount: &'a Amount, value: &Option<Amount>) -> Result<f64, GainError> {
+fn add_holdings<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, tx: &Transaction, amount: &'a Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {
     holdings.entry(&amount.currency).or_default().push_back(Entry {
         timestamp: tx.timestamp,
         unit_price: fiat_value(value)? / amount.quantity,
         remaining: amount.quantity,
     });
-    Ok(0.0)
+    Ok(Decimal::ZERO)
 }
 
-fn dispose_holdings<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, capital_gains: &mut Vec<CapitalGain>, timestamp: NaiveDateTime, outgoing: &'a Amount, value: &Option<Amount>) -> Result<f64, GainError> {
+fn dispose_holdings<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, capital_gains: &mut Vec<CapitalGain>, timestamp: NaiveDateTime, outgoing: &'a Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {
     let tx_gains = gains(holdings, timestamp, outgoing, fiat_value(value)?);
     match tx_gains {
         Ok(gains) => {
-            let gain: f64 = gains.iter().map(|f| f.proceeds - f.cost).sum();
+            let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
             capital_gains.extend(gains);
             Ok(gain)
         },
@@ -157,7 +158,7 @@ pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGai
             },
             Operation::ChainSplit(amount) => {
                 // Chain split is special in that it adds holdings with 0 cost base
-                transaction.gain = Some(add_holdings(&mut holdings, transaction, amount, &Some(Amount { quantity: 0.0, currency: "EUR".to_owned() })));
+                transaction.gain = Some(add_holdings(&mut holdings, transaction, amount, &Some(Amount { quantity: Decimal::ZERO, currency: "EUR".to_owned() })));
             },
         }
 
@@ -184,8 +185,8 @@ pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGai
     Ok(capital_gains)
 }
 
-fn total_holdings(holdings: &VecDeque<Entry>) -> f64 {
-    let mut total_amount = 0.0;
+fn total_holdings(holdings: &VecDeque<Entry>) -> Decimal {
+    let mut total_amount = Decimal::ZERO;
     for h in holdings {
         total_amount += h.remaining;
     }
@@ -204,13 +205,13 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &str) -> 
         #[serde(rename = "Sold", serialize_with = "serialize_date_time")]
         sold: NaiveDateTime,
         #[serde(rename = "Quantity")]
-        quantity: f64,
+        quantity: Decimal,
         #[serde(rename = "Cost")]
-        cost: f64,
+        cost: Decimal,
         #[serde(rename = "Proceeds")]
-        proceeds: f64,
+        proceeds: Decimal,
         #[serde(rename = "Gain or Loss")]
-        gain_or_loss: f64,
+        gain_or_loss: Decimal,
         #[serde(rename = "Long Term")]
         long_term: bool,
     }

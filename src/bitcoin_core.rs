@@ -2,9 +2,10 @@ use std::{error::Error, path::Path};
 
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::Transaction;
+use crate::base::{Amount, Transaction};
 
 #[derive(Debug, Clone, Deserialize)]
 enum TransferType {
@@ -27,7 +28,7 @@ struct BitcoinCoreAction {
     // #[serde(rename = "Address")]
     // address: String,
     #[serde(rename = "Amount (BTC)", alias = "Amount (PPC)")]
-    amount: f64,
+    amount: Decimal,
     #[serde(rename = "ID")]
     id: String,
 }
@@ -38,10 +39,10 @@ impl BitcoinCoreAction {
         let utc_time = Berlin.from_local_datetime(&self.date).unwrap().naive_utc();
         let mut tx = match self.type_ {
             TransferType::SentTo => {
-                Transaction::send(utc_time, -self.amount, currency)
+                Transaction::send(utc_time, Amount::new(-self.amount, currency.to_owned()))
             },
             TransferType::ReceivedWith => {
-                Transaction::receive(utc_time, self.amount, currency)
+                Transaction::receive(utc_time, Amount::new(self.amount, currency.to_owned()))
             },
         };
         tx.description = if self.label.is_empty() { None } else { Some(self.label) };

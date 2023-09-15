@@ -1,6 +1,7 @@
 use std::{path::Path, error::Error};
 
 use chrono::NaiveDateTime;
+use rust_decimal::Decimal;
 use serde::{Serialize, Deserialize};
 
 use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation, Amount}};
@@ -196,7 +197,7 @@ pub(crate) struct CtcTx<'a> {
 
     /// The amount excluding fee which corresponds to the base currency.
     #[serde(rename = "Base Amount")]
-    pub base_amount: f64,
+    pub base_amount: Decimal,
 
     /// The quote currency of the trading pair. For example, if you purchase ETH using USD, the quote currency is USD.
     #[serde(rename = "Quote Currency (Optional)")]
@@ -204,7 +205,7 @@ pub(crate) struct CtcTx<'a> {
 
     /// The amount of quote currency that was traded, excluding fees.
     #[serde(rename = "Quote Amount (Optional)")]
-    pub quote_amount: Option<f64>,
+    pub quote_amount: Option<Decimal>,
 
     /// The currency in which the fee was paid.
     #[serde(rename = "Fee Currency (Optional)")]
@@ -212,7 +213,7 @@ pub(crate) struct CtcTx<'a> {
 
     /// The amount of fees that were paid.
     #[serde(rename = "Fee Amount (Optional)")]
-    pub fee_amount: Option<f64>,
+    pub fee_amount: Option<Decimal>,
 
     /// The name of the Exchange/Wallet you are transferring from. If left blank, will default to CSV exchange name.
     ///
@@ -241,7 +242,7 @@ pub(crate) struct CtcTx<'a> {
 
     /// The price per unit of the "Base Currency". If left blank, the price defaults to market price.
     #[serde(rename = "Reference Price Per Unit (Optional)")]
-    pub reference_price_per_unit: Option<f64>,
+    pub reference_price_per_unit: Option<Decimal>,
 
     /// This is the currency of the Reference Price Per Unit.
     /// - Only local currencies are available. Cryptocurrencies (including stablecoins) in this column will be ignored.
@@ -254,7 +255,7 @@ pub(crate) struct CtcTx<'a> {
 impl<'a> CtcTx<'a> {
     /// Constructor that takes the timestamp, type, base currency, and base amount of the transaction
     /// All other fields are optional
-    pub(crate) fn new(timestamp: NaiveDateTime, operation: CtcTxType, base_currency: &'a str, base_amount: f64) -> Self {
+    pub(crate) fn new(timestamp: NaiveDateTime, operation: CtcTxType, base_currency: &'a str, base_amount: Decimal) -> Self {
         Self {
             timestamp,
             operation,
