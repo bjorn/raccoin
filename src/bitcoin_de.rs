@@ -29,8 +29,8 @@ pub(crate) struct BitcoinDeAction {
     pub currency: String,
     #[serde(rename = "Reference")]
     pub reference: String,
-    #[serde(rename = "BTC-address")]
-    pub btc_address: String,
+    // #[serde(rename = "BTC-address")]
+    // pub btc_address: String,
     // #[serde(rename = "Price")]
     // pub price: Option<f64>,
     // #[serde(rename = "unit (rate)")]
@@ -88,7 +88,7 @@ impl From<BitcoinDeAction> for Transaction {
                     },
                 )
             },
-            BitcoinDeActionType::NetworkFee => Transaction::fee(utc_time, item.incoming_outgoing, &item.currency),
+            BitcoinDeActionType::NetworkFee => Transaction::fee(utc_time, -item.incoming_outgoing, &item.currency),
         };
         match item.type_ {
             BitcoinDeActionType::Registration => {},

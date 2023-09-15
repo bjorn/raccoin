@@ -24,8 +24,8 @@ struct BitcoinCoreAction {
     type_: TransferType,
     #[serde(rename = "Label")]
     label: String,
-    #[serde(rename = "Address")]
-    address: String,
+    // #[serde(rename = "Address")]
+    // address: String,
     #[serde(rename = "Amount (BTC)", alias = "Amount (PPC)")]
     amount: f64,
     #[serde(rename = "ID")]
