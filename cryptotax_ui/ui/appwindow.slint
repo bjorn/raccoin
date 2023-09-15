@@ -123,17 +123,27 @@ export component AppWindow inherits Window {
             }
         }
 
-        if (active-page == Page.sources): Sources {
-            sources: root.sources;
-        }
+        Rectangle {
+            Sources {
+                visible: active-page == Page.sources;
+                sources: root.sources;
+            }
 
-        if (active-page == Page.transactions): Transactions {
-            transactions: root.transactions;
-            open-transaction(s) => { root.open-transaction(s); }
-        }
+            Transactions {
+                visible: active-page == Page.transactions;
+                transactions: root.transactions;
+                open-transaction(s) => { root.open-transaction(s); }
+            }
 
-        if (active-page == Page.capital-gains): CapitalGains {
-            gain-entries: root.gain-entries;
+            CapitalGains {
+                visible: active-page == Page.capital-gains;
+                gain-entries: root.gain-entries;
+
+                // somehow a StandardTableView doesn't do this by default
+                // also, Slint compiler crashes if I put this in the component?
+                width: 100%;
+                height: 100%;
+            }
         }
     }
 }
