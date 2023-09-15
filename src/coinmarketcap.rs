@@ -61,6 +61,7 @@ pub(crate) struct PricePoint {
 
 // command to download BTC price history for 2023:
 // curl "https://api.coinmarketcap.com/data-api/v3.1/cryptocurrency/historical?id=1&convertId=2790&timeStart=1672527600&timeEnd=1704063600&interval=1d" -o btc-price-history-2023.json
+#[allow(dead_code)]
 pub(crate) fn load_btc_price_history_data_json() -> Result<Vec<PricePoint>, Box<dyn Error>> {
     let mut prices: Vec<PricePoint> = Vec::new();
     let base = "btc-price-history-";
@@ -83,6 +84,7 @@ pub(crate) fn load_btc_price_history_data_json() -> Result<Vec<PricePoint>, Box<
     Ok(prices)
 }
 
+#[allow(dead_code)]
 pub(crate) fn save_btc_price_history_data(prices: &Vec<PricePoint>, path: &Path) -> Result<(), Box<dyn Error>> {
     let mut wtr = csv::Writer::from_path(path)?;
     for price in prices {

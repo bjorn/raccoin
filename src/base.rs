@@ -127,6 +127,8 @@ pub(crate) struct Transaction {
     pub source_index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Amount>,
+    #[serde(skip)]
+    pub matching_tx: Option<usize>,
 }
 
 impl Transaction {

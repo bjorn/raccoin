@@ -9,6 +9,7 @@ export enum UiTransactionType {
     fee,
     receive,
     send,
+    transfer,
     chain-split,
     expense,
     income,
@@ -17,7 +18,8 @@ export enum UiTransactionType {
 }
 
 export struct UiTransaction {
-    source: string,
+    from: string,
+    to: string,
     date: string,
     time: string,
     tx_type: UiTransactionType,
@@ -31,12 +33,22 @@ export struct UiTransaction {
     tx_hash: string,
 }
 
-component TextCell inherits Text {
+component Cell inherits HorizontalLayout {
     horizontal-stretch: 1;
     preferred-width: 0;
     min-width: 0;
+    spacing: 5px;
+}
+
+component ElidingText inherits Text {
     overflow: elide;
     vertical-alignment: center;
+}
+
+component TextCell inherits ElidingText {
+    horizontal-stretch: 1;
+    preferred-width: 0;
+    min-width: 0;
 }
 
 component SmallButton inherits Rectangle {
@@ -81,7 +93,8 @@ component TransactionDisplay inherits Rectangle {
     callback open-transaction(string);
 
     in property <UiTransaction> tx : {
-        source: "Foo Wallet",
+        from: "Exchange Foo",
+        to: "Wallet Bar",
         date: "2013-11-01",
         time: "12:34:56",
         tx_type: UiTransactionType.buy,
@@ -99,7 +112,7 @@ component TransactionDisplay inherits Rectangle {
 
     background: {
         if (touch.has-hover || tx-btn.has-hover || desc-btn.has-hover) {
-            return #8c96ff2d;
+            return #4564;
         }
         if (even) {
             return #ffffff06;
@@ -110,25 +123,26 @@ component TransactionDisplay inherits Rectangle {
     touch := TouchArea {}
 
     HorizontalLayout {
+        padding-left: 5px;
+        padding-right: 5px;
         padding-top: 2px;
         padding-bottom: 2px;
+        spacing: 2px;
+
         HorizontalLayout {
             alignment: start;
             spacing: 6px;
-            padding-left: 10px;
-            padding-right: 12px;
-            Text {
+            padding-right: 5px;
+
+            ElidingText {
                 text: tx.date;
-                overflow: elide;
                 min-width: self.preferred-width;
-                vertical-alignment: center;
             }
-            Text {
+            ElidingText {
                 text: tx.time;
                 opacity: 0.5;
-                overflow: elide;
+                font-size: 10px;
                 min-width: self.preferred-width;
-                vertical-alignment: center;
             }
         }
         TextCell {
@@ -140,6 +154,7 @@ component TransactionDisplay inherits Rectangle {
                 tx.tx-type == UiTransactionType.fee ? "Fee" :
                 tx.tx-type == UiTransactionType.receive ? "Receive" :
                 tx.tx-type == UiTransactionType.send ? "Send" :
+                tx.tx-type == UiTransactionType.transfer ? "Transfer" :
                 tx.tx-type == UiTransactionType.chain-split ? "Chain Split" :
                 tx.tx-type == UiTransactionType.expense ? "Expense" :
                 tx.tx-type == UiTransactionType.income ? "Income" :
@@ -147,16 +162,29 @@ component TransactionDisplay inherits Rectangle {
                 tx.tx-type == UiTransactionType.spam ? "Spam" :
                 "Unknown";
         }
-        TextCell {
-            text: tx.source;
-            font-size: 10px;
-            opacity: 0.5;
+        Cell {
+            horizontal-stretch: 2;
+            ElidingText {
+                text: tx.sent == "" ? "" : "–\{tx.sent}";
+                max-width: self.preferred-width;
+            }
+            ElidingText {
+                text: tx.from;
+                font-size: 10px;
+                opacity: 0.5;
+            }
         }
-        TextCell {
-            text: tx.sent == "" ? "" : "–\{tx.sent}";
-        }
-        TextCell {
-            text: tx.received == "" ? "" : "+\{tx.received}";
+        Cell {
+            horizontal-stretch: 2;
+            ElidingText {
+                text: tx.received == "" ? "" : "+\{tx.received}";
+                max-width: self.preferred-width;
+            }
+            ElidingText {
+                text: tx.to;
+                font-size: 10px;
+                opacity: 0.5;
+            }
         }
         TextCell {
             text: tx.fee;
@@ -173,7 +201,6 @@ component TransactionDisplay inherits Rectangle {
             color: tx.gain < 0 || tx.gain-error != "" ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
         }
         HorizontalLayout {
-            padding-right: 5px;
             spacing: 5px;
 
             tx-btn := SmallButton {

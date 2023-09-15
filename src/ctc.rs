@@ -402,6 +402,7 @@ impl<'a> From<CtcTx<'a>> for Transaction {
             gain: None,
             source_index: 0,
             value: None,
+            matching_tx: None,
         }
     }
 }

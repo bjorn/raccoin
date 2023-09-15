@@ -147,6 +147,8 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     // before applying FIFO, turn any unmatched Send transactions into Sell transactions
     // and unmatched Receive transactions into Buy transactions
     let mut unmatched_sends_receives = Vec::new();
+    let mut matching_pairs = Vec::new();
+
     for (index, tx) in &mut txs.iter().enumerate() {
         match &tx.operation {
             Operation::Send(_) | Operation::Receive(_) => {
@@ -192,14 +194,10 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
 
                 if let Some(matching_index) = matching_index {
                     // this send is now matched, so remove it from the list of unmatched sends
-                    // println!("send pos {} is send index {}", unmatched_send_pos, unmatched_sends[unmatched_send_pos]);
                     let matching_tx_index = unmatched_sends_receives.remove(matching_index);
-                    println!("matched tx {} with tx {}", index, matching_tx_index);
-                    println!(" {:?}", txs[matching_tx_index]);
-                    println!(" {:?}", tx);
+                    matching_pairs.push((index, matching_tx_index));
                 } else {
                     // no match was found for this transactions, so add it to the unmatched list
-                    println!("unmatched transaction {}: {:?}", index, tx);
                     unmatched_sends_receives.push(index);
                 }
             },
@@ -221,6 +219,11 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
             _ => unreachable!("only Send and Receive transactions can be unmatched"),
         }
     });
+
+    for (a, b) in matching_pairs {
+        (&mut txs[a]).matching_tx = Some(b);
+        (&mut txs[b]).matching_tx = Some(a);
+    }
 
     let estimate_value = |timestamp: NaiveDateTime, amount: &Amount| -> Option<Amount> {
         match amount.currency.as_str() {
@@ -340,78 +343,96 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_sources(Rc::new(VecModel::from(ui_sources)).into());
 
     let mut ui_transactions = Vec::new();
-    for transaction in transactions {
-        let (tx_type, sent, received) = match &transaction.operation {
+    for transaction in &transactions {
+        let source = sources.get(transaction.source_index);
+        let source_name: Option<SharedString> = source.map(|source| source.name.clone().into());
+
+        let mut value = transaction.value.as_ref();
+        let mut description = transaction.description.clone();
+        let mut tx_hash = transaction.tx_hash.as_ref();
+
+        let (tx_type, sent, received, from, to) = match &transaction.operation {
             Operation::Noop => {
                 // ignore Noop transactions
                 continue;
             }
-            Operation::Buy(amount) => (UiTransactionType::Buy, "".to_owned(), amount.to_string()),
-            Operation::Sell(amount) => (UiTransactionType::Sell, amount.to_string(), "".to_owned()),
+            Operation::Buy(amount) => (UiTransactionType::Buy, None, Some(amount), None, source_name),
+            Operation::Sell(amount) => (UiTransactionType::Sell, Some(amount), None, source_name, None),
             Operation::Trade { incoming, outgoing } => {
-                // Categorize as buy or sell depending on whether fiat is involved
-                let tx_type = if outgoing.is_fiat() {
-                    UiTransactionType::Buy
-                } else if incoming.is_fiat() {
-                    UiTransactionType::Sell
-                } else {
-                    UiTransactionType::Trade
-                };
-                (tx_type, outgoing.to_string(), incoming.to_string())
+                (UiTransactionType::Trade, Some(outgoing), Some(incoming), source_name.clone(), source_name)
             }
             Operation::FiatDeposit(amount) => {
-                (UiTransactionType::Deposit, "".to_owned(), amount.to_string())
+                (UiTransactionType::Deposit, None, Some(amount), None, source_name)
             }
             Operation::FiatWithdrawal(amount) => {
-                (UiTransactionType::Withdrawal, amount.to_string(), "".to_owned())
+                (UiTransactionType::Withdrawal, Some(amount), None, source_name, None)
             }
-            Operation::Send(amount) => {
-                (UiTransactionType::Send, amount.to_string(), "".to_owned())
+            Operation::Send(send_amount) => {
+                // matching_tx has to be set at this point, otherwise it should have been a Sell
+                let matching_receive = &transactions[transaction.matching_tx.expect("Send should have matched a Receive transaction")];
+                if let Operation::Receive(receive_amount) = &matching_receive.operation {
+                    let receive_source = sources.get(matching_receive.source_index);
+                    let receive_source_name = receive_source.map(|source| source.name.clone().into());
+
+                    value = value.or(matching_receive.value.as_ref());
+                    tx_hash = tx_hash.or(matching_receive.tx_hash.as_ref());
+                    description = match (description, &matching_receive.description) {
+                        (Some(s), Some(r)) => Some(s + ", " + r),
+                        (Some(s), None) => Some(s),
+                        (None, Some(r)) => Some(r.to_owned()),
+                        (None, None) => None,
+                    };
+
+                    (UiTransactionType::Transfer, Some(send_amount), Some(receive_amount), source_name, receive_source_name)
+                } else {
+                    unreachable!("Send was matched with a non-Receive transaction");
+                }
             }
-            Operation::Receive(amount) => {
-                (UiTransactionType::Receive, "".to_owned(), amount.to_string())
+            Operation::Receive(_) => {
+                assert!(transaction.matching_tx.is_some(), "Unmatched Receive should have been changed to Buy");
+                continue;   // added as a Transfer when handling the Send
             }
             Operation::Fee(amount) => {
-                (UiTransactionType::Fee, amount.to_string(), "".to_owned())
+                (UiTransactionType::Fee, Some(amount), None, source_name, None)
             }
             Operation::ChainSplit(amount) => {
-                (UiTransactionType::ChainSplit, amount.to_string(), "".to_owned())
+                (UiTransactionType::ChainSplit, Some(amount), None, source_name, None)
             }
             Operation::Expense(amount) => {
-                (UiTransactionType::Expense, amount.to_string(), "".to_owned())
+                (UiTransactionType::Expense, Some(amount), None, source_name, None)
             }
             Operation::Income(amount) => {
-                (UiTransactionType::Income, "".to_owned(), amount.to_string())
+                (UiTransactionType::Income, None, Some(amount), None, source_name)
             }
             Operation::Airdrop(amount) => {
-                (UiTransactionType::Airdrop, "".to_owned(), amount.to_string())
+                (UiTransactionType::Airdrop, None, Some(amount), None, source_name)
             }
             Operation::Spam(amount) => {
-                (UiTransactionType::Spam, "".to_owned(), amount.to_string())
+                (UiTransactionType::Spam, None, Some(amount), None, source_name)
             }
             _ => todo!("unsupported operation: {:?}", transaction.operation),
         };
 
-        let source = sources.get(transaction.source_index);
-        let (gain, gain_error) = match transaction.gain {
-            Some(Ok(gain)) => (gain, None),
+        let (gain, gain_error) = match &transaction.gain {
+            Some(Ok(gain)) => (*gain, None),
             Some(Err(e)) => (0.0, Some(e.to_string())),
             None => (0.0, None),
         };
 
         ui_transactions.push(UiTransaction {
-            source: source.and_then(|source| Some(source.name.clone())).unwrap_or_default().into(),
+            from: from.unwrap_or_default(),
+            to: to.unwrap_or_default(),
             date: transaction.timestamp.date().to_string().into(),
             time: transaction.timestamp.time().to_string().into(),
             tx_type,
-            received: received.into(),
-            sent: sent.into(),
-            fee: if let Some(fee) = transaction.fee { fee.to_string() } else { "".to_owned() }.into(),
-            value: if let Some(value) = transaction.value { value.to_string() } else { "".to_owned() }.into(),
+            received: received.map(Amount::to_string).unwrap_or_default().into(),
+            sent: sent.map(Amount::to_string).unwrap_or_default().into(),
+            fee: transaction.fee.as_ref().map(Amount::to_string).unwrap_or_default().into(),
+            value: value.map(Amount::to_string).unwrap_or_default().into(),
             gain: ((gain * 100.0).round() / 100.0) as f32,
             gain_error: gain_error.unwrap_or_default().into(),
-            description: if let Some(description) = transaction.description { description } else { "".to_owned() }.into(),
-            tx_hash: if let Some(tx_hash) = transaction.tx_hash { tx_hash } else { "".to_owned() }.into(),
+            description: description.unwrap_or_default().into(),
+            tx_hash: tx_hash.map(|s| s.as_str()).unwrap_or_default().to_owned().into(),
         });
     }
 
