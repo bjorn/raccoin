@@ -23,7 +23,9 @@ export struct UiTransaction {
     date: string,
     time: string,
     tx_type: UiTransactionType,
+    received_cmc_id: int,
     received: string,
+    sent_cmc_id: int,
     sent: string,
     fee: string,
     value: string,
@@ -89,6 +91,27 @@ component SmallButton inherits Rectangle {
     }
 }
 
+component CurrencyIcon inherits Image {
+    in property <int> cmc-id;
+
+    width: 14px;
+    source: cmc-id == 1 ? @image-url("icons/coins/1.png"):
+            cmc-id == 2 ? @image-url("icons/coins/2.png") :
+            cmc-id == 5 ? @image-url("icons/coins/5.png") :
+            cmc-id == 8 ? @image-url("icons/coins/8.png") :
+            cmc-id == 52 ? @image-url("icons/coins/52.png") :
+            cmc-id == 131 ? @image-url("icons/coins/131.png") :
+            cmc-id == 328 ? @image-url("icons/coins/328.png") :
+            cmc-id == 512 ? @image-url("icons/coins/512.png") :
+            cmc-id == 1027 ? @image-url("icons/coins/1027.png") :
+            cmc-id == 1437 ? @image-url("icons/coins/1437.png") :
+            cmc-id == 1720 ? @image-url("icons/coins/1720.png") :
+            cmc-id == 1831 ? @image-url("icons/coins/1831.png") :
+            cmc-id == 1839 ? @image-url("icons/coins/1839.png") :
+            cmc-id == 1966 ? @image-url("icons/coins/1966.png") :
+            @image-url("");
+}
+
 component TransactionDisplay inherits Rectangle {
     callback open-transaction(string);
 
@@ -98,7 +121,9 @@ component TransactionDisplay inherits Rectangle {
         date: "2013-11-01",
         time: "12:34:56",
         tx_type: UiTransactionType.buy,
+        received-cmc-id: 1,
         received: "1 BTC",
+        sent-cmc-id: -1,
         sent: "300 €",
         fee: "1 €",
         value: "300 €",
@@ -164,6 +189,9 @@ component TransactionDisplay inherits Rectangle {
         }
         Cell {
             horizontal-stretch: 2;
+            CurrencyIcon {
+                cmc-id: tx.sent-cmc-id;
+            }
             ElidingText {
                 text: tx.sent == "" ? "" : "–\{tx.sent}";
                 max-width: self.preferred-width;
@@ -176,6 +204,9 @@ component TransactionDisplay inherits Rectangle {
         }
         Cell {
             horizontal-stretch: 2;
+            CurrencyIcon {
+                cmc-id: tx.received-cmc-id;
+            }
             ElidingText {
                 text: tx.received == "" ? "" : "+\{tx.received}";
                 max-width: self.preferred-width;

@@ -24,7 +24,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
-use std::{error::Error, rc::Rc, path::Path};
+use std::{error::Error, rc::Rc, path::Path, collections::HashMap};
 
 #[derive(Serialize, Deserialize)]
 enum TransactionsSourceType {
@@ -151,7 +151,7 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     let mut unmatched_sends_receives = Vec::new();
     let mut matching_pairs = Vec::new();
 
-    for (index, tx) in &mut txs.iter().enumerate() {
+    for (index, tx) in txs.iter().enumerate() {
         match &tx.operation {
             Operation::Send(_) | Operation::Receive(_) => {
                 // try to find a matching transaction, by reverse iterating, but no further than one day ago (for receive) or one hour ago (for send)
@@ -316,6 +316,28 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
 fn main() -> Result<(), Box<dyn Error>> {
     let result = run()?;
 
+    // Map currencies to their CMC ID
+    // todo: support more currencies and load from file
+    let cmc_id_map = HashMap::from([
+        ("BTC", 1),
+        ("LTC", 2),
+        ("PPC", 5),
+        ("FTC", 8),
+        ("XRP", 52),
+        ("DASH", 131),
+        ("XMR", 328),
+        ("XLM", 512),
+        ("ETH", 1027),
+        ("ZEC", 1437),
+        ("MIOTA", 1720),
+        ("BCH", 1831),
+        ("BNB", 1839),
+        ("MANA", 1966),
+    ]);
+    let cmc_id = |amount: &Amount| {
+        *cmc_id_map.get(amount.currency.as_str()).unwrap_or(&-1)
+    };
+
     let ui = AppWindow::new()?;
     let (sources, transactions, entries) = result;
 
@@ -428,7 +450,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             date: transaction.timestamp.date().to_string().into(),
             time: transaction.timestamp.time().to_string().into(),
             tx_type,
+            received_cmc_id: received.map(cmc_id).unwrap_or(-1),
             received: received.map_or_else(String::default, Amount::to_string).into(),
+            sent_cmc_id: sent.map(cmc_id).unwrap_or(-1),
             sent: sent.map_or_else(String::default, Amount::to_string).into(),
             fee: transaction.fee.as_ref().map_or_else(String::default, Amount::to_string).into(),
             value: value.map_or_else(String::default, Amount::to_string).into(),
