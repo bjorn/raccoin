@@ -77,9 +77,18 @@ pub(crate) struct PoloniexTrade {
     // fee_total: Decimal,  // always same as fee
 }
 
+// Poloniex reported XLM as STR
+fn normalize_currency(currency: &str) -> &str {
+    match currency {
+        "STR" => "XLM",
+        _ => currency,
+    }
+}
+
 impl From<PoloniexDeposit> for Transaction {
     fn from(item: PoloniexDeposit) -> Self {
-        let mut tx = Transaction::receive(item.date, Amount::new(item.amount, item.currency));
+        let currency = normalize_currency(item.currency.as_str());
+        let mut tx = Transaction::receive(item.date, Amount::new(item.amount, currency.to_owned()));
         tx.description = Some(item.address);
         tx
     }
@@ -87,8 +96,9 @@ impl From<PoloniexDeposit> for Transaction {
 
 impl From<PoloniexWithdrawal> for Transaction {
     fn from(item: PoloniexWithdrawal) -> Self {
-        let mut tx = Transaction::send(item.date, Amount::new(item.amount_minus_fee, item.currency.clone()));
-        tx.fee = Some(Amount { quantity: item.fee_deducted, currency: item.currency });
+        let currency = normalize_currency(item.currency.as_str());
+        let mut tx = Transaction::send(item.date, Amount::new(item.amount_minus_fee, currency.to_owned()));
+        tx.fee = Some(Amount { quantity: item.fee_deducted, currency: currency.to_owned() });
         tx.description = Some(item.address);
         tx
     }
@@ -98,8 +108,8 @@ impl From<PoloniexTrade> for Transaction {
     fn from(item: PoloniexTrade) -> Self {
         // split record.market at the underscore to obtain the base_currency and the quote_currency
         let collect = item.market.split("_").collect::<Vec<&str>>();
-        let base_currency = collect[0];
-        let quote_currency = collect[1];
+        let base_currency = normalize_currency(collect[0]);
+        let quote_currency = normalize_currency(collect[1]);
 
         let timestamp = item.date.naive_utc();
 
