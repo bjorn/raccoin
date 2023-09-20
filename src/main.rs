@@ -15,16 +15,17 @@ mod trezor;
 
 use base::{Operation, Amount, Transaction};
 use chrono_tz::Europe;
-use chrono::{NaiveDateTime, Duration};
+use chrono::{NaiveDateTime, Duration, Datelike};
 use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
 use cryptotax_ui::*;
 use esplora::{blocking_esplora_client, address_transactions};
-use fifo::{fifo, save_gains_to_csv};
-use rust_decimal::{Decimal, RoundingStrategy};
+use fifo::FIFO;
 use rust_decimal_macros::dec;
+use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
+use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
-use std::{error::Error, rc::Rc, path::Path, collections::HashMap};
+use std::{error::Error, rc::Rc, path::Path};
 
 #[derive(Serialize, Deserialize)]
 enum TransactionsSourceType {
@@ -73,7 +74,33 @@ struct TransactionSource {
     transaction_count: usize,
 }
 
-fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>), Box<dyn Error>> {
+/// Maps currencies to their CMC ID
+/// todo: support more currencies and load from file
+fn cmc_id(amount: &Amount) -> i32 {
+    const CMC_ID_MAP: [(&str, i32); 15] = [
+        ("BCH", 1831),
+        ("BNB", 1839),
+        ("BTC", 1),
+        ("DASH", 131),
+        ("ETH", 1027),
+        ("FTC", 8),
+        ("LTC", 2),
+        ("MANA", 1966),
+        ("MIOTA", 1720),
+        ("PPC", 5),
+        ("XEM", 873),
+        ("XLM", 512),
+        ("XMR", 328),
+        ("XRP", 52),
+        ("ZEC", 1437),
+    ];
+    match CMC_ID_MAP.binary_search_by(|(currency, _)| (*currency).cmp(amount.currency.as_str())) {
+        Ok(index) => CMC_ID_MAP[index].1,
+        Err(_) => -1
+    }
+}
+
+fn load_transactions() -> Result<(Vec<TransactionSource>, Vec<Transaction>), Box<dyn Error>> {
     let sources_file = Path::new("sources.json");
     let sources_path = sources_file.parent().unwrap_or(Path::new(""));
     let mut sources: Vec<TransactionSource> = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
@@ -287,59 +314,84 @@ fn run() -> Result<(Vec<TransactionSource>, Vec<Transaction>, Vec<UiCapitalGain>
     // Estimate the value for all transactions
     txs.iter_mut().for_each(estimate_transaction_value);
 
-    let gains = fifo(&mut txs)?;
-
-    // output gains as CSV
-    let filename = format!("gains-{}.csv", 2013);
-    save_gains_to_csv(&gains, &filename)?;
-
-    let mut entries: Vec<UiCapitalGain> = Vec::new();
-
-    // add entries from result to ui
-    for gain in gains {
-        entries.push(UiCapitalGain {
-            currency: gain.amount.currency.into(),
-            bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
-            sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
-            // todo: something else than unwrap()?
-            quantity: gain.amount.quantity.try_into().unwrap(),
-            cost: gain.cost.try_into().unwrap(),
-            proceeds: gain.proceeds.try_into().unwrap(),
-            gain_or_loss: (gain.proceeds - gain.cost).try_into().unwrap(),
-            long_term: (gain.sold - gain.bought) > chrono::Duration::days(365),
-        });
-    }
-
-    Ok((sources, txs, entries))
+    Ok((sources, txs))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let result = run()?;
-
-    // Map currencies to their CMC ID
-    // todo: support more currencies and load from file
-    let cmc_id_map = HashMap::from([
-        ("BTC", 1),
-        ("LTC", 2),
-        ("PPC", 5),
-        ("FTC", 8),
-        ("XRP", 52),
-        ("DASH", 131),
-        ("XMR", 328),
-        ("XLM", 512),
-        ("ETH", 1027),
-        ("ZEC", 1437),
-        ("MIOTA", 1720),
-        ("BCH", 1831),
-        ("BNB", 1839),
-        ("MANA", 1966),
-    ]);
-    let cmc_id = |amount: &Amount| {
-        *cmc_id_map.get(amount.currency.as_str()).unwrap_or(&-1)
-    };
+    let (sources, mut transactions) = load_transactions()?;
 
     let ui = AppWindow::new()?;
-    let (sources, transactions, entries) = result;
+
+    // Process transactions per-year
+    let mut fifo = FIFO::new();
+    let reports: Vec<UiTaxReport> = transactions.linear_group_by_key_mut(|tx| tx.timestamp.year()).map(|txs| {
+        let year = txs.first().unwrap().timestamp.year();
+        let gains = fifo.process(txs);
+
+        let mut long_term_capital_gains = Decimal::ZERO;
+        let mut short_term_capital_gains = Decimal::ZERO;
+        let mut total_capital_losses = Decimal::ZERO;
+        let mut ui_gains: Vec<UiCapitalGain> = Vec::new();
+
+        for gain in gains {
+            let long_term = (gain.sold - gain.bought) > chrono::Duration::days(365);
+            let gain_or_loss = gain.proceeds - gain.cost;
+
+            if gain_or_loss.is_sign_positive() {
+                if long_term {
+                    long_term_capital_gains += gain_or_loss;
+                } else {
+                    short_term_capital_gains += gain_or_loss;
+                }
+            } else {
+                total_capital_losses -= gain_or_loss;
+            }
+
+            ui_gains.push(UiCapitalGain {
+                currency_cmc_id: cmc_id(&gain.amount),
+                currency: gain.amount.currency.into(),
+                bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
+                sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
+                // todo: something else than unwrap()?
+                quantity: gain.amount.quantity.try_into().unwrap(),
+                cost: gain.cost.try_into().unwrap(),
+                proceeds: gain.proceeds.try_into().unwrap(),
+                gain_or_loss: gain_or_loss.try_into().unwrap(),
+                long_term,
+            });
+        }
+
+        let mut gain_entries: Vec<ModelRc<StandardListViewItem>> = Vec::new();
+        for entry in ui_gains {
+            gain_entries.push(VecModel::from_slice(&[
+                StandardListViewItem::from(entry.currency),
+                StandardListViewItem::from(entry.bought.to_string().as_str()),
+                StandardListViewItem::from(entry.sold),
+                StandardListViewItem::from(entry.quantity.to_string().as_str()),
+                StandardListViewItem::from(entry.cost.to_string().as_str()),
+                StandardListViewItem::from(entry.proceeds.to_string().as_str()),
+                StandardListViewItem::from(entry.gain_or_loss.to_string().as_str()),
+                StandardListViewItem::from(if entry.long_term { "true" } else { "false" }),
+            ]));
+        }
+
+        let entries_model = Rc::new(VecModel::from(gain_entries));
+        let net_capital_gains = short_term_capital_gains + long_term_capital_gains - total_capital_losses;
+
+        UiTaxReport {
+            currencies: Default::default(),
+            gains: entries_model.into(),
+            long_term_capital_gains: format!("{:.2}", long_term_capital_gains).into(),
+            short_term_capital_gains: format!("{:.2}", short_term_capital_gains).into(),
+            net_capital_gains: format!("{:.2}", net_capital_gains).into(),
+            total_capital_losses: format!("{:.2}", total_capital_losses).into(),
+            year,
+        }
+    }).collect();
+
+    let report_years: Vec<StandardListViewItem> = reports.iter().map(|report| StandardListViewItem::from(report.year.to_string().as_str())).collect();
+    ui.set_report_years(Rc::new(VecModel::from(report_years)).into());
+    ui.set_reports(Rc::new(VecModel::from(reports)).into());
 
     let source_types: Vec<SharedString> = vec![
         TransactionsSourceType::BitcoinAddress,
@@ -464,23 +516,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     ui.set_transactions(Rc::new(VecModel::from(ui_transactions)).into());
-
-    let mut gain_entries: Vec<ModelRc<StandardListViewItem>> = Vec::new();
-    for entry in entries {
-        gain_entries.push(VecModel::from_slice(&[
-            StandardListViewItem::from(entry.currency),
-            StandardListViewItem::from(entry.bought.to_string().as_str()),
-            StandardListViewItem::from(entry.sold),
-            StandardListViewItem::from(entry.quantity.to_string().as_str()),
-            StandardListViewItem::from(entry.cost.to_string().as_str()),
-            StandardListViewItem::from(entry.proceeds.to_string().as_str()),
-            StandardListViewItem::from(entry.gain_or_loss.to_string().as_str()),
-            StandardListViewItem::from(if entry.long_term { "true" } else { "false" }),
-        ]));
-    }
-
-    let entries_model = Rc::new(VecModel::from(gain_entries));
-    ui.set_gain_entries(entries_model.into());
 
     ui.on_open_transaction(move |tx_hash| {
         let _ = open::that(format!("http://blockchair.com/bitcoin/transaction/{}", tx_hash));

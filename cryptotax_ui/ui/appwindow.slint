@@ -1,25 +1,15 @@
-import { StandardTableView, TabWidget, ListView, HorizontalBox, CheckBox, ComboBox} from "std-widgets.slint";
+import { HorizontalBox, CheckBox, ComboBox} from "std-widgets.slint";
 import { Sources, UiTransactionSource } from "./sources.slint";
 import { Transactions, UiTransaction } from "./transactions.slint";
+import { Reports, UiTaxReport, UiCapitalGain } from "./reports.slint";
+import { TestData } from "./test-data.slint";
 
-import { CapitalGains } from "./capital-gains.slint";
-
-// Unused by Slint for now, but might be a better way of exposing data to UI
-export struct UiCapitalGain {
-    currency: string,
-    bought: string,
-    sold: string,
-    quantity: float,
-    cost: float,
-    proceeds: float,
-    gain_or_loss: float,
-    long_term: bool,
-}
+export { UiCapitalGain }
 
 enum Page {
     sources,
     transactions,
-    capital-gains,
+    reports,
 }
 
 component Badge inherits VerticalLayout {
@@ -74,14 +64,16 @@ component PageButton inherits Rectangle {
 }
 
 export component AppWindow inherits Window {
-    in property <[UiTransactionSource]> sources;
+    in property <[UiTransactionSource]> sources: TestData.sources;
     in property <[string]> source_types;
-    in property <[UiTransaction]> transactions;
+    in property <[UiTransaction]> transactions: TestData.transactions;
     in property <[[StandardListViewItem]]> gain-entries;
+    in property <[StandardListViewItem]> report-years: TestData.report-years;
+    in property <[UiTaxReport]> reports: TestData.reports;
 
     callback open-transaction(string);
 
-    property <Page> active-page: Page.sources;
+    property <Page> active-page: Page.reports;
 
     title: "Crypto Tax Tool";
 
@@ -113,12 +105,12 @@ export component AppWindow inherits Window {
                 }
             }
             PageButton {
-                text: "Capital Gains";
-                active: root.active-page == Page.capital-gains;
-                pressed => { root.active-page = Page.capital-gains; }
+                text: "Reports";
+                active: root.active-page == Page.reports;
+                pressed => { root.active-page = Page.reports; }
 
                 Badge {
-                    text: root.gain-entries.length;
+                    text: root.reports.length;
                 }
             }
         }
@@ -135,14 +127,10 @@ export component AppWindow inherits Window {
                 open-transaction(s) => { root.open-transaction(s); }
             }
 
-            CapitalGains {
-                visible: active-page == Page.capital-gains;
-                gain-entries: root.gain-entries;
-
-                // somehow a StandardTableView doesn't do this by default
-                // also, Slint compiler crashes if I put this in the component?
-                width: 100%;
-                height: 100%;
+            Reports {
+                visible: active-page == Page.reports;
+                report-years: root.report-years;
+                reports: root.reports;
             }
         }
     }

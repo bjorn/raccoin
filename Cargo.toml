@@ -8,14 +8,15 @@ edition = "2021"
 
 [dependencies]
 csv = "1.2"
-serde = { version = "1.0.55", features = ["derive"] }
-chrono = { version = "0.4.26", features = ["serde"] }
+serde = { version = "1.0.188", features = ["derive"] }
+chrono = { version = "0.4.31", features = ["serde"] }
 chrono-tz = "0.8"
-serde_json = "1.0.105"
+serde_json = "1.0.107"
 esplora-client = { version = "0.6", default-features = false, features = ["blocking"] }
 bitcoin = "0.30.1"
-slint = "1.2"
+slint = "1.2.1"
 open = "5.0.0"
 rust_decimal = "1.32"
 rust_decimal_macros = "1.32"
 cryptotax_ui = { path = "cryptotax_ui" }
+slice-group-by = "0.3.1"

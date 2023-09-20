@@ -1,0 +1,86 @@
+import { UiTransaction, UiTransactionType } from "./transactions.slint";
+import { UiTransactionSource } from "./sources.slint";
+import { UiTaxReport, UiCurrencySummary } from "./reports.slint";
+
+export global TestData {
+    out property <[UiTransaction]> transactions : [{
+        from: "Exchange Foo",
+        to: "Exchange Foo",
+        date: "2013-10-30",
+        time: "12:34:56",
+        tx_type: UiTransactionType.trade,
+        received-cmc-id: 1,
+        received: "1 BTC",
+        sent-cmc-id: -1,
+        sent: "300 €",
+        fee: "",
+        value: "300 €",
+        gain: 0.0,
+        gain_error: "",
+        description: "Foo bar baz",
+        tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    }, {
+        from: "Exchange Foo",
+        to: "Wallet Bar",
+        date: "2013-11-01",
+        time: "12:34:56",
+        tx_type: UiTransactionType.transfer,
+        received-cmc-id: 1,
+        received: "1 BTC",
+        sent-cmc-id: 1,
+        sent: "1 BTC",
+        fee: "0.0001 BTC",
+        value: "300 €",
+        gain: 0.0,
+        gain_error: "",
+        description: "Sent to hardware wallet",
+        tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    }];
+
+    out property <[UiTransactionSource]> sources : [{
+        source_type: "ExchangeCsv",
+        name: "Exchange",
+        path: "/foo/bar/exchange.csv",
+        transaction_count: 2,
+    }];
+
+    out property <[StandardListViewItem]> report-years: [
+        { text: "2013" },
+    ];
+    out property <[UiTaxReport]> reports : [{
+        year: 2013,
+        net_capital_gains: "4,058.46",
+        short_term_capital_gains: "5,080.28",
+        long_term_capital_gains: "0",
+        total_capital_losses: "1,021.83",
+        // ordinary_income: string,
+        // derivative_trading_income: string,
+        // expenses: string,
+        currencies: [{
+            currency-cmc-id: 1,
+            currency: "BTC",
+            balance_start: "0",
+            balance_end: "1",
+            quantity_disposed: "1",
+            cost: "300",
+            fees: "0",
+            proceeds: "300",
+            capital_profit_loss: "300",
+            income: "0",
+            total_profit_loss: "300",
+        },
+        {
+            currency-cmc-id: 5,
+            currency: "PPC",
+            balance_start: "0",
+            balance_end: "294",
+            quantity_disposed: "554",
+            cost: "144",
+            fees: "0",
+            proceeds: "1460",
+            capital_profit_loss: "1316",
+            income: "0",
+            total_profit_loss: "1316",
+        }],
+    }];
+}

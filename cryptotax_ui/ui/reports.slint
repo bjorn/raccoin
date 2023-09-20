@@ -1,0 +1,115 @@
+import { HorizontalBox, VerticalBox, StandardListView } from "std-widgets.slint";
+import { CapitalGains } from "./capital-gains.slint";
+
+export struct UiCurrencySummary {
+    currency-cmc-id: int,
+    currency: string,
+    balance_start: string,
+    balance_end: string,
+    quantity_disposed: string,
+    cost: string,
+    fees: string,
+    proceeds: string,
+    capital_profit_loss: string,
+    income: string,
+    total_profit_loss: string,
+}
+
+export struct UiCapitalGain {
+    currency-cmc-id: int,
+    currency: string,
+    bought: string,
+    sold: string,
+    quantity: float,
+    cost: float,
+    proceeds: float,
+    gain_or_loss: float,
+    long_term: bool,
+}
+
+export struct UiTaxReport {
+    year: int,
+    net_capital_gains: string,
+    short_term_capital_gains: string,
+    long_term_capital_gains: string,
+    total_capital_losses: string,
+    // ordinary_income: string,
+    // derivative_trading_income: string,
+    // expenses: string,
+    currencies: [UiCurrencySummary],
+    gains: [[StandardListViewItem]],
+}
+
+export component Reports inherits Rectangle {
+    in property <[StandardListViewItem]> report-years <=> year-list.model;
+    in property <[UiTaxReport]> reports;
+
+    property <UiTaxReport> report: reports[year-list.current-item];
+
+    HorizontalLayout {
+        year-list := StandardListView {
+            current-item: 0;
+            min-width: 80px;
+            max-width: 150px;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 10;
+
+            HorizontalLayout {
+                VerticalLayout {
+                    width: 50%;
+                    HorizontalBox {
+                        Text {
+                            text: "Net Capital Gains";
+                            font-size: 15px;
+                            font-weight: 600;
+                        }
+                        Text {
+                            text: report.net-capital-gains;
+                            horizontal-alignment: right;
+                            font-size: 15px;
+                            font-weight: 600;
+                        }
+                    }
+                    HorizontalBox {
+                        Text {
+                            text: "Short Term Capital Gains";
+                            opacity: 0.8;
+                        }
+                        Text {
+                            text: report.short-term-capital-gains;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    HorizontalBox {
+                        Text {
+                            text: "Long Term Capital Gains";
+                            opacity: 0.8;
+                        }
+                        Text {
+                            text: report.long-term-capital-gains;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    HorizontalBox {
+                        Text {
+                            text: "Total Capital Losses";
+                            opacity: 0.8;
+                        }
+                        Text {
+                            text: report.total-capital-losses;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+            }
+
+            CapitalGains {
+                gain-entries: report.gains;
+                vertical-stretch: 1;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+}

@@ -24,64 +24,6 @@ pub(crate) struct CapitalGain {
     pub proceeds: Decimal,
 }
 
-/// Determines the capital gains made with this sale based on the oldest
-/// holdings and the current price. Consumes the holdings in the process.
-fn gains<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, timestamp: NaiveDateTime, outgoing: &'a Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
-    // todo: find a way to not insert an empty deque?
-    let currency_holdings = holdings.entry(&outgoing.currency).or_default();
-
-    let mut capital_gains: Vec<CapitalGain> = Vec::new();
-    let mut sold_quantity = outgoing.quantity;
-    if sold_quantity.is_zero() {
-        return Ok(capital_gains);
-    }
-
-    let sold_unit_price = incoming_fiat / sold_quantity;
-
-    while let Some(holding) = currency_holdings.front_mut() {
-        if holding.timestamp > timestamp {
-            return Err(GainError::InvalidTransactionOrder);
-        }
-
-        // we can process up to the amount in the holding entry
-        let processed_quantity = holding.remaining.min(sold_quantity);
-        let cost = processed_quantity * holding.unit_price;
-        let proceeds = processed_quantity * sold_unit_price;
-
-        capital_gains.push(CapitalGain {
-            bought: holding.timestamp,
-            sold: timestamp,
-            amount: Amount {
-                quantity: processed_quantity,
-                currency: outgoing.currency.clone(),
-            },
-            cost,
-            proceeds,
-        });
-
-        println!("    {:?}", capital_gains.last().unwrap());
-
-        sold_quantity -= processed_quantity;
-
-        if holding.remaining == processed_quantity {
-            // consume the holding and keep processing the remaining quantity
-            currency_holdings.pop_front();
-        } else {
-            // we finished processing the sale
-            holding.remaining -= processed_quantity;
-            break;
-        }
-    }
-
-    println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
-
-    if sold_quantity > Decimal::ZERO {
-        return Err(GainError::InsufficientBalance);
-    }
-
-    Ok(capital_gains)
-}
-
 fn fiat_value(amount: &Option<Amount>) -> Result<Decimal, GainError> {
     match amount {
         Some(amount) => {
@@ -95,99 +37,183 @@ fn fiat_value(amount: &Option<Amount>) -> Result<Decimal, GainError> {
     }
 }
 
-fn add_holdings<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, tx: &Transaction, amount: &'a Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {
-    holdings.entry(&amount.currency).or_default().push_back(Entry {
-        timestamp: tx.timestamp,
-        unit_price: fiat_value(value)? / amount.quantity,
-        remaining: amount.quantity,
-    });
-    Ok(Decimal::ZERO)
+pub(crate) struct FIFO {
+    holdings: HashMap<String, VecDeque<Entry>>,
 }
 
-fn dispose_holdings<'a>(holdings: &mut HashMap<&'a str, VecDeque<Entry>>, capital_gains: &mut Vec<CapitalGain>, timestamp: NaiveDateTime, outgoing: &'a Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {
-    let tx_gains = gains(holdings, timestamp, outgoing, fiat_value(value)?);
-    match tx_gains {
-        Ok(gains) => {
-            let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
-            capital_gains.extend(gains);
-            Ok(gain)
-        },
-        Err(e) => Err(e),
+impl FIFO {
+    pub(crate) fn new() -> Self {
+        FIFO {
+            holdings: HashMap::new(),
+        }
     }
-}
 
-pub(crate) fn fifo(transactions: &mut Vec<Transaction>) -> Result<Vec<CapitalGain>, Box<dyn Error>> {
-    // holdings represented as a map of currency -> deque
-    let mut holdings: HashMap<&str, VecDeque<Entry>> = HashMap::new();
-    let mut capital_gains: Vec<CapitalGain> = Vec::new();
+    pub(crate) fn process(&mut self, transactions: &mut [Transaction]) -> Vec<CapitalGain> {
+        // holdings represented as a map of currency -> deque
+        let mut capital_gains: Vec<CapitalGain> = Vec::new();
 
-    for transaction in transactions {
-        println!("{:?}", transaction);
+        for transaction in transactions {
+            println!("{:?}", transaction);
 
-        match &transaction.operation {
-            Operation::IncomingGift(amount) |
-            Operation::Airdrop(amount) |
-            Operation::Buy(amount) |
-            Operation::Income(amount) => {
-                transaction.gain = Some(add_holdings(&mut holdings, transaction, amount, &transaction.value));
-            },
-            Operation::Trade{incoming, outgoing} => {
-                // When we're trading crypto for crypto, it is
-                // technically handled as if we sold one crypto for fiat
-                // and then used fiat to buy another crypto.
-                if !outgoing.is_fiat() {
-                    transaction.gain = Some(dispose_holdings(&mut holdings, &mut capital_gains, transaction.timestamp, outgoing, &transaction.value));
+            match &transaction.operation {
+                Operation::IncomingGift(amount) |
+                Operation::Airdrop(amount) |
+                Operation::Buy(amount) |
+                Operation::Income(amount) => {
+                    transaction.gain = Some(self.add_holdings(transaction, amount, &transaction.value));
+                },
+                Operation::Trade{incoming, outgoing} => {
+                    // When we're trading crypto for crypto, it is
+                    // technically handled as if we sold one crypto for fiat
+                    // and then used fiat to buy another crypto.
+                    if !outgoing.is_fiat() {
+                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, outgoing, &transaction.value));
+                    }
+
+                    if !incoming.is_fiat() {
+                        let result = self.add_holdings(transaction, incoming, &transaction.value);
+                        if result.is_err() && transaction.gain.is_none() {
+                            transaction.gain = Some(result);
+                        }
+                    }
                 }
+                Operation::Fee(amount) |
+                Operation::Expense(amount) |
+                Operation::Sell(amount) |
+                Operation::OutgoingGift(amount) => {
+                    transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, amount, &transaction.value));
+                },
+                Operation::Noop |
+                Operation::FiatDeposit(_) |
+                Operation::FiatWithdrawal(_) |
+                Operation::Receive(_) |
+                Operation::Send(_) |
+                Operation::Spam(_) => {
+                    // Non-taxable events
+                },
+                Operation::ChainSplit(amount) => {
+                    // Chain split is special in that it adds holdings with 0 cost base
+                    transaction.gain = Some(self.add_holdings(transaction, amount, &Some(Amount { quantity: Decimal::ZERO, currency: "EUR".to_owned() })));
+                },
+            }
 
-                if !incoming.is_fiat() {
-                    let result = add_holdings(&mut holdings, transaction, incoming, &transaction.value);
-                    if result.is_err() && transaction.gain.is_none() {
-                        transaction.gain = Some(result);
+            if let Some(fee) = &transaction.fee {
+                if !fee.is_fiat() {
+                    match self.dispose_holdings(&mut capital_gains, transaction.timestamp, &fee, &transaction.fee_value) {
+                        Ok(gain) => {
+                            match &mut transaction.gain {
+                                Some(Ok(g)) => {
+                                    *g += gain;
+                                }
+                                Some(Err(_)) => {},
+                                None => transaction.gain = Some(Ok(gain)),
+                            }
+                        },
+                        Err(err) => if transaction.gain.is_none() {
+                            transaction.gain = Some(Err(err));
+                        },
                     }
                 }
             }
-            Operation::Fee(amount) |
-            Operation::Expense(amount) |
-            Operation::Sell(amount) |
-            Operation::OutgoingGift(amount) => {
-                transaction.gain = Some(dispose_holdings(&mut holdings, &mut capital_gains, transaction.timestamp, amount, &transaction.value));
-            },
-            Operation::Noop |
-            Operation::FiatDeposit(_) |
-            Operation::FiatWithdrawal(_) |
-            Operation::Receive(_) |
-            Operation::Send(_) |
-            Operation::Spam(_) => {
-                // Non-taxable events
-            },
-            Operation::ChainSplit(amount) => {
-                // Chain split is special in that it adds holdings with 0 cost base
-                transaction.gain = Some(add_holdings(&mut holdings, transaction, amount, &Some(Amount { quantity: Decimal::ZERO, currency: "EUR".to_owned() })));
-            },
         }
 
-        if let Some(fee) = &transaction.fee {
-            if !fee.is_fiat() {
-                match dispose_holdings(&mut holdings, &mut capital_gains, transaction.timestamp, &fee, &transaction.fee_value) {
-                    Ok(gain) => {
-                        match &mut transaction.gain {
-                            Some(Ok(g)) => {
-                                *g += gain;
-                            }
-                            Some(Err(_)) => {},
-                            None => transaction.gain = Some(Ok(gain)),
-                        }
-                    },
-                    Err(err) => if transaction.gain.is_none() {
-                        transaction.gain = Some(Err(err));
-                    },
-                }
+        capital_gains
+    }
+
+    /// Determines the capital gains made with this sale based on the oldest
+    /// holdings and the current price. Consumes the holdings in the process.
+    fn gains(&mut self, timestamp: NaiveDateTime, outgoing: &Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
+        // todo: find a way to not insert an empty deque?
+        let currency_holdings = self.holdings_for_currency(&outgoing.currency);
+
+        let mut capital_gains: Vec<CapitalGain> = Vec::new();
+        let mut sold_quantity = outgoing.quantity;
+        if sold_quantity.is_zero() {
+            return Ok(capital_gains);
+        }
+
+        let sold_unit_price = incoming_fiat / sold_quantity;
+
+        while let Some(holding) = currency_holdings.front_mut() {
+            if holding.timestamp > timestamp {
+                return Err(GainError::InvalidTransactionOrder);
             }
+
+            // we can process up to the amount in the holding entry
+            let processed_quantity = holding.remaining.min(sold_quantity);
+            let cost = processed_quantity * holding.unit_price;
+            let proceeds = processed_quantity * sold_unit_price;
+
+            capital_gains.push(CapitalGain {
+                bought: holding.timestamp,
+                sold: timestamp,
+                amount: Amount {
+                    quantity: processed_quantity,
+                    currency: outgoing.currency.clone(),
+                },
+                cost,
+                proceeds,
+            });
+
+            println!("    {:?}", capital_gains.last().unwrap());
+
+            sold_quantity -= processed_quantity;
+
+            if holding.remaining == processed_quantity {
+                // consume the holding and keep processing the remaining quantity
+                currency_holdings.pop_front();
+            } else {
+                // we finished processing the sale
+                holding.remaining -= processed_quantity;
+                break;
+            }
+        }
+
+        println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
+
+        if sold_quantity > Decimal::ZERO {
+            return Err(GainError::InsufficientBalance);
+        }
+
+        Ok(capital_gains)
+    }
+
+    fn holdings_for_currency(&mut self, currency: &str) -> &mut VecDeque<Entry> {
+        // match self.holdings.get_mut(currency) {
+        //     Some(vec) => vec,
+        //     None => self.holdings.entry(currency.to_owned()).or_default(),
+        // }
+        // Why does the above not work? It would avoid one needles lookup...
+        if self.holdings.contains_key(currency) {
+            self.holdings.get_mut(currency).unwrap()
+        } else {
+            self.holdings.entry(currency.to_owned()).or_default()
         }
     }
 
-    Ok(capital_gains)
+    fn add_holdings(&mut self, tx: &Transaction, amount: &Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {
+        self.holdings_for_currency(&amount.currency).push_back(Entry {
+            timestamp: tx.timestamp,
+            unit_price: fiat_value(value)? / amount.quantity,
+            remaining: amount.quantity,
+        });
+
+        Ok(Decimal::ZERO)
+    }
+
+    fn dispose_holdings(&mut self, capital_gains: &mut Vec<CapitalGain>, timestamp: NaiveDateTime, outgoing: &Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {
+        let tx_gains = self.gains(timestamp, outgoing, fiat_value(value)?);
+        match tx_gains {
+            Ok(gains) => {
+                let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
+                capital_gains.extend(gains);
+                Ok(gain)
+            },
+            Err(e) => Err(e),
+        }
+    }
 }
+
 
 fn total_holdings(holdings: &VecDeque<Entry>) -> Decimal {
     let mut total_amount = Decimal::ZERO;
