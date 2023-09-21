@@ -1,11 +1,6 @@
 import { ListView, HorizontalBox, CheckBox, ComboBox } from "std-widgets.slint";
-
-export struct UiTransactionSource {
-    source_type: string,
-    name: string,
-    path: string,
-    transaction_count: int,
-}
+import { Badge } from "./common.slint";
+import { UiTransactionSource } from "./structs.slint";
 
 export component Sources inherits ListView {
     in property <[UiTransactionSource]> sources;
@@ -21,12 +16,12 @@ export component Sources inherits ListView {
             text: source.path;
             vertical-alignment: center;
         }
-        Text {
-            text: "(\{source.transaction-count} transactions)";
-            horizontal-stretch: 1;
-            vertical-alignment: center;
-            opacity: 0.5;
+        Rectangle { width: 1px; }
+        Badge {
+            text: "\{source.transaction-count} transactions";
+            opacity: 0.8;
         }
+        Rectangle {}
         ComboBox {
             model: source_types;
             horizontal-stretch: 0;

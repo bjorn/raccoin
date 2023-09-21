@@ -1,6 +1,10 @@
-import { UiTransaction, UiTransactionType } from "./transactions.slint";
-import { UiTransactionSource } from "./sources.slint";
-import { UiTaxReport, UiCurrencySummary } from "./reports.slint";
+import {
+    UiCurrencySummary,
+    UiTaxReport,
+    UiTransaction,
+    UiTransactionSource,
+    UiTransactionType
+} from "./structs.slint";
 
 export global TestData {
     out property <[UiTransaction]> transactions : [{
@@ -17,8 +21,8 @@ export global TestData {
         value: "300 €",
         gain: 0.0,
         gain_error: "",
-        description: "Foo bar baz",
-        tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+        description: "Invest in Bitcoin",
+        tx_hash: "",
     }, {
         from: "Exchange Foo",
         to: "Wallet Bar",
@@ -26,15 +30,31 @@ export global TestData {
         time: "12:34:56",
         tx_type: UiTransactionType.transfer,
         received-cmc-id: 1,
-        received: "1 BTC",
+        received: "0.5 BTC",
         sent-cmc-id: 1,
-        sent: "1 BTC",
+        sent: "0.5 BTC",
         fee: "0.0001 BTC",
         value: "300 €",
         gain: 0.0,
         gain_error: "",
-        description: "Sent to hardware wallet",
+        description: "Sent some to hardware wallet",
         tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    }, {
+        from: "Exchange Foo",
+        to: "Exchange Foo",
+        date: "2013-10-30",
+        time: "12:34:56",
+        tx_type: UiTransactionType.trade,
+        received-cmc-id: 1,
+        received: "200 €",
+        sent-cmc-id: -1,
+        sent: "1 BTC",
+        fee: "",
+        value: "200 €",
+        gain: 50.0,
+        gain_error: "",
+        description: "Made some profit",
+        tx_hash: "",
     }];
 
     out property <[UiTransactionSource]> sources : [{

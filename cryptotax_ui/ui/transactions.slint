@@ -1,57 +1,13 @@
 import { ListView } from "std-widgets.slint";
-
-export enum UiTransactionType {
-    buy,
-    sell,
-    trade,
-    deposit,
-    withdrawal,
-    fee,
-    receive,
-    send,
-    transfer,
-    chain-split,
-    expense,
-    income,
-    airdrop,
-    spam,
-}
-
-export struct UiTransaction {
-    from: string,
-    to: string,
-    date: string,
-    time: string,
-    tx_type: UiTransactionType,
-    received_cmc_id: int,
-    received: string,
-    sent_cmc_id: int,
-    sent: string,
-    fee: string,
-    value: string,
-    gain: float,
-    gain_error: string,
-    description: string,
-    tx_hash: string,
-}
-
-component Cell inherits HorizontalLayout {
-    horizontal-stretch: 1;
-    preferred-width: 0;
-    min-width: 0;
-    spacing: 5px;
-}
-
-component ElidingText inherits Text {
-    overflow: elide;
-    vertical-alignment: center;
-}
-
-component TextCell inherits ElidingText {
-    horizontal-stretch: 1;
-    preferred-width: 0;
-    min-width: 0;
-}
+import {
+    Cell,
+    CurrencyIcon,
+    ElidingText,
+    TextCell,
+    HeaderCell
+} from "./common.slint";
+import { TestData } from "./test-data.slint";
+import { UiTransactionType, UiTransaction } from "./structs.slint";
 
 component SmallButton inherits Rectangle {
     in property text <=> i-text.text;
@@ -60,8 +16,10 @@ component SmallButton inherits Rectangle {
 
     callback clicked;
 
-    border-radius: 2px;
+    border-radius: self.height / 4;
     background: i-touch.has-hover ? #5e5e5e : #2e2e2e;
+    border-color: i-touch.has-hover ? #6e6e6e : #3e3e3e;
+    border-width: 1px;
     preferred-width: i-text.preferred-width + 5px;
     min-width: self.height;
     height: i-text.preferred-height + 5px;
@@ -91,65 +49,22 @@ component SmallButton inherits Rectangle {
     }
 }
 
-component CurrencyIcon inherits Image {
-    in property <int> cmc-id;
-
-    width: 14px;
-    source: cmc-id == 1 ? @image-url("icons/coins/1.png"):
-            cmc-id == 2 ? @image-url("icons/coins/2.png") :
-            cmc-id == 5 ? @image-url("icons/coins/5.png") :
-            cmc-id == 8 ? @image-url("icons/coins/8.png") :
-            cmc-id == 52 ? @image-url("icons/coins/52.png") :
-            cmc-id == 131 ? @image-url("icons/coins/131.png") :
-            cmc-id == 328 ? @image-url("icons/coins/328.png") :
-            cmc-id == 512 ? @image-url("icons/coins/512.png") :
-            cmc-id == 1027 ? @image-url("icons/coins/1027.png") :
-            cmc-id == 1437 ? @image-url("icons/coins/1437.png") :
-            cmc-id == 1720 ? @image-url("icons/coins/1720.png") :
-            cmc-id == 1831 ? @image-url("icons/coins/1831.png") :
-            cmc-id == 1839 ? @image-url("icons/coins/1839.png") :
-            cmc-id == 1966 ? @image-url("icons/coins/1966.png") :
-            @image-url("");
-}
-
 component TransactionDisplay inherits Rectangle {
     callback open-transaction(string);
 
-    in property <UiTransaction> tx : {
-        from: "Exchange Foo",
-        to: "Wallet Bar",
-        date: "2013-11-01",
-        time: "12:34:56",
-        tx_type: UiTransactionType.buy,
-        received-cmc-id: 1,
-        received: "1 BTC",
-        sent-cmc-id: -1,
-        sent: "300 €",
-        fee: "1 €",
-        value: "300 €",
-        gain: 0.0,
-        gain_error: "",
-        description: "Foo bar baz",
-        tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
-    };
-
+    in property <UiTransaction> tx : TestData.transactions[0];
     in property <bool> even;
 
-    background: {
-        if (touch.has-hover || tx-btn.has-hover || desc-btn.has-hover) {
-            return #4564;
-        }
-        if (even) {
-            return #ffffff06;
-        }
-        transparent
-    }
+    property <bool> is-hovered: touch.has-hover || tx-btn.has-hover || desc-btn.has-hover;
+
+    background: is-hovered ? #4564 : even ? #ffffff06 : transparent;
+    border-radius: self.height / 4;
 
     touch := TouchArea {}
 
     HorizontalLayout {
         padding-left: 5px;
-        padding-right: 5px;
+        padding-right: 2px;
         padding-top: 2px;
         padding-bottom: 2px;
         spacing: 2px;
@@ -232,7 +147,7 @@ component TransactionDisplay inherits Rectangle {
             color: tx.gain < 0 || tx.gain-error != "" ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
         }
         HorizontalLayout {
-            spacing: 5px;
+            spacing: 3px;
 
             tx-btn := SmallButton {
                 visible: tx.tx-hash != "";
@@ -251,14 +166,75 @@ component TransactionDisplay inherits Rectangle {
     }
 }
 
-export component Transactions inherits ListView {
+export component Transactions inherits VerticalLayout {
     in property <[UiTransaction]> transactions;
 
     callback open-transaction(string);
 
-    for tx[index] in transactions: TransactionDisplay {
-        even: mod(index, 2) == 0;
-        tx: tx;
-        open-transaction => { root.open-transaction(tx.tx_hash); }
+    spacing: 2px;
+
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 15px;
+        padding-top: 2px;
+        padding-bottom: 2px;
+        spacing: 2px;
+        // width: transactions-view.visible-width;   // what we want, but causes binding loop
+
+        Rectangle {
+            HorizontalLayout {
+                visible: false; // only used for alignment purposes
+                alignment: start;
+                spacing: 6px;
+                padding-right: 5px;
+
+                ElidingText {
+                    text: "2013-10-30";
+                    min-width: self.preferred-width;
+                }
+                ElidingText {
+                    text: "12:34:56";
+                    opacity: 0.5;
+                    font-size: 10px;
+                    min-width: self.preferred-width;
+                }
+            }
+
+            ElidingText {
+                text: "Date";
+                width: 100%;
+                height: 100%;
+                opacity: 0.8;
+                font-size: 10px;
+            }
+        }
+        HeaderCell { text: "Action"; }
+        HeaderCell { text: "Outgoing"; horizontal-stretch: 2; }
+        HeaderCell { text: "Incoming"; horizontal-stretch: 2; }
+        HeaderCell { text: "Fee"; }
+        HeaderCell { text: "Value"; }
+        HeaderCell { text: "Gain (€)"; }
+        HorizontalLayout {
+            height: 0;
+            visible: false; // only used for alignment purposes
+            spacing: 3px;
+
+            SmallButton { text: "#"; }
+            SmallButton { text: "?"; }
+        }
+    }
+
+    Rectangle {
+        height: 1px;
+        background: white;
+        opacity: 0.25;
+    }
+
+    ListView {
+        for tx[index] in transactions: TransactionDisplay {
+            even: mod(index, 2) == 0;
+            tx: tx;
+            open-transaction => { root.open-transaction(tx.tx_hash); }
+        }
     }
 }

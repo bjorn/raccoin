@@ -123,7 +123,6 @@ impl FIFO {
     /// Determines the capital gains made with this sale based on the oldest
     /// holdings and the current price. Consumes the holdings in the process.
     fn gains(&mut self, timestamp: NaiveDateTime, outgoing: &Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
-        // todo: find a way to not insert an empty deque?
         let currency_holdings = self.holdings_for_currency(&outgoing.currency);
 
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
@@ -178,6 +177,10 @@ impl FIFO {
         Ok(capital_gains)
     }
 
+    pub(crate) fn currency_balance(&self, currency: &str) -> Decimal {
+        self.holdings.get(currency).map_or(Decimal::ZERO, total_holdings)
+    }
+
     fn holdings_for_currency(&mut self, currency: &str) -> &mut VecDeque<Entry> {
         // match self.holdings.get_mut(currency) {
         //     Some(vec) => vec,
@@ -214,13 +217,8 @@ impl FIFO {
     }
 }
 
-
 fn total_holdings(holdings: &VecDeque<Entry>) -> Decimal {
-    let mut total_amount = Decimal::ZERO;
-    for h in holdings {
-        total_amount += h.remaining;
-    }
-    total_amount
+    holdings.iter().map(|e| e.remaining).sum()
 }
 
 pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &str) -> Result<(), Box<dyn Error>> {

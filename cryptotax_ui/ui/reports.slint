@@ -1,44 +1,13 @@
-import { HorizontalBox, VerticalBox, StandardListView } from "std-widgets.slint";
+import { ComboBox, HorizontalBox, ListView, VerticalBox, StandardListView } from "std-widgets.slint";
 import { CapitalGains } from "./capital-gains.slint";
-
-export struct UiCurrencySummary {
-    currency-cmc-id: int,
-    currency: string,
-    balance_start: string,
-    balance_end: string,
-    quantity_disposed: string,
-    cost: string,
-    fees: string,
-    proceeds: string,
-    capital_profit_loss: string,
-    income: string,
-    total_profit_loss: string,
-}
-
-export struct UiCapitalGain {
-    currency-cmc-id: int,
-    currency: string,
-    bought: string,
-    sold: string,
-    quantity: float,
-    cost: float,
-    proceeds: float,
-    gain_or_loss: float,
-    long_term: bool,
-}
-
-export struct UiTaxReport {
-    year: int,
-    net_capital_gains: string,
-    short_term_capital_gains: string,
-    long_term_capital_gains: string,
-    total_capital_losses: string,
-    // ordinary_income: string,
-    // derivative_trading_income: string,
-    // expenses: string,
-    currencies: [UiCurrencySummary],
-    gains: [[StandardListViewItem]],
-}
+import {
+    Cell,
+    CurrencyIcon,
+    ElidingText,
+    TextCell,
+    HeaderCell
+} from "./common.slint";
+import { UiTaxReport } from "./structs.slint";
 
 export component Reports inherits Rectangle {
     in property <[StandardListViewItem]> report-years <=> year-list.model;
@@ -46,20 +15,24 @@ export component Reports inherits Rectangle {
 
     property <UiTaxReport> report: reports[year-list.current-item];
 
-    HorizontalLayout {
+    HorizontalBox {
+        padding: 0;
+
         year-list := StandardListView {
             current-item: 0;
             min-width: 80px;
             max-width: 150px;
         }
 
-        VerticalLayout {
+        VerticalBox {
             horizontal-stretch: 10;
+            padding: 0;
 
             HorizontalLayout {
                 VerticalLayout {
                     width: 50%;
                     HorizontalBox {
+                        padding: 3px;
                         Text {
                             text: "Net Capital Gains";
                             font-size: 15px;
@@ -73,6 +46,7 @@ export component Reports inherits Rectangle {
                         }
                     }
                     HorizontalBox {
+                        padding: 3px;
                         Text {
                             text: "Short Term Capital Gains";
                             opacity: 0.8;
@@ -83,6 +57,7 @@ export component Reports inherits Rectangle {
                         }
                     }
                     HorizontalBox {
+                        padding: 3px;
                         Text {
                             text: "Long Term Capital Gains";
                             opacity: 0.8;
@@ -93,6 +68,7 @@ export component Reports inherits Rectangle {
                         }
                     }
                     HorizontalBox {
+                        padding: 3px;
                         Text {
                             text: "Total Capital Losses";
                             opacity: 0.8;
@@ -105,10 +81,87 @@ export component Reports inherits Rectangle {
                 }
             }
 
-            CapitalGains {
-                gain-entries: report.gains;
-                vertical-stretch: 1;
-                horizontal-stretch: 1;
+            HorizontalLayout {
+                alignment: start;
+                report-combo := ComboBox {
+                    model: [
+                        "Report Summary",
+                        "Capital Gains Report"
+                    ];
+                    current-index: 0;
+                }
+            }
+
+            Rectangle {
+                VerticalLayout {
+                    spacing: 2px;
+                    visible: report-combo.current-index == 0;
+
+                    HorizontalLayout {
+                        padding: 2px;
+                        spacing: 2px;
+                        padding-right: 15px;
+                        // width: summary-view.visible-width;   // what we want, but causes binding loop
+
+                        HeaderCell { text: "Currency"; }
+                        HeaderCell { text: "Starting Balance"; }
+                        HeaderCell { text: "Ending Balance"; }
+                        HeaderCell { text: "Quantity Disposed"; }
+                        HeaderCell { text: "Cost"; }
+                        HeaderCell { text: "Fees"; }
+                        HeaderCell { text: "Proceeds"; }
+                        HeaderCell { text: "Capital P/L"; }
+                        HeaderCell { text: "Income"; }
+                        HeaderCell { text: "Total P/L"; }
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: white;
+                        opacity: 0.25;
+                    }
+
+                    summary-view := ListView {
+                        for currency_summary[index] in report.currencies: Rectangle {
+                            property <bool> even: mod(index, 2) == 0;
+
+                            background: touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
+                            border-radius: self.height / 4;
+
+                            touch := TouchArea {}
+
+                            HorizontalLayout {
+                                padding: 2px;
+                                spacing: 2px;
+
+                                Cell {
+                                    CurrencyIcon {
+                                        cmc-id: currency-summary.currency-cmc-id;
+                                    }
+                                    ElidingText {
+                                        text: currency_summary.currency;
+                                    }
+                                }
+                                TextCell { text: currency_summary.balance_start; }
+                                TextCell { text: currency_summary.balance_end; }
+                                TextCell { text: currency_summary.quantity_disposed; }
+                                TextCell { text: currency_summary.cost; }
+                                TextCell { text: currency_summary.fees; }
+                                TextCell { text: currency_summary.proceeds; }
+                                TextCell { text: currency_summary.capital_profit_loss; }
+                                TextCell { text: currency_summary.income; }
+                                TextCell { text: currency_summary.total_profit_loss; }
+                            }
+                        }
+                    }
+                }
+
+                CapitalGains {
+                    visible: report-combo.current-index == 1;
+                    gain-entries: report.gains;
+                    width: 100%;
+                    height: 100%;
+                }
             }
         }
     }

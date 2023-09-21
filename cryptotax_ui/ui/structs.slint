@@ -1,0 +1,80 @@
+export struct UiTransactionSource {
+    source_type: string,
+    name: string,
+    path: string,
+    transaction_count: int,
+}
+
+export enum UiTransactionType {
+    buy,
+    sell,
+    trade,
+    deposit,
+    withdrawal,
+    fee,
+    receive,
+    send,
+    transfer,
+    chain-split,
+    expense,
+    income,
+    airdrop,
+    spam,
+}
+
+export struct UiTransaction {
+    from: string,
+    to: string,
+    date: string,
+    time: string,
+    tx_type: UiTransactionType,
+    received_cmc_id: int,
+    received: string,
+    sent_cmc_id: int,
+    sent: string,
+    fee: string,
+    value: string,
+    gain: float,
+    gain_error: string,
+    description: string,
+    tx_hash: string,
+}
+
+export struct UiCurrencySummary {
+    currency-cmc-id: int,
+    currency: string,
+    balance_start: string,
+    balance_end: string,
+    quantity_disposed: string,
+    cost: string,
+    fees: string,
+    proceeds: string,
+    capital_profit_loss: string,
+    income: string,
+    total_profit_loss: string,
+}
+
+export struct UiCapitalGain {
+    currency-cmc-id: int,
+    currency: string,
+    bought: string,
+    sold: string,
+    quantity: float,
+    cost: float,
+    proceeds: float,
+    gain_or_loss: float,
+    long_term: bool,
+}
+
+export struct UiTaxReport {
+    year: int,
+    net_capital_gains: string,
+    short_term_capital_gains: string,
+    long_term_capital_gains: string,
+    total_capital_losses: string,
+    // ordinary_income: string,
+    // derivative_trading_income: string,
+    // expenses: string,
+    currencies: [UiCurrencySummary],
+    gains: [[StandardListViewItem]],
+}

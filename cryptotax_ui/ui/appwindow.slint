@@ -1,8 +1,10 @@
 import { HorizontalBox, CheckBox, ComboBox} from "std-widgets.slint";
-import { Sources, UiTransactionSource } from "./sources.slint";
-import { Transactions, UiTransaction } from "./transactions.slint";
-import { Reports, UiTaxReport, UiCapitalGain } from "./reports.slint";
+import { Sources } from "./sources.slint";
+import { Transactions  } from "./transactions.slint";
+import { Reports } from "./reports.slint";
+import { Badge } from "./common.slint";
 import { TestData } from "./test-data.slint";
+import { UiCapitalGain, UiTaxReport, UiTransaction, UiTransactionSource } from "./structs.slint";
 
 export { UiCapitalGain }
 
@@ -12,34 +14,15 @@ enum Page {
     reports,
 }
 
-component Badge inherits VerticalLayout {
-    in-out property text <=> txt.text;
-    alignment: center;
-
-    Rectangle {
-        vertical-stretch: 0;
-        horizontal-stretch: 0;
-
-        background: #434343;
-        border-radius: self.height / 2;
-        height: txt.preferred-height + 2px;
-        width: txt.preferred-width + 12px;
-
-        txt := Text {
-            text: 123;
-            color: white;
-            font-size: 10px;
-        }
-    }
-}
-
 component PageButton inherits Rectangle {
     in-out property text <=> txt.text;
     in property <bool> active;
 
     callback pressed;
 
-    border-radius: root.height / 4;
+    border-radius: self.height / 4;
+    border-color: (touch.has-hover || root.active) ? #456 : #3e3e3e;
+    border-width: 1px;
     background: root.active ? #456 : transparent;
     height: layout.preferred-height * 1.33;
     width: layout.preferred-width + 20px;
@@ -73,7 +56,7 @@ export component AppWindow inherits Window {
 
     callback open-transaction(string);
 
-    property <Page> active-page: Page.reports;
+    property <Page> active-page: Page.transactions;
 
     title: "Crypto Tax Tool";
 

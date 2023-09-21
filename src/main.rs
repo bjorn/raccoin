@@ -74,9 +74,32 @@ struct TransactionSource {
     transaction_count: usize,
 }
 
+#[derive(Default)]
+struct CurrencySummary {
+    currency: String,
+    balance_start: Decimal,
+    balance_end: Decimal,
+    quantity_disposed: Decimal,
+    cost: Decimal,
+    fees: Decimal,
+    proceeds: Decimal,
+    capital_profit_loss: Decimal,
+    income: Decimal,
+    total_profit_loss: Decimal,
+}
+
+impl CurrencySummary {
+    fn new(currency: &str) -> Self {
+        Self {
+            currency: currency.to_owned(),
+            ..Default::default()
+        }
+    }
+}
+
 /// Maps currencies to their CMC ID
 /// todo: support more currencies and load from file
-fn cmc_id(amount: &Amount) -> i32 {
+fn cmc_id(currency: &str) -> i32 {
     const CMC_ID_MAP: [(&str, i32); 15] = [
         ("BCH", 1831),
         ("BNB", 1839),
@@ -94,10 +117,14 @@ fn cmc_id(amount: &Amount) -> i32 {
         ("XRP", 52),
         ("ZEC", 1437),
     ];
-    match CMC_ID_MAP.binary_search_by(|(currency, _)| (*currency).cmp(amount.currency.as_str())) {
+    match CMC_ID_MAP.binary_search_by(|(cur, _)| (*cur).cmp(currency)) {
         Ok(index) => CMC_ID_MAP[index].1,
         Err(_) => -1
     }
+}
+
+fn cmc_id_for_amount(amount: &Amount) -> i32 {
+    cmc_id(&amount.currency)
 }
 
 fn load_transactions() -> Result<(Vec<TransactionSource>, Vec<Transaction>), Box<dyn Error>> {
@@ -321,10 +348,33 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (sources, mut transactions) = load_transactions()?;
 
     let ui = AppWindow::new()?;
+    let mut currencies: Vec<CurrencySummary> = Vec::new();
+
+    fn summary_for<'a>(currencies: &'a mut Vec<CurrencySummary>, currency: &str) -> &'a mut CurrencySummary {
+        match currencies.iter().position(|s| s.currency == currency) {
+            Some(index) => currencies.get_mut(index).unwrap(),
+            None => {
+                currencies.push(CurrencySummary::new(currency));
+                currencies.last_mut().unwrap()
+            }
+        }
+    }
 
     // Process transactions per-year
     let mut fifo = FIFO::new();
     let reports: Vec<UiTaxReport> = transactions.linear_group_by_key_mut(|tx| tx.timestamp.year()).map(|txs| {
+        // prepare currency summary
+        currencies.retain_mut(|summary| {
+            summary.balance_start = summary.balance_end;
+            summary.quantity_disposed = Decimal::ZERO;
+            summary.cost = Decimal::ZERO;
+            summary.fees = Decimal::ZERO;
+            summary.proceeds = Decimal::ZERO;
+            summary.income = Decimal::ZERO;
+
+            summary.balance_start > Decimal::ZERO
+        });
+
         let year = txs.first().unwrap().timestamp.year();
         let gains = fifo.process(txs);
 
@@ -347,8 +397,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 total_capital_losses -= gain_or_loss;
             }
 
+            let summary = summary_for(&mut currencies, &gain.amount.currency);
+            summary.quantity_disposed += gain.amount.quantity;
+            summary.cost += gain.cost;
+            // summary.fees = ; // todo: calculate all trade fees relevant for this currency
+            summary.proceeds += gain.proceeds;
+            // summary.income = ;   // todo: calculate the value of all income transactions for this currency
+
             ui_gains.push(UiCapitalGain {
-                currency_cmc_id: cmc_id(&gain.amount),
+                currency_cmc_id: cmc_id_for_amount(&gain.amount),
                 currency: gain.amount.currency.into(),
                 bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
                 sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
@@ -361,9 +418,32 @@ fn main() -> Result<(), Box<dyn Error>> {
             });
         }
 
-        let mut gain_entries: Vec<ModelRc<StandardListViewItem>> = Vec::new();
-        for entry in ui_gains {
-            gain_entries.push(VecModel::from_slice(&[
+        currencies.iter_mut().for_each(|summary| {
+            summary.balance_end = fifo.currency_balance(&summary.currency);
+            summary.capital_profit_loss = summary.proceeds - summary.cost - summary.fees;
+            summary.total_profit_loss = summary.capital_profit_loss + summary.income;
+        });
+
+        currencies.sort_by(|a, b| b.cost.cmp(&a.cost));
+
+        let ui_currencies: Vec<UiCurrencySummary> = currencies.iter().map(|currency| {
+            UiCurrencySummary {
+                currency_cmc_id: cmc_id(&currency.currency),
+                currency: currency.currency.clone().into(),
+                balance_start: currency.balance_start.to_string().into(),
+                balance_end: currency.balance_end.to_string().into(),
+                quantity_disposed: currency.quantity_disposed.to_string().into(),
+                cost: format!("{:.2}", currency.cost).into(),
+                fees: format!("{:.2}", currency.fees).into(),
+                proceeds: format!("{:.2}", currency.proceeds).into(),
+                capital_profit_loss: format!("{:.2}", currency.capital_profit_loss).into(),
+                income: format!("{:.2}", currency.income).into(),
+                total_profit_loss: format!("{:.2}", currency.total_profit_loss).into(),
+            }
+        }).collect();
+
+        let gain_entries: Vec<ModelRc<StandardListViewItem>> = ui_gains.into_iter().map(|entry| {
+            VecModel::from_slice(&[
                 StandardListViewItem::from(entry.currency),
                 StandardListViewItem::from(entry.bought.to_string().as_str()),
                 StandardListViewItem::from(entry.sold),
@@ -372,14 +452,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 StandardListViewItem::from(entry.proceeds.to_string().as_str()),
                 StandardListViewItem::from(entry.gain_or_loss.to_string().as_str()),
                 StandardListViewItem::from(if entry.long_term { "true" } else { "false" }),
-            ]));
-        }
+            ])
+        }).collect();
 
+        let currencies_model = Rc::new(VecModel::from(ui_currencies));
         let entries_model = Rc::new(VecModel::from(gain_entries));
         let net_capital_gains = short_term_capital_gains + long_term_capital_gains - total_capital_losses;
 
         UiTaxReport {
-            currencies: Default::default(),
+            currencies: currencies_model.into(),
             gains: entries_model.into(),
             long_term_capital_gains: format!("{:.2}", long_term_capital_gains).into(),
             short_term_capital_gains: format!("{:.2}", short_term_capital_gains).into(),
@@ -502,9 +583,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             date: transaction.timestamp.date().to_string().into(),
             time: transaction.timestamp.time().to_string().into(),
             tx_type,
-            received_cmc_id: received.map(cmc_id).unwrap_or(-1),
+            received_cmc_id: received.map(cmc_id_for_amount).unwrap_or(-1),
             received: received.map_or_else(String::default, Amount::to_string).into(),
-            sent_cmc_id: sent.map(cmc_id).unwrap_or(-1),
+            sent_cmc_id: sent.map(cmc_id_for_amount).unwrap_or(-1),
             sent: sent.map_or_else(String::default, Amount::to_string).into(),
             fee: transaction.fee.as_ref().map_or_else(String::default, Amount::to_string).into(),
             value: value.map_or_else(String::default, Amount::to_string).into(),
