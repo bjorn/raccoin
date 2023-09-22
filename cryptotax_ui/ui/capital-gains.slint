@@ -1,17 +1,91 @@
-import { StandardTableView } from "std-widgets.slint";
+import { HorizontalBox, ListView, VerticalBox } from "std-widgets.slint";
+import {
+    Cell,
+    CurrencyIcon,
+    DateTimeCell,
+    ElidingText,
+    HeaderCell,
+    MonoTextCell,
+    TableHeader,
+    TextCell
+} from "./common.slint";
+import { UiCapitalGain } from "./structs.slint";
 
-export component CapitalGains inherits StandardTableView {
-    in property <[[StandardListViewItem]]> gain-entries;
+export component CapitalGains inherits VerticalLayout {
+    in property <[UiCapitalGain]> gain-entries;
 
-    columns: [
-        { title: "Currency" },
-        { title: "Bought" },
-        { title: "Sold" },
-        { title: "Quantity" },
-        { title: "Cost" },
-        { title: "Proceeds" },
-        { title: "Gain or Loss" },
-        { title: "Long Term" },
-    ];
-    rows: gain_entries;
+    spacing: 2px;
+
+    TableHeader {
+        spacing: 2px;
+        // width: list-view.visible-width;   // what we want, but causes binding loop
+
+        Rectangle {
+            height: bought-text.preferred-height;
+
+            bought-text := HeaderCell {
+                text: "Bought";
+                width: 100%;
+            }
+
+            DateTimeCell { visible: false; }    // only used for alignment purposes
+        }
+        Rectangle {
+            height: sold-text.preferred-height;
+
+            sold-text := HeaderCell {
+                text: "Sold";
+                width: 100%;
+            }
+
+            DateTimeCell { visible: false; }    // only used for alignment purposes
+        }
+        HeaderCell { text: "Amount"; horizontal-stretch: 1.5; }
+        HeaderCell { text: "Cost (€)"; horizontal-alignment: right; }
+        HeaderCell { text: "Proceeds (€)"; horizontal-alignment: right; }
+        HeaderCell { text: "Gain or Loss (€)"; horizontal-alignment: right; }
+        HeaderCell { text: "Long / Short"; horizontal-stretch: 0.5; horizontal-alignment: right; }
+    }
+
+    list-view := ListView {
+        for gain[index] in root.gain-entries: Rectangle {
+            property <bool> even: mod(index, 2) == 0;
+
+            background: touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
+            border-radius: self.height / 4;
+
+            touch := TouchArea {}
+
+            HorizontalLayout {
+                padding-left: 5px;
+                padding-right: 2px;
+                padding-top: 2px;
+                padding-bottom: 2px;
+                spacing: 2px;
+
+                DateTimeCell {
+                    date: gain.bought-date;
+                    time: gain.bought-time;
+                }
+                DateTimeCell {
+                    date: gain.sold-date;
+                    time: gain.sold-time;
+                }
+                Cell {
+                    horizontal-stretch: 1.5;
+                    CurrencyIcon {
+                        cmc-id: gain.currency-cmc-id;
+                    }
+                    ElidingText {
+                        text: gain.amount;
+                        font-family: "DejaVu Sans Mono";
+                    }
+                }
+                MonoTextCell { text: gain.cost; }
+                MonoTextCell { text: gain.proceeds; }
+                MonoTextCell { text: gain.gain-or-loss; color: gain.gain-or-loss < 0 ? #ff0000 : #00ff00; }
+                TextCell { text: gain.long-term ? "Long" : "Short"; horizontal-stretch: 0.5; horizontal-alignment: right; }
+            }
+        }
+    }
 }

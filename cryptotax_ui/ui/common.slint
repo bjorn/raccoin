@@ -31,6 +31,7 @@ export component CurrencyIcon inherits Image {
             cmc-id == 131 ? @image-url("icons/coins/131.png") :
             cmc-id == 328 ? @image-url("icons/coins/328.png") :
             cmc-id == 512 ? @image-url("icons/coins/512.png") :
+            cmc-id == 873 ? @image-url("icons/coins/873.png") :
             cmc-id == 1027 ? @image-url("icons/coins/1027.png") :
             cmc-id == 1437 ? @image-url("icons/coins/1437.png") :
             cmc-id == 1720 ? @image-url("icons/coins/1720.png") :
@@ -58,10 +59,57 @@ export component TextCell inherits ElidingText {
     min-width: 0;
 }
 
+export component MonoTextCell inherits TextCell {
+    font-family: "DejaVu Sans Mono";
+    horizontal-alignment: right;
+}
+
+export component TableHeader inherits VerticalLayout {
+    spacing: 2px;
+    vertical-stretch: 0;
+    // width: view.visible-width;   // what we want, but causes binding loop
+
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 15px;
+        padding-top: 2px;
+        padding-bottom: 2px;
+        spacing: 2px;
+
+        @children
+    }
+
+    Rectangle {
+        height: 1px;
+        background: white;
+        opacity: 0.25;
+    }
+}
+
 export component HeaderCell inherits ElidingText {
     horizontal-stretch: 1;
     preferred-width: 0;
     min-width: 0;
     opacity: 0.8;
     font-size: 10px;
+}
+
+export component DateTimeCell inherits HorizontalLayout {
+    in property <string> date <=> date-text.text;
+    in property <string> time <=> time-text.text;
+
+    alignment: start;
+    spacing: 6px;
+    padding-right: 15px;
+
+    date-text := ElidingText {
+        min-width: self.preferred-width;
+        text: "2013-10-30";
+    }
+    time-text := ElidingText {
+        opacity: 0.5;
+        font-size: 10px;
+        min-width: self.preferred-width;
+        text: "12:34:56";
+    }
 }

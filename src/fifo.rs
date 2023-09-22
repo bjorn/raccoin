@@ -1,8 +1,8 @@
-use std::{collections::{VecDeque, HashMap}, error::Error};
+use std::{collections::{VecDeque, HashMap}, error::Error, path::Path};
 
 use chrono::NaiveDateTime;
 use chrono_tz::Europe;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Serialize;
 
 use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_date_time};
@@ -187,6 +187,7 @@ impl FIFO {
         //     None => self.holdings.entry(currency.to_owned()).or_default(),
         // }
         // Why does the above not work? It would avoid one needles lookup...
+        // (see https://rust-lang.github.io/rfcs/2094-nll.html#problem-case-3-conditional-control-flow-across-functions)
         if self.holdings.contains_key(currency) {
             self.holdings.get_mut(currency).unwrap()
         } else {
@@ -221,7 +222,7 @@ fn total_holdings(holdings: &VecDeque<Entry>) -> Decimal {
     holdings.iter().map(|e| e.remaining).sum()
 }
 
-pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &str) -> Result<(), Box<dyn Error>> {
+pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) -> Result<(), Box<dyn Error>> {
     let mut wtr = csv::Writer::from_path(output_path)?;
 
     #[derive(Serialize)]
@@ -250,9 +251,9 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &str) -> 
             bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local(),
             sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local(),
             quantity: gain.amount.quantity,
-            cost: gain.cost,
-            proceeds: gain.proceeds,
-            gain_or_loss: gain.proceeds - gain.cost,
+            cost: gain.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            proceeds: gain.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            gain_or_loss: (gain.proceeds - gain.cost).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             long_term: (gain.sold - gain.bought) > chrono::Duration::days(365),
         })?;
     }

@@ -1,17 +1,24 @@
-import { ComboBox, HorizontalBox, ListView, VerticalBox, StandardListView } from "std-widgets.slint";
+import { ComboBox, HorizontalBox, ListView, VerticalBox, StandardListView, Button } from "std-widgets.slint";
 import { CapitalGains } from "./capital-gains.slint";
 import {
     Cell,
     CurrencyIcon,
     ElidingText,
-    TextCell,
-    HeaderCell
+    HeaderCell,
+    MonoTextCell,
+    TableHeader
 } from "./common.slint";
 import { UiTaxReport } from "./structs.slint";
+import { Actions } from "./global.slint";
+import { TestData } from "./test-data.slint";
+
+component MonoText inherits Text {
+    font-family: "DejaVu Sans Mono";
+}
 
 export component Reports inherits Rectangle {
     in property <[StandardListViewItem]> report-years <=> year-list.model;
-    in property <[UiTaxReport]> reports;
+    in property <[UiTaxReport]> reports: TestData.reports;
 
     property <UiTaxReport> report: reports[year-list.current-item];
 
@@ -19,6 +26,7 @@ export component Reports inherits Rectangle {
         padding: 0;
 
         year-list := StandardListView {
+            model: TestData.report-years;
             current-item: 0;
             min-width: 80px;
             max-width: 150px;
@@ -38,7 +46,7 @@ export component Reports inherits Rectangle {
                             font-size: 15px;
                             font-weight: 600;
                         }
-                        Text {
+                        MonoText {
                             text: report.net-capital-gains;
                             horizontal-alignment: right;
                             font-size: 15px;
@@ -51,7 +59,7 @@ export component Reports inherits Rectangle {
                             text: "Short Term Capital Gains";
                             opacity: 0.8;
                         }
-                        Text {
+                        MonoText {
                             text: report.short-term-capital-gains;
                             horizontal-alignment: right;
                         }
@@ -62,7 +70,7 @@ export component Reports inherits Rectangle {
                             text: "Long Term Capital Gains";
                             opacity: 0.8;
                         }
-                        Text {
+                        MonoText {
                             text: report.long-term-capital-gains;
                             horizontal-alignment: right;
                         }
@@ -73,7 +81,7 @@ export component Reports inherits Rectangle {
                             text: "Total Capital Losses";
                             opacity: 0.8;
                         }
-                        Text {
+                        MonoText {
                             text: report.total-capital-losses;
                             horizontal-alignment: right;
                         }
@@ -81,14 +89,33 @@ export component Reports inherits Rectangle {
                 }
             }
 
-            HorizontalLayout {
-                alignment: start;
+            HorizontalBox {
+                padding-left: 0;
                 report-combo := ComboBox {
+                    horizontal-stretch: 0;
                     model: [
                         "Report Summary",
                         "Capital Gains Report"
                     ];
-                    current-index: 0;
+                }
+                Rectangle {}
+
+                Button {
+                    text: "Export (CSV)";
+                    enabled: {
+                        if (report-combo.current-index == 0) {
+                            report.currencies.length > 0
+                        } else {
+                            report.gains.length > 0
+                        }
+                    }
+                    clicked => {
+                        if (report-combo.current-index == 0) {
+                            Actions.export-summary(year-list.current-item);
+                        } else {
+                            Actions.export-capital-gains(year-list.current-item);
+                        }
+                    }
                 }
             }
 
@@ -97,28 +124,17 @@ export component Reports inherits Rectangle {
                     spacing: 2px;
                     visible: report-combo.current-index == 0;
 
-                    HorizontalLayout {
-                        padding: 2px;
-                        spacing: 2px;
-                        padding-right: 15px;
-                        // width: summary-view.visible-width;   // what we want, but causes binding loop
-
+                    TableHeader {
                         HeaderCell { text: "Currency"; }
-                        HeaderCell { text: "Starting Balance"; }
-                        HeaderCell { text: "Ending Balance"; }
-                        HeaderCell { text: "Quantity Disposed"; }
-                        HeaderCell { text: "Cost"; }
-                        HeaderCell { text: "Fees"; }
-                        HeaderCell { text: "Proceeds"; }
-                        HeaderCell { text: "Capital P/L"; }
-                        HeaderCell { text: "Income"; }
-                        HeaderCell { text: "Total P/L"; }
-                    }
-
-                    Rectangle {
-                        height: 1px;
-                        background: white;
-                        opacity: 0.25;
+                        HeaderCell { text: "Starting Balance"; horizontal-alignment: right; }
+                        HeaderCell { text: "Ending Balance"; horizontal-alignment: right; }
+                        HeaderCell { text: "Quantity Disposed"; horizontal-alignment: right; }
+                        HeaderCell { text: "Cost"; horizontal-alignment: right; }
+                        HeaderCell { text: "Fees"; horizontal-alignment: right; }
+                        HeaderCell { text: "Proceeds"; horizontal-alignment: right; }
+                        HeaderCell { text: "Capital P/L"; horizontal-alignment: right; }
+                        HeaderCell { text: "Income"; horizontal-alignment: right; }
+                        HeaderCell { text: "Total P/L"; horizontal-alignment: right; }
                     }
 
                     summary-view := ListView {
@@ -131,7 +147,10 @@ export component Reports inherits Rectangle {
                             touch := TouchArea {}
 
                             HorizontalLayout {
-                                padding: 2px;
+                                padding-left: 5px;
+                                padding-right: 2px;
+                                padding-top: 2px;
+                                padding-bottom: 2px;
                                 spacing: 2px;
 
                                 Cell {
@@ -142,15 +161,15 @@ export component Reports inherits Rectangle {
                                         text: currency_summary.currency;
                                     }
                                 }
-                                TextCell { text: currency_summary.balance_start; }
-                                TextCell { text: currency_summary.balance_end; }
-                                TextCell { text: currency_summary.quantity_disposed; }
-                                TextCell { text: currency_summary.cost; }
-                                TextCell { text: currency_summary.fees; }
-                                TextCell { text: currency_summary.proceeds; }
-                                TextCell { text: currency_summary.capital_profit_loss; }
-                                TextCell { text: currency_summary.income; }
-                                TextCell { text: currency_summary.total_profit_loss; }
+                                MonoTextCell { text: currency_summary.balance_start; }
+                                MonoTextCell { text: currency_summary.balance_end; }
+                                MonoTextCell { text: currency_summary.quantity_disposed; }
+                                MonoTextCell { text: currency_summary.cost; }
+                                MonoTextCell { text: currency_summary.fees; }
+                                MonoTextCell { text: currency_summary.proceeds; }
+                                MonoTextCell { text: currency_summary.capital_profit_loss; }
+                                MonoTextCell { text: currency_summary.income; }
+                                MonoTextCell { text: currency_summary.total_profit_loss; }
                             }
                         }
                     }
@@ -159,8 +178,6 @@ export component Reports inherits Rectangle {
                 CapitalGains {
                     visible: report-combo.current-index == 1;
                     gain-entries: report.gains;
-                    width: 100%;
-                    height: 100%;
                 }
             }
         }

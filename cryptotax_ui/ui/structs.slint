@@ -56,10 +56,11 @@ export struct UiCurrencySummary {
 
 export struct UiCapitalGain {
     currency-cmc-id: int,
-    currency: string,
-    bought: string,
-    sold: string,
-    quantity: float,
+    bought_date: string,
+    bought_time: string,
+    sold_date: string,
+    sold_time: string,
+    amount: string,
     cost: float,
     proceeds: float,
     gain_or_loss: float,
@@ -76,5 +77,5 @@ export struct UiTaxReport {
     // derivative_trading_income: string,
     // expenses: string,
     currencies: [UiCurrencySummary],
-    gains: [[StandardListViewItem]],
+    gains: [UiCapitalGain],
 }

@@ -2,9 +2,12 @@ import { ListView } from "std-widgets.slint";
 import {
     Cell,
     CurrencyIcon,
+    DateTimeCell,
     ElidingText,
+    TableHeader,
     TextCell,
-    HeaderCell
+    HeaderCell,
+    MonoTextCell
 } from "./common.slint";
 import { TestData } from "./test-data.slint";
 import { UiTransactionType, UiTransaction } from "./structs.slint";
@@ -12,6 +15,7 @@ import { UiTransactionType, UiTransaction } from "./structs.slint";
 component SmallButton inherits Rectangle {
     in property text <=> i-text.text;
     in property tooltip <=> i-tooltip.text;
+    in property tooltip-font-family <=> i-tooltip.font-family;
     out property <bool> has-hover: i-touch.has-hover;
 
     callback clicked;
@@ -49,6 +53,36 @@ component SmallButton inherits Rectangle {
     }
 }
 
+component TransactionsHeader inherits TableHeader {
+    Rectangle {
+        height: date-text.preferred-height;
+
+        DateTimeCell {
+            visible: false; // only used for alignment purposes
+        }
+
+        date-text := HeaderCell {
+            text: "Date";
+            width: 100%;
+        }
+    }
+    HeaderCell { text: "Action"; }
+    HeaderCell { text: "Outgoing"; horizontal-stretch: 2; }
+    HeaderCell { text: "Incoming"; horizontal-stretch: 2; }
+    HeaderCell { text: "Fee"; horizontal-alignment: right; }
+    HeaderCell { text: "Value (€)"; horizontal-alignment: right; }
+    HeaderCell { text: "Gain (€)"; horizontal-alignment: right; }
+    HorizontalLayout {
+        padding-left: parent.width * 0.015;
+        height: 0;
+        visible: false; // only used for alignment purposes
+        spacing: 3px;
+
+        SmallButton { text: "#"; }
+        SmallButton { text: "?"; }
+    }
+}
+
 component TransactionDisplay inherits Rectangle {
     callback open-transaction(string);
 
@@ -69,21 +103,9 @@ component TransactionDisplay inherits Rectangle {
         padding-bottom: 2px;
         spacing: 2px;
 
-        HorizontalLayout {
-            alignment: start;
-            spacing: 6px;
-            padding-right: 5px;
-
-            ElidingText {
-                text: tx.date;
-                min-width: self.preferred-width;
-            }
-            ElidingText {
-                text: tx.time;
-                opacity: 0.5;
-                font-size: 10px;
-                min-width: self.preferred-width;
-            }
+        DateTimeCell {
+            date: tx.date;
+            time: tx.time;
         }
         TextCell {
             text: tx.tx-type == UiTransactionType.buy ? "Buy" :
@@ -108,8 +130,9 @@ component TransactionDisplay inherits Rectangle {
                 cmc-id: tx.sent-cmc-id;
             }
             ElidingText {
-                text: tx.sent == "" ? "" : "–\{tx.sent}";
+                text: tx.sent == "" ? "" : "-\{tx.sent}";
                 max-width: self.preferred-width;
+                font-family: "DejaVu Sans Mono";
             }
             ElidingText {
                 text: tx.from;
@@ -125,6 +148,7 @@ component TransactionDisplay inherits Rectangle {
             ElidingText {
                 text: tx.received == "" ? "" : "+\{tx.received}";
                 max-width: self.preferred-width;
+                font-family: "DejaVu Sans Mono";
             }
             ElidingText {
                 text: tx.to;
@@ -132,27 +156,31 @@ component TransactionDisplay inherits Rectangle {
                 opacity: 0.5;
             }
         }
-        TextCell {
+        MonoTextCell {
             text: tx.fee;
             font-size: 10px;
             opacity: 0.5;
         }
-        TextCell {
+        MonoTextCell {
             text: tx.value;
             font-size: 10px;
             opacity: 0.5;
         }
         TextCell {
             text: tx.gain-error == "" ? tx.gain : tx.gain_error;
+            font-family: tx.gain-error != "" ? "" : "DejaVu Sans Mono";
             color: tx.gain < 0 || tx.gain-error != "" ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
+            horizontal-alignment: right;
         }
         HorizontalLayout {
+            padding-left: parent.width * 0.015;
             spacing: 3px;
 
             tx-btn := SmallButton {
                 visible: tx.tx-hash != "";
                 text: "#";
                 tooltip: tx.tx-hash;
+                tooltip-font-family: "DejaVu Sans Mono";
 
                 clicked => { root.open-transaction(tx.tx-hash) }
             }
@@ -167,68 +195,13 @@ component TransactionDisplay inherits Rectangle {
 }
 
 export component Transactions inherits VerticalLayout {
-    in property <[UiTransaction]> transactions;
+    in property <[UiTransaction]> transactions: TestData.transactions;
 
     callback open-transaction(string);
 
     spacing: 2px;
 
-    HorizontalLayout {
-        padding-left: 7px;
-        padding-right: 15px;
-        padding-top: 2px;
-        padding-bottom: 2px;
-        spacing: 2px;
-        // width: transactions-view.visible-width;   // what we want, but causes binding loop
-
-        Rectangle {
-            HorizontalLayout {
-                visible: false; // only used for alignment purposes
-                alignment: start;
-                spacing: 6px;
-                padding-right: 5px;
-
-                ElidingText {
-                    text: "2013-10-30";
-                    min-width: self.preferred-width;
-                }
-                ElidingText {
-                    text: "12:34:56";
-                    opacity: 0.5;
-                    font-size: 10px;
-                    min-width: self.preferred-width;
-                }
-            }
-
-            ElidingText {
-                text: "Date";
-                width: 100%;
-                height: 100%;
-                opacity: 0.8;
-                font-size: 10px;
-            }
-        }
-        HeaderCell { text: "Action"; }
-        HeaderCell { text: "Outgoing"; horizontal-stretch: 2; }
-        HeaderCell { text: "Incoming"; horizontal-stretch: 2; }
-        HeaderCell { text: "Fee"; }
-        HeaderCell { text: "Value"; }
-        HeaderCell { text: "Gain (€)"; }
-        HorizontalLayout {
-            height: 0;
-            visible: false; // only used for alignment purposes
-            spacing: 3px;
-
-            SmallButton { text: "#"; }
-            SmallButton { text: "?"; }
-        }
-    }
-
-    Rectangle {
-        height: 1px;
-        background: white;
-        opacity: 0.25;
-    }
+    TransactionsHeader {}
 
     ListView {
         for tx[index] in transactions: TransactionDisplay {

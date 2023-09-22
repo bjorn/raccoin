@@ -19,15 +19,16 @@ use chrono::{NaiveDateTime, Duration, Datelike};
 use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
 use cryptotax_ui::*;
 use esplora::{blocking_esplora_client, address_transactions};
-use fifo::FIFO;
+use fifo::{FIFO, CapitalGain};
 use rust_decimal_macros::dec;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
-use slint::{VecModel, StandardListViewItem, ModelRc, SharedString};
-use std::{error::Error, rc::Rc, path::Path};
+use slint::{VecModel, StandardListViewItem, SharedString};
+use strum::{EnumIter, IntoEnumIterator};
+use std::{error::Error, rc::Rc, path::{Path, PathBuf}};
 
-#[derive(Serialize, Deserialize)]
+#[derive(EnumIter, Serialize, Deserialize)]
 enum TransactionsSourceType {
     BitcoinAddress,
     BitcoinCoreCsv,
@@ -74,12 +75,13 @@ struct TransactionSource {
     transaction_count: usize,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct CurrencySummary {
     currency: String,
     balance_start: Decimal,
     balance_end: Decimal,
     quantity_disposed: Decimal,
+    quantity_income: Decimal,
     cost: Decimal,
     fees: Decimal,
     proceeds: Decimal,
@@ -95,6 +97,60 @@ impl CurrencySummary {
             ..Default::default()
         }
     }
+}
+
+struct TaxReport {
+    year: i32,
+    currencies: Vec<CurrencySummary>,
+    gains: Vec<CapitalGain>,
+}
+
+pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut wtr = csv::Writer::from_path(output_path)?;
+
+    #[derive(Serialize)]
+    struct CsvSummary<'a> {
+        #[serde(rename = "Currency")]
+        currency: &'a str,
+        #[serde(rename = "Proceeds")]
+        proceeds: Decimal,
+        #[serde(rename = "Cost (ex Fees)")]
+        cost: Decimal,
+        #[serde(rename = "Fees")]
+        fees: Decimal,
+        #[serde(rename = "Capital Gains")]
+        capital_gains: Decimal,
+        #[serde(rename = "Other Income")]
+        other_income: Decimal,
+        #[serde(rename = "Total Gains")]
+        total_gains: Decimal,
+        #[serde(rename = "Opening Balance")]
+        opening_balance: Decimal,
+        #[serde(rename = "Quantity Traded")]
+        quantity_traded: Decimal,
+        #[serde(rename = "Quantity Income")]
+        quantity_income: Decimal,
+        #[serde(rename = "Closing Balance")]
+        closing_balance: Decimal,
+    }
+
+    for currency in currencies {
+        wtr.serialize(CsvSummary {
+            currency: &currency.currency,
+            proceeds: currency.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            cost: currency.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            fees: currency.fees.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            capital_gains: currency.capital_profit_loss.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            other_income: currency.income.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            total_gains: currency.total_profit_loss.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            opening_balance: currency.balance_start,
+            quantity_traded: currency.quantity_disposed,
+            quantity_income: currency.income,
+            closing_balance: currency.balance_end,
+        })?;
+    }
+
+    Ok(())
 }
 
 /// Maps currencies to their CMC ID
@@ -348,7 +404,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (sources, mut transactions) = load_transactions()?;
 
     let ui = AppWindow::new()?;
-    let mut currencies: Vec<CurrencySummary> = Vec::new();
+
+    let mut reports = Vec::<TaxReport>::new();
+    let mut currencies = Vec::<CurrencySummary>::new();
 
     fn summary_for<'a>(currencies: &'a mut Vec<CurrencySummary>, currency: &str) -> &'a mut CurrencySummary {
         match currencies.iter().position(|s| s.currency == currency) {
@@ -362,11 +420,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Process transactions per-year
     let mut fifo = FIFO::new();
-    let reports: Vec<UiTaxReport> = transactions.linear_group_by_key_mut(|tx| tx.timestamp.year()).map(|txs| {
+    let ui_reports: Vec<UiTaxReport> = transactions.linear_group_by_key_mut(|tx| tx.timestamp.year()).map(|txs| {
         // prepare currency summary
         currencies.retain_mut(|summary| {
             summary.balance_start = summary.balance_end;
             summary.quantity_disposed = Decimal::ZERO;
+            summary.quantity_income = Decimal::ZERO;
             summary.cost = Decimal::ZERO;
             summary.fees = Decimal::ZERO;
             summary.proceeds = Decimal::ZERO;
@@ -383,7 +442,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut total_capital_losses = Decimal::ZERO;
         let mut ui_gains: Vec<UiCapitalGain> = Vec::new();
 
-        for gain in gains {
+        for gain in &gains {
             let long_term = (gain.sold - gain.bought) > chrono::Duration::days(365);
             let gain_or_loss = gain.proceeds - gain.cost;
 
@@ -399,21 +458,26 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let summary = summary_for(&mut currencies, &gain.amount.currency);
             summary.quantity_disposed += gain.amount.quantity;
+            // summary.quantity_income += // todo: sum up all income quantities
             summary.cost += gain.cost;
             // summary.fees = ; // todo: calculate all trade fees relevant for this currency
             summary.proceeds += gain.proceeds;
             // summary.income = ;   // todo: calculate the value of all income transactions for this currency
 
+            let bought = gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local();
+            let sold = gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local();
+
             ui_gains.push(UiCapitalGain {
                 currency_cmc_id: cmc_id_for_amount(&gain.amount),
-                currency: gain.amount.currency.into(),
-                bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
-                sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local().to_string().into(),
+                bought_date: bought.date().to_string().into(),
+                bought_time: bought.time().to_string().into(),
+                sold_date: sold.date().to_string().into(),
+                sold_time: sold.time().to_string().into(),
+                amount: gain.amount.to_string().into(),
                 // todo: something else than unwrap()?
-                quantity: gain.amount.quantity.try_into().unwrap(),
-                cost: gain.cost.try_into().unwrap(),
-                proceeds: gain.proceeds.try_into().unwrap(),
-                gain_or_loss: gain_or_loss.try_into().unwrap(),
+                cost: gain.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+                proceeds: gain.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+                gain_or_loss: gain_or_loss.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
                 long_term,
             });
         }
@@ -442,22 +506,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }).collect();
 
-        let gain_entries: Vec<ModelRc<StandardListViewItem>> = ui_gains.into_iter().map(|entry| {
-            VecModel::from_slice(&[
-                StandardListViewItem::from(entry.currency),
-                StandardListViewItem::from(entry.bought.to_string().as_str()),
-                StandardListViewItem::from(entry.sold),
-                StandardListViewItem::from(entry.quantity.to_string().as_str()),
-                StandardListViewItem::from(entry.cost.to_string().as_str()),
-                StandardListViewItem::from(entry.proceeds.to_string().as_str()),
-                StandardListViewItem::from(entry.gain_or_loss.to_string().as_str()),
-                StandardListViewItem::from(if entry.long_term { "true" } else { "false" }),
-            ])
-        }).collect();
-
         let currencies_model = Rc::new(VecModel::from(ui_currencies));
-        let entries_model = Rc::new(VecModel::from(gain_entries));
+        let entries_model = Rc::new(VecModel::from(ui_gains));
         let net_capital_gains = short_term_capital_gains + long_term_capital_gains - total_capital_losses;
+
+        reports.push(TaxReport {
+            year,
+            currencies: currencies.clone(),
+            gains,
+        });
 
         UiTaxReport {
             currencies: currencies_model.into(),
@@ -470,23 +527,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }).collect();
 
-    let report_years: Vec<StandardListViewItem> = reports.iter().map(|report| StandardListViewItem::from(report.year.to_string().as_str())).collect();
+    let report_years: Vec<StandardListViewItem> = ui_reports.iter().map(|report| StandardListViewItem::from(report.year.to_string().as_str())).collect();
     ui.set_report_years(Rc::new(VecModel::from(report_years)).into());
-    ui.set_reports(Rc::new(VecModel::from(reports)).into());
+    ui.set_reports(Rc::new(VecModel::from(ui_reports)).into());
 
-    let source_types: Vec<SharedString> = vec![
-        TransactionsSourceType::BitcoinAddress,
-        TransactionsSourceType::BitcoinCoreCsv,
-        TransactionsSourceType::BitcoinDeCsv,
-        TransactionsSourceType::BitonicCsv,
-        TransactionsSourceType::ElectrumCsv,
-        TransactionsSourceType::Json,
-        TransactionsSourceType::MyceliumCsv,
-        TransactionsSourceType::PoloniexDepositsCsv,
-        TransactionsSourceType::PoloniexTradesCsv,
-        TransactionsSourceType::PoloniexWithdrawalsCsv,
-        TransactionsSourceType::TrezorCsv,
-    ].iter().map(|s| SharedString::from(s.to_string())).collect();
+    let source_types: Vec<SharedString> = TransactionsSourceType::iter().map(|s| SharedString::from(s.to_string())).collect();
     ui.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
     let mut ui_sources = Vec::new();
@@ -601,6 +646,62 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.on_open_transaction(move |tx_hash| {
         let _ = open::that(format!("http://blockchair.com/bitcoin/transaction/{}", tx_hash));
     });
+
+    let rc_reports = Rc::new(reports);
+    let actions = ui.global::<Actions>();
+
+    fn save_csv_file(title: &str, starting_file_name: &str) -> Option<PathBuf> {
+        let dialog = rfd::FileDialog::new()
+            .set_title(title)
+            .set_file_name(starting_file_name)
+            .add_filter("CSV", &["csv"]);
+        dialog.save_file()
+    }
+
+    {
+        let rc_reports = rc_reports.clone();
+        actions.on_export_summary(move |index| {
+            let report = rc_reports.get(index as usize).expect("report index should be valid");
+            let file_name = format!("report_summary_{}.csv", report.year);
+
+            match save_csv_file("Export Report Summary (CSV)", &file_name) {
+                Some(path) => {
+                    // todo: provide this feedback in the UI
+                    match save_summary_to_csv(&report.currencies, &path) {
+                        Ok(_) => {
+                            println!("Saved summary to {}", path.display());
+                        },
+                        Err(e) => {
+                            println!("Error saving summary to {}: {}", path.display(), e);
+                        }
+                    }
+                },
+                _ => {},
+            }
+        });
+    }
+    {
+        let rc_reports = rc_reports.clone();
+        actions.on_export_capital_gains(move |index| {
+            let report = rc_reports.get(index as usize).expect("report index should be valid");
+            let file_name = format!("capital_gains_{}.csv", report.year);
+
+            match save_csv_file("Export Capital Gains (CSV)", &file_name) {
+                Some(path) => {
+                    // todo: provide this feedback in the UI
+                    match fifo::save_gains_to_csv(&report.gains, &path) {
+                        Ok(_) => {
+                            println!("Saved gains to {}", path.display());
+                        },
+                        Err(e) => {
+                            println!("Error saving gains to {}: {}", path.display(), e);
+                        }
+                    }
+                },
+                _ => {},
+            }
+        });
+    }
 
     ui.run()?;
 

@@ -5,8 +5,9 @@ import { Reports } from "./reports.slint";
 import { Badge } from "./common.slint";
 import { TestData } from "./test-data.slint";
 import { UiCapitalGain, UiTaxReport, UiTransaction, UiTransactionSource } from "./structs.slint";
+import { Actions } from "./global.slint";
 
-export { UiCapitalGain }
+export { UiCapitalGain, Actions }
 
 enum Page {
     sources,
@@ -49,10 +50,9 @@ component PageButton inherits Rectangle {
 export component AppWindow inherits Window {
     in property <[UiTransactionSource]> sources: TestData.sources;
     in property <[string]> source_types;
-    in property <[UiTransaction]> transactions: TestData.transactions;
-    in property <[[StandardListViewItem]]> gain-entries;
-    in property <[StandardListViewItem]> report-years: TestData.report-years;
-    in property <[UiTaxReport]> reports: TestData.reports;
+    in property <[UiTransaction]> transactions <=> transactions-page.transactions;
+    in property <[StandardListViewItem]> report-years <=> reports-page.report-years;
+    in property <[UiTaxReport]> reports <=> reports-page.reports;
 
     callback open-transaction(string);
 
@@ -104,16 +104,13 @@ export component AppWindow inherits Window {
                 sources: root.sources;
             }
 
-            Transactions {
+            transactions-page := Transactions {
                 visible: active-page == Page.transactions;
-                transactions: root.transactions;
                 open-transaction(s) => { root.open-transaction(s); }
             }
 
-            Reports {
+            reports-page := Reports {
                 visible: active-page == Page.reports;
-                report-years: root.report-years;
-                reports: root.reports;
             }
         }
     }
