@@ -24,6 +24,16 @@ pub(crate) struct CapitalGain {
     pub proceeds: Decimal,
 }
 
+impl CapitalGain {
+    pub(crate) fn long_term(&self) -> bool {
+        (self.sold - self.bought) > chrono::Duration::days(365)
+    }
+
+    pub(crate) fn profit(&self) -> Decimal {
+        self.proceeds - self.cost
+    }
+}
+
 fn fiat_value(amount: &Option<Amount>) -> Result<Decimal, GainError> {
     match amount {
         Some(amount) => {

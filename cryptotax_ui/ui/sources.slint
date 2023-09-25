@@ -1,16 +1,21 @@
 import { ListView, HorizontalBox, CheckBox, ComboBox } from "std-widgets.slint";
 import { Badge } from "./common.slint";
+import { Actions } from "./global.slint";
 import { UiTransactionSource } from "./structs.slint";
 
 export component Sources inherits ListView {
     in property <[UiTransactionSource]> sources;
     in property <[string]> source_types;
 
-    for source in sources: HorizontalBox {
+    for source[index] in sources: HorizontalBox {
         CheckBox {
-            checked: true;
+            checked: source.enabled;
             text: source.name;
-            enabled: false;
+
+            toggled => {
+                source.enabled = self.checked;
+                Actions.set-source-enabled(index, self.checked);
+            }
         }
         Text {
             text: source.path;
