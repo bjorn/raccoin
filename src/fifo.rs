@@ -69,8 +69,6 @@ impl FIFO {
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
 
         for transaction in transactions {
-            println!("{:?}", transaction);
-
             match &transaction.operation {
                 Operation::IncomingGift(amount) |
                 Operation::Airdrop(amount) |
@@ -169,8 +167,6 @@ impl FIFO {
                 proceeds,
             });
 
-            println!("    {:?}", capital_gains.last().unwrap());
-
             sold_quantity -= processed_quantity;
 
             if holding.remaining == processed_quantity {
@@ -182,8 +178,6 @@ impl FIFO {
                 break;
             }
         }
-
-        println!("  {:} holdings: {:} ({:} entries)", outgoing.currency, total_holdings(&currency_holdings), currency_holdings.len());
 
         if sold_quantity > Decimal::ZERO {
             return Err(GainError::InsufficientBalance);

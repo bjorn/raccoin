@@ -449,8 +449,18 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                     } else {
                         let value_incoming = price_history.estimate_value(tx.timestamp, incoming);
                         let value_outgoing = price_history.estimate_value(tx.timestamp, outgoing);
-                        println!("incoming {:?} EUR ({}), outgoing {:?} EUR ({})", value_incoming, incoming, value_outgoing, outgoing);
-                        value_incoming.or(value_outgoing)
+                        match (value_incoming, value_outgoing) {
+                            (None, None) => None,
+                            (None, Some(value_outgoing)) => Some(value_outgoing),
+                            (Some(value_incoming), None) => Some(value_incoming),
+                            (Some(value_incoming), Some(value_outgoing)) => {
+                                println!("incoming {:?} EUR ({}), outgoing {:?} EUR ({})", value_incoming, incoming, value_outgoing, outgoing);
+                                Some(Amount {
+                                    quantity: (value_incoming.quantity + value_outgoing.quantity) / Decimal::TWO,
+                                    currency: "EUR".to_owned()
+                                })
+                            }
+                        }
                     }
                 },
                 Operation::Buy(amount) |
@@ -779,10 +789,11 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
             Some(UiCurrencyHoldings {
                 currency_cmc_id: cmc_id(&currency.currency),
                 currency: currency.currency.clone().into(),
-                quantity: currency.balance_end.to_string().into(),
+                quantity: currency.balance_end.normalize().to_string().into(),
                 cost: currency.cost_end.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
                 value: current_value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
                 roi: roi.map(|roi| format!("{:.2}%", roi)).unwrap_or_else(|| { "-".to_owned() }).into(),
+                is_profit: roi.map_or(false, |roi| roi > Decimal::ZERO),
                 unrealized_gain: unrealized_gain.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
                 percentage_of_portfolio: 0.0,
             })

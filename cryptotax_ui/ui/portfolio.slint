@@ -79,7 +79,18 @@ export component Portfolio inherits Rectangle {
                             quantity-text := MonoTextCell { text: holding.quantity; }
                             MonoTextCell { text: holding.cost; }
                             MonoTextCell { text: holding.value; }
-                            MonoTextCell { text: holding.roi; }
+                            MonoTextCell {
+                                text: holding.roi;
+                                color: {
+                                    if (holding.roi == "-") {
+                                        quantity-text.color
+                                    } else if (holding.is-profit) {
+                                        #00ff00
+                                    } else {
+                                        #ff0000
+                                    }
+                                }
+                            }
                             MonoTextCell { text: holding.unrealized-gain; }
                         }
                     }
