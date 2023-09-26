@@ -60,6 +60,7 @@ impl<'a> From<TrezorTransaction<'a>> for Transaction {
         };
         tx.description = if item.label.is_empty() { None } else { Some(item.label.to_owned()) };
         tx.tx_hash = Some(item.id.to_owned());
+        tx.blockchain = Some(item.amount_unit.to_owned());
         tx.fee = if let Some(fee) = item.fee {
             Some(Amount { quantity: fee, currency: item.fee_unit.unwrap().to_owned() })
         } else {

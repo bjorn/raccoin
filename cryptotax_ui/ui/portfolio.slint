@@ -1,2 +1,90 @@
+import { GroupBox, VerticalBox, HorizontalBox, ListView } from "std-widgets.slint";
+import {
+    Cell,
+    CurrencyIcon,
+    ElidingText,
+    HeaderCell,
+    MonoTextCell,
+    TableHeader
+} from "./common.slint";
+import { Facade } from "./global.slint";
+
 export component Portfolio inherits Rectangle {
+    VerticalBox {
+        HorizontalBox {
+            padding: 0;
+            vertical-stretch: 0;
+            GroupBox {
+                title: "Balance";
+                Text {
+                    font-family: "DejaVu Sans Mono";
+                    text: Facade.portfolio.balance;
+                }
+            }
+            GroupBox {
+                title: "Cost Base";
+                Text {
+                    font-family: "DejaVu Sans Mono";
+                    text: Facade.portfolio.cost-base;
+                }
+            }
+            GroupBox {
+                title: "Unrealized Gains";
+                Text {
+                    font-family: "DejaVu Sans Mono";
+                    text: Facade.portfolio.unrealized-gains;
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Holdings";
+
+            VerticalLayout {
+                spacing: 2px;
+
+                TableHeader {
+                    HeaderCell { text: "Currency"; }
+                    HeaderCell { text: "Quantity"; horizontal-alignment: right; }
+                    HeaderCell { text: "Cost"; horizontal-alignment: right; }
+                    HeaderCell { text: "Value"; horizontal-alignment: right; }
+                    HeaderCell { text: "ROI"; horizontal-alignment: right; }
+                    HeaderCell { text: "Unrealized Gain"; horizontal-alignment: right; }
+                }
+
+                summary-view := ListView {
+                    for holding[index] in Facade.portfolio.holdings: Rectangle {
+                        property <bool> even: mod(index, 2) == 0;
+
+                        background: touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
+                        border-radius: self.height / 4;
+
+                        touch := TouchArea {}
+
+                        HorizontalLayout {
+                            padding-left: 5px;
+                            padding-right: 2px;
+                            padding-top: 2px;
+                            padding-bottom: 2px;
+                            spacing: 2px;
+
+                            Cell {
+                                CurrencyIcon {
+                                    cmc-id: holding.currency-cmc-id;
+                                }
+                                ElidingText {
+                                    text: holding.currency;
+                                }
+                            }
+                            quantity-text := MonoTextCell { text: holding.quantity; }
+                            MonoTextCell { text: holding.cost; }
+                            MonoTextCell { text: holding.value; }
+                            MonoTextCell { text: holding.roi; }
+                            MonoTextCell { text: holding.unrealized-gain; }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

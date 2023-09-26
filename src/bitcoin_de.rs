@@ -61,6 +61,7 @@ impl TryFrom<BitcoinDeAction> for Transaction {
     // todo: translate btc_address?
     fn try_from(item: BitcoinDeAction) -> Result<Self, Self::Error> {
         let utc_time = Berlin.from_local_datetime(&item.date).unwrap().naive_utc();
+        let currency = item.currency.clone();
         let mut tx = match item.type_ {
             BitcoinDeActionType::Registration => Err("Registration is not a transaction"),
             BitcoinDeActionType::Purchase => {
@@ -68,7 +69,7 @@ impl TryFrom<BitcoinDeAction> for Transaction {
                     utc_time,
                     Amount {
                         quantity: item.incoming_outgoing,
-                        currency: item.currency,
+                        currency: currency,
                     },
                     Amount {
                         quantity: item.amount_after_bitcoin_de_fee.expect("Purchase should have an amount"),
@@ -76,8 +77,8 @@ impl TryFrom<BitcoinDeAction> for Transaction {
                     },
                 ))
             },
-            BitcoinDeActionType::Disbursement => Ok(Transaction::send(utc_time, Amount::new(-item.incoming_outgoing, item.currency))),
-            BitcoinDeActionType::Deposit => Ok(Transaction::receive(utc_time, Amount::new(item.incoming_outgoing, item.currency))),
+            BitcoinDeActionType::Disbursement => Ok(Transaction::send(utc_time, Amount::new(-item.incoming_outgoing, currency))),
+            BitcoinDeActionType::Deposit => Ok(Transaction::receive(utc_time, Amount::new(item.incoming_outgoing, currency))),
             BitcoinDeActionType::Sale => {
                 Ok(Transaction::trade(
                     utc_time,
@@ -87,19 +88,24 @@ impl TryFrom<BitcoinDeAction> for Transaction {
                     },
                     Amount {
                         quantity: -item.incoming_outgoing,
-                        currency: item.currency,
+                        currency: currency,
                     },
                 ))
             },
-            BitcoinDeActionType::NetworkFee => Ok(Transaction::fee(utc_time, Amount::new(-item.incoming_outgoing, item.currency))),
+            BitcoinDeActionType::NetworkFee => Ok(Transaction::fee(utc_time, Amount::new(-item.incoming_outgoing, currency))),
         }?;
         match item.type_ {
-            BitcoinDeActionType::Registration => {},
-            BitcoinDeActionType::Purchase => tx.description = Some(item.reference),
-            BitcoinDeActionType::Disbursement => tx.tx_hash = Some(item.reference),
-            BitcoinDeActionType::Deposit => tx.tx_hash = Some(item.reference),
-            BitcoinDeActionType::Sale => tx.description = Some(item.reference),
-            BitcoinDeActionType::NetworkFee => tx.tx_hash = Some(item.reference),
+            BitcoinDeActionType::Registration => unreachable!(),
+            BitcoinDeActionType::Purchase |
+            BitcoinDeActionType::Sale => {
+                tx.description = Some(item.reference);
+            },
+            BitcoinDeActionType::Disbursement |
+            BitcoinDeActionType::Deposit |
+            BitcoinDeActionType::NetworkFee => {
+                tx.tx_hash = Some(item.reference);
+                tx.blockchain = Some(item.currency);
+            },
         };
         Ok(tx)
     }

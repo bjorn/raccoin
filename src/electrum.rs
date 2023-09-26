@@ -31,6 +31,7 @@ impl From<ElectrumHistoryItem> for Transaction {
         };
         tx.description = if item.label.is_empty() { None } else { Some(item.label) };
         tx.tx_hash = Some(item.transaction_hash);
+        tx.blockchain = Some("BTC".to_owned());
         tx.fee = item.fee.and_then(|f| Some(Amount { quantity: f, currency: "BTC".to_string() }));
         tx
     }

@@ -51,6 +51,7 @@ impl From<MyceliumTransaction> for Transaction {
         };
         tx.description = if item.label.is_empty() { None } else { Some(item.label) };
         tx.tx_hash = Some(item.id);
+        tx.blockchain = Some("BTC".to_owned());
         tx
     }
 }

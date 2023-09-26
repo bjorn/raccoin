@@ -39,6 +39,7 @@ export struct UiTransaction {
     gain_error: string,
     description: string,
     tx_hash: string,
+    blockchain: string,
 }
 
 export struct UiCurrencySummary {
@@ -79,4 +80,22 @@ export struct UiTaxReport {
     // expenses: string,
     currencies: [UiCurrencySummary],
     gains: [UiCapitalGain],
+}
+
+export struct UiCurrencyHoldings {
+    currency_cmc_id: int,
+    currency: string,
+    quantity: string,
+    cost: float,
+    value: float,
+    roi: string,
+    unrealized_gain: float,
+    percentage_of_portfolio: float,
+}
+
+export struct UiPortfolio {
+    balance: float,
+    cost_base: float,
+    unrealized_gains: float,
+    holdings: [UiCurrencyHoldings],
 }

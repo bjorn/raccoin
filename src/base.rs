@@ -138,6 +138,8 @@ pub(crate) struct Transaction {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub blockchain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fee: Option<Amount>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fee_value: Option<Amount>,
@@ -158,6 +160,7 @@ impl Transaction {
             operation,
             description: None,
             tx_hash: None,
+            blockchain: None,
             fee: None,
             fee_value: None,
             gain: None,

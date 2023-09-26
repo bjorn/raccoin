@@ -55,6 +55,7 @@ pub(crate) fn address_transactions(
         };
 
         transaction.tx_hash = Some(tx.txid.to_string());
+        transaction.blockchain = Some("BTC".to_owned());
 
         transactions.push(transaction);
     }

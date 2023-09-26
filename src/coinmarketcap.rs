@@ -119,10 +119,14 @@ pub(crate) fn estimate_btc_price(time: NaiveDateTime, prices: &Vec<PricePoint>) 
         let price_difference = next_price.price - prev_price.price;
 
         let total_duration: Decimal = (next_price.timestamp - prev_price.timestamp).num_seconds().into();
-        let time_since_prev: Decimal = (time - prev_price.timestamp).num_seconds().into();
-        let time_ratio = time_since_prev / total_duration;
+        if total_duration > Decimal::ZERO {
+            let time_since_prev: Decimal = (time - prev_price.timestamp).num_seconds().into();
+            let time_ratio = time_since_prev / total_duration;
 
-        Some(prev_price.price + time_ratio * price_difference)
+            Some(prev_price.price + time_ratio * price_difference)
+        } else {
+            Some(next_price.price)
+        }
     } else {
         None
     }

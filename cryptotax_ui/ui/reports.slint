@@ -137,7 +137,7 @@ export component Reports inherits Rectangle {
                     }
 
                     summary-view := ListView {
-                        for currency_summary[index] in report.currencies: Rectangle {
+                        for currency[index] in report.currencies: Rectangle {
                             property <bool> even: mod(index, 2) == 0;
 
                             background: touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
@@ -154,21 +154,21 @@ export component Reports inherits Rectangle {
 
                                 Cell {
                                     CurrencyIcon {
-                                        cmc-id: currency-summary.currency-cmc-id;
+                                        cmc-id: currency.currency-cmc-id;
                                     }
                                     ElidingText {
-                                        text: currency_summary.currency;
+                                        text: currency.currency;
                                     }
                                 }
-                                MonoTextCell { text: currency_summary.balance_start; }
-                                MonoTextCell { text: currency_summary.balance_end; }
-                                MonoTextCell { text: currency_summary.quantity_disposed; }
-                                MonoTextCell { text: currency_summary.cost; }
-                                MonoTextCell { text: currency_summary.fees; }
-                                MonoTextCell { text: currency_summary.proceeds; }
-                                MonoTextCell { text: currency_summary.capital_profit_loss; }
-                                MonoTextCell { text: currency_summary.income; }
-                                MonoTextCell { text: currency_summary.total_profit_loss; }
+                                MonoTextCell { text: currency.balance_start; }
+                                MonoTextCell { text: currency.balance_end; }
+                                MonoTextCell { text: currency.quantity_disposed; }
+                                MonoTextCell { text: currency.cost; }
+                                MonoTextCell { text: currency.fees; }
+                                MonoTextCell { text: currency.proceeds; }
+                                MonoTextCell { text: currency.capital_profit_loss; }
+                                MonoTextCell { text: currency.income; }
+                                MonoTextCell { text: currency.total_profit_loss; }
                             }
                         }
                     }

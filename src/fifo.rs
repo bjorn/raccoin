@@ -15,6 +15,12 @@ struct Entry {
     remaining: Decimal,
 }
 
+impl Entry {
+    fn cost_base(&self) -> Decimal {
+        self.unit_price * self.remaining
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CapitalGain {
     pub bought: NaiveDateTime,
@@ -188,6 +194,10 @@ impl FIFO {
 
     pub(crate) fn currency_balance(&self, currency: &str) -> Decimal {
         self.holdings.get(currency).map_or(Decimal::ZERO, total_holdings)
+    }
+
+    pub(crate) fn currency_cost_base(&self, currency: &str) -> Decimal {
+        self.holdings.get(currency).map_or(Decimal::ZERO, |h| h.iter().map(|e| e.cost_base()).sum())
     }
 
     fn holdings_for_currency(&mut self, currency: &str) -> &mut VecDeque<Entry> {

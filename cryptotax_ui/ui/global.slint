@@ -1,4 +1,10 @@
-import { UiCapitalGain, UiTaxReport, UiTransaction, UiTransactionSource } from "./structs.slint";
+import {
+    UiCapitalGain,
+    UiPortfolio,
+    UiTaxReport,
+    UiTransaction,
+    UiTransactionSource
+} from "./structs.slint";
 import { TestData } from "./test-data.slint";
 
 export global Facade {
@@ -9,15 +15,17 @@ export global Facade {
     in-out property <[UiTransaction]> transactions: TestData.transactions;
     in-out property <[StandardListViewItem]> report-years: TestData.report-years;
     in-out property <[UiTaxReport]> reports: TestData.reports;
+    in-out property <UiPortfolio> portfolio: TestData.portfolio;
 
     // ACTIONS
 
-    callback open-transaction(string);
+    // params: (blockchain, tx_hash)
+    callback open-transaction(string, string);
 
-    // The int parameter refers to the index of the source to change
+    // params: (source_index, enabled)
     callback set-source-enabled(int, bool);
 
-    // The int parameter refers to the index of the report to export
+    // params: (report_index)
     callback export-summary(int);
     callback export-capital-gains(int);
 }

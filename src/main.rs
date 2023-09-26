@@ -15,8 +15,8 @@ mod trezor;
 
 use base::{Operation, Amount, Transaction};
 use chrono_tz::Europe;
-use chrono::{NaiveDateTime, Duration, Datelike};
-use coinmarketcap::{load_btc_price_history_data, estimate_btc_price};
+use chrono::{NaiveDateTime, Duration, Datelike, Utc};
+use coinmarketcap::{load_btc_price_history_data, estimate_btc_price, PricePoint};
 use cryptotax_ui::*;
 use esplora::{blocking_esplora_client, address_transactions};
 use fifo::{FIFO, CapitalGain};
@@ -84,6 +84,8 @@ struct CurrencySummary {
     currency: String,
     balance_start: Decimal,
     balance_end: Decimal,
+    cost_start: Decimal,
+    cost_end: Decimal,
     quantity_disposed: Decimal,
     quantity_income: Decimal,
     cost: Decimal,
@@ -123,6 +125,7 @@ struct App {
     sources: Vec<TransactionSource>,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
+    price_history: PriceHistory,
 }
 
 impl App {
@@ -132,6 +135,7 @@ impl App {
             sources: Vec::new(),
             transactions: Vec::new(),
             reports: Vec::new(),
+            price_history: PriceHistory::new(),
         }
     }
 
@@ -160,7 +164,7 @@ impl App {
     }
 
     fn refresh_transactions(&mut self) {
-        self.transactions = load_transactions(&mut self.sources).unwrap_or_default();
+        self.transactions = load_transactions(&mut self.sources, &self.price_history).unwrap_or_default();
         self.reports = calculate_tax_reports(&mut self.transactions);
     }
 }
@@ -243,7 +247,7 @@ fn cmc_id_for_amount(amount: &Amount) -> i32 {
     cmc_id(&amount.currency)
 }
 
-fn load_transactions(sources: &mut Vec<TransactionSource>) -> Result<Vec<Transaction>, Box<dyn Error>> {
+fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let esplora_client = blocking_esplora_client()?;
     let mut transactions = Vec::new();
 
@@ -315,7 +319,7 @@ fn load_transactions(sources: &mut Vec<TransactionSource>) -> Result<Vec<Transac
     transactions.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
     match_send_receive(&mut transactions);
-    estimate_transaction_values(&mut transactions);
+    estimate_transaction_values(&mut transactions, price_history);
 
     Ok(transactions)
 }
@@ -403,23 +407,37 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
     }
 }
 
-fn estimate_transaction_values(transactions: &mut Vec<Transaction>) {
-    let prices = load_btc_price_history_data().unwrap_or_default();
+struct PriceHistory {
+    prices: Vec<PricePoint>,
+}
 
-    let estimate_value = |timestamp: NaiveDateTime, amount: &Amount| -> Option<Amount> {
-        match amount.currency.as_str() {
-            "BTC" => estimate_btc_price(timestamp, &prices),
+impl PriceHistory {
+    fn new() -> Self {
+        Self {
+            prices: load_btc_price_history_data().unwrap_or_default(),
+        }
+    }
+
+    fn estimate_price(&self, timestamp: NaiveDateTime, currency: &str) -> Option<Decimal> {
+        match currency {
+            "BTC" => estimate_btc_price(timestamp, &self.prices),
             "EUR" => Some(Decimal::ONE),
             _ => {
-                println!("todo: estimate value for {} at {}", amount.currency, timestamp);
+                println!("todo: estimate price for {} at {}", currency, timestamp);
                 None
             }
-        }.map(|price| Amount {
+        }
+    }
+
+    fn estimate_value(&self, timestamp: NaiveDateTime, amount: &Amount) -> Option<Amount> {
+        self.estimate_price(timestamp, &amount.currency).map(|price| Amount {
             quantity: price * amount.quantity,
             currency: "EUR".to_owned()
         })
-    };
+    }
+}
 
+fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_history: &PriceHistory) {
     let estimate_transaction_value = |tx: &mut Transaction| {
         if tx.value.is_none() {
             tx.value = match &tx.operation {
@@ -429,8 +447,8 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>) {
                     } else if outgoing.is_fiat() {
                         Some(outgoing.clone())
                     } else {
-                        let value_incoming = estimate_value(tx.timestamp, incoming);
-                        let value_outgoing = estimate_value(tx.timestamp, outgoing);
+                        let value_incoming = price_history.estimate_value(tx.timestamp, incoming);
+                        let value_outgoing = price_history.estimate_value(tx.timestamp, outgoing);
                         println!("incoming {:?} EUR ({}), outgoing {:?} EUR ({})", value_incoming, incoming, value_outgoing, outgoing);
                         value_incoming.or(value_outgoing)
                     }
@@ -449,14 +467,14 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>) {
                 Operation::IncomingGift(amount) |
                 Operation::OutgoingGift(amount) |
                 Operation::Spam(amount) => {
-                    estimate_value(tx.timestamp, amount)
+                    price_history.estimate_value(tx.timestamp, amount)
                 },
             };
         }
 
         if tx.fee_value.is_none() {
             tx.fee_value = match &tx.fee {
-                Some(amount) => estimate_value(tx.timestamp, amount),
+                Some(amount) => price_history.estimate_value(tx.timestamp, amount),
                 None => None,
             };
         }
@@ -485,6 +503,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
         // prepare currency summary
         currencies.retain_mut(|summary| {
             summary.balance_start = summary.balance_end;
+            summary.cost_start = summary.cost_end;
             summary.quantity_disposed = Decimal::ZERO;
             summary.quantity_income = Decimal::ZERO;
             summary.cost = Decimal::ZERO;
@@ -526,6 +545,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
 
         currencies.iter_mut().for_each(|summary| {
             summary.balance_end = fifo.currency_balance(&summary.currency);
+            summary.cost_end = fifo.currency_cost_base(&summary.currency);
             summary.capital_profit_loss = summary.proceeds - summary.cost - summary.fees;
             summary.total_profit_loss = summary.capital_profit_loss + summary.income;
         });
@@ -550,8 +570,16 @@ fn initialize_ui() -> Result<AppWindow, slint::PlatformError> {
     let source_types: Vec<SharedString> = TransactionsSourceType::iter().map(|s| SharedString::from(s.to_string())).collect();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
-    facade.on_open_transaction(move |tx_hash| {
-        let _ = open::that(format!("http://blockchair.com/bitcoin/transaction/{}", tx_hash));
+    facade.on_open_transaction(move |blockchain, tx_hash| {
+        let _ = match blockchain.as_str() {
+            "BCH" => open::that(format!("https://blockchair.com/bitcoin-cash/transaction/{}", tx_hash)),
+            "BTC" => open::that(format!("https://blockchair.com/bitcoin/transaction/{}", tx_hash)),  // or "https://btc.com/tx/{}"
+            "ETH" => open::that(format!("https://etherscan.io/tx/{}", tx_hash)),
+            "LTC" => open::that(format!("https://blockchair.com/litecoin/transaction/{}", tx_hash)),
+            "PPC" => open::that(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
+            "ZEC" => open::that(format!("https://blockchair.com/zcash/transaction/{}", tx_hash)),
+            _ => Ok(()),
+        };
     });
 
     Ok(ui)
@@ -580,6 +608,7 @@ fn ui_set_transactions(ui: &AppWindow, app: &App) {
         let mut value = transaction.value.as_ref();
         let mut description = transaction.description.clone();
         let mut tx_hash = transaction.tx_hash.as_ref();
+        let mut blockchain = transaction.blockchain.as_ref();
 
         let (tx_type, sent, received, from, to) = match &transaction.operation {
             Operation::Buy(amount) => (UiTransactionType::Buy, None, Some(amount), None, source_name),
@@ -602,6 +631,7 @@ fn ui_set_transactions(ui: &AppWindow, app: &App) {
 
                     value = value.or(matching_receive.value.as_ref());
                     tx_hash = tx_hash.or(matching_receive.tx_hash.as_ref());
+                    blockchain = blockchain.or(matching_receive.blockchain.as_ref());
                     description = match (description, &matching_receive.description) {
                         (Some(s), Some(r)) => Some(s + ", " + r),
                         (Some(s), None) => Some(s),
@@ -660,7 +690,8 @@ fn ui_set_transactions(ui: &AppWindow, app: &App) {
             gain: gain.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
             gain_error: gain_error.unwrap_or_default().into(),
             description: description.unwrap_or_default().into(),
-            tx_hash: tx_hash.map(|s| s.as_str()).unwrap_or_default().to_owned().into(),
+            tx_hash: tx_hash.map(|s| s.to_owned()).unwrap_or_default().into(),
+            blockchain: blockchain.map(|s| s.to_owned()).unwrap_or_default().into(),
         });
     }
 
@@ -725,9 +756,58 @@ fn ui_set_reports(ui: &AppWindow, app: &App) {
     facade.set_reports(Rc::new(VecModel::from(ui_reports)).into());
 }
 
+fn ui_set_portfolio(ui: &AppWindow, app: &App) {
+    let facade = ui.global::<Facade>();
+    if let Some(report) = app.reports.last() {
+        let now = Utc::now().naive_utc();
+        let mut balance = Decimal::ZERO;
+        let mut cost_base = Decimal::ZERO;
+
+        let mut ui_holdings: Vec<UiCurrencyHoldings> = report.currencies.iter().filter_map(|currency| {
+            if currency.balance_end.is_zero() {
+                return None
+            }
+
+            let current_price = app.price_history.estimate_price(now, &currency.currency);
+            let current_value = current_price.map(|price| currency.balance_end * price).unwrap_or(Decimal::ZERO);
+            let unrealized_gain = current_value - currency.cost_end;
+            let roi = if currency.cost_end > Decimal::ZERO { Some(unrealized_gain / currency.cost_end * Decimal::ONE_HUNDRED) } else { None };
+
+            balance += current_value;
+            cost_base += currency.cost_end;
+
+            Some(UiCurrencyHoldings {
+                currency_cmc_id: cmc_id(&currency.currency),
+                currency: currency.currency.clone().into(),
+                quantity: currency.balance_end.to_string().into(),
+                cost: currency.cost_end.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+                value: current_value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+                roi: roi.map(|roi| format!("{:.2}%", roi)).unwrap_or_else(|| { "-".to_owned() }).into(),
+                unrealized_gain: unrealized_gain.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+                percentage_of_portfolio: 0.0,
+            })
+        }).collect();
+
+        // set the percentage of portfolio for each currency
+        if balance > Decimal::ZERO {
+            ui_holdings.iter_mut().for_each(|currency| {
+                let balance: f32 = balance.try_into().unwrap();
+                currency.percentage_of_portfolio = (currency.value / balance) * 100.0;
+            });
+        }
+
+        facade.set_portfolio(UiPortfolio {
+            balance: balance.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+            cost_base: cost_base.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+            unrealized_gains: (balance - cost_base).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+            holdings: Rc::new(VecModel::from(ui_holdings)).into(),
+        });
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     // todo: use command-line parameter
-    let sources_file = Path::new("sources.json");
+    let sources_file = Path::new("/home/bjorn/ledger/sources.json");
 
     let mut app = App::new();
     app.load_sources(sources_file);
@@ -737,6 +817,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui_set_sources(&ui, &app.sources);
     ui_set_transactions(&ui, &app);
     ui_set_reports(&ui, &app);
+    ui_set_portfolio(&ui, &app);
 
     let app = Rc::new(RefCell::new(app));
     let facade = ui.global::<Facade>();
@@ -753,8 +834,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // refresh the UI
         let ui = ui_weak.unwrap();
+        ui_set_sources(&ui, &app.sources);
         ui_set_transactions(&ui, &app);
         ui_set_reports(&ui, &app);
+        ui_set_portfolio(&ui, &app);
 
         // save the sources file
         match app.save_sources() {

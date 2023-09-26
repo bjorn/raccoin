@@ -312,7 +312,7 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
             fee_amount: item.fee.as_ref().map(|fee| fee.quantity),
             from: None,
             to: None,
-            blockchain: None,
+            blockchain: item.blockchain.as_ref().map(|s| s.as_str()),
             id: item.tx_hash.as_ref().map(|s| s.as_str()),
             description: item.description.as_ref().map(|s| s.as_str()),
             reference_price_per_unit: None,
@@ -386,6 +386,7 @@ impl<'a> From<CtcTx<'a>> for Transaction {
             },
             description: item.description.map(|s| s.to_owned()),
             tx_hash: item.id.map(|s| s.to_owned()),
+            blockchain: item.blockchain.map(|s| s.to_owned()),
             fee: if let (Some(fee_amount), Some(fee_currency)) = (item.fee_amount, item.fee_currency) {
                 Some(Amount { quantity: fee_amount, currency: fee_currency.to_owned() })
             } else {

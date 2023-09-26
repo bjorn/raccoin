@@ -47,6 +47,7 @@ impl BitcoinCoreAction {
         };
         tx.description = if self.label.is_empty() { None } else { Some(self.label) };
         tx.tx_hash = Some(self.id);
+        tx.blockchain = Some(currency.to_owned());
         tx
     }
 }

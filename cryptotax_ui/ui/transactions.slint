@@ -180,7 +180,7 @@ component TransactionDisplay inherits Rectangle {
                 tooltip: tx.tx-hash;
                 tooltip-font-family: "DejaVu Sans Mono";
 
-                clicked => { Facade.open-transaction(tx.tx-hash) }
+                clicked => { Facade.open-transaction(tx.blockchain, tx.tx-hash) }
             }
 
             desc-btn := SmallButton {
