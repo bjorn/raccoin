@@ -1,22 +1,23 @@
 import { HorizontalBox, CheckBox, ComboBox} from "std-widgets.slint";
+import { Portfolio } from "./portfolio.slint";
 import { Sources } from "./sources.slint";
-import { Transactions  } from "./transactions.slint";
+import { Transactions } from "./transactions.slint";
 import { Reports } from "./reports.slint";
 import { Badge } from "./common.slint";
-import { TestData } from "./test-data.slint";
-import { UiCapitalGain, UiTaxReport, UiTransaction, UiTransactionSource } from "./structs.slint";
-import { Actions } from "./global.slint";
+import { Facade } from "./global.slint";
+import { UiCapitalGain } from "./structs.slint";
 
-export { UiCapitalGain, Actions }
+export { UiCapitalGain, Facade }
 
 enum Page {
+    portfolio,
     sources,
     transactions,
     reports,
 }
 
 component PageButton inherits Rectangle {
-    in-out property text <=> txt.text;
+    in property <string> text <=> txt.text;
     in property <bool> active;
 
     callback pressed;
@@ -48,15 +49,7 @@ component PageButton inherits Rectangle {
 }
 
 export component AppWindow inherits Window {
-    in property <[UiTransactionSource]> sources: TestData.sources;
-    in property <[string]> source_types;
-    in property <[UiTransaction]> transactions <=> transactions-page.transactions;
-    in property <[StandardListViewItem]> report-years <=> reports-page.report-years;
-    in property <[UiTaxReport]> reports <=> reports-page.reports;
-
-    callback open-transaction(string);
-
-    property <Page> active-page: Page.transactions;
+    property <Page> active-page: Page.portfolio;
 
     title: "Crypto Tax Tool";
 
@@ -70,12 +63,17 @@ export component AppWindow inherits Window {
             alignment: center;
 
             PageButton {
+                text: "Portfolio";
+                active: root.active-page == Page.portfolio;
+                pressed => { root.active-page = Page.portfolio; }
+            }
+            PageButton {
                 text: "Sources";
                 active: root.active-page == Page.sources;
                 pressed => { root.active-page = Page.sources; }
 
                 Badge {
-                    text: root.sources.length;
+                    text: Facade.sources.length;
                 }
             }
             PageButton {
@@ -84,7 +82,7 @@ export component AppWindow inherits Window {
                 pressed => { root.active-page = Page.transactions; }
 
                 Badge {
-                    text: root.transactions.length;
+                    text: Facade.transactions.length;
                 }
             }
             PageButton {
@@ -93,20 +91,22 @@ export component AppWindow inherits Window {
                 pressed => { root.active-page = Page.reports; }
 
                 Badge {
-                    text: root.reports.length;
+                    text: Facade.reports.length;
                 }
             }
         }
 
         Rectangle {
-            Sources {
+            portfolio-page := Portfolio {
+                visible: active-page == Page.portfolio;
+            }
+
+            sources-page := Sources {
                 visible: active-page == Page.sources;
-                sources: root.sources;
             }
 
             transactions-page := Transactions {
                 visible: active-page == Page.transactions;
-                open-transaction(s) => { root.open-transaction(s); }
             }
 
             reports-page := Reports {

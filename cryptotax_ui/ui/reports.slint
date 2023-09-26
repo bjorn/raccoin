@@ -8,17 +8,16 @@ import {
     MonoTextCell,
     TableHeader
 } from "./common.slint";
+import { Facade } from "./global.slint";
 import { UiTaxReport } from "./structs.slint";
-import { Actions } from "./global.slint";
-import { TestData } from "./test-data.slint";
 
 component MonoText inherits Text {
     font-family: "DejaVu Sans Mono";
 }
 
 export component Reports inherits Rectangle {
-    in property <[StandardListViewItem]> report-years <=> year-list.model;
-    in property <[UiTaxReport]> reports: TestData.reports;
+    in property <[StandardListViewItem]> report-years: Facade.report-years;
+    in property <[UiTaxReport]> reports: Facade.reports;
 
     property <UiTaxReport> report: reports[year-list.current-item];
 
@@ -26,7 +25,7 @@ export component Reports inherits Rectangle {
         padding: 0;
 
         year-list := StandardListView {
-            model: TestData.report-years;
+            model: root.report-years;
             current-item: 0;
             min-width: 80px;
             max-width: 150px;
@@ -111,9 +110,9 @@ export component Reports inherits Rectangle {
                     }
                     clicked => {
                         if (report-combo.current-index == 0) {
-                            Actions.export-summary(year-list.current-item);
+                            Facade.export-summary(year-list.current-item);
                         } else {
-                            Actions.export-capital-gains(year-list.current-item);
+                            Facade.export-capital-gains(year-list.current-item);
                         }
                     }
                 }

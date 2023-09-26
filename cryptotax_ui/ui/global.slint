@@ -1,8 +1,23 @@
-export global Actions {
+import { UiCapitalGain, UiTaxReport, UiTransaction, UiTransactionSource } from "./structs.slint";
+import { TestData } from "./test-data.slint";
+
+export global Facade {
+    // MODELS
+
+    in-out property <[UiTransactionSource]> sources: TestData.sources;
+    in-out property <[string]> source-types;
+    in-out property <[UiTransaction]> transactions: TestData.transactions;
+    in-out property <[StandardListViewItem]> report-years: TestData.report-years;
+    in-out property <[UiTaxReport]> reports: TestData.reports;
+
+    // ACTIONS
+
+    callback open-transaction(string);
+
     // The int parameter refers to the index of the source to change
-    callback set_source_enabled(int, bool);
+    callback set-source-enabled(int, bool);
 
     // The int parameter refers to the index of the report to export
-    callback export_summary(int);
-    callback export_capital_gains(int);
+    callback export-summary(int);
+    callback export-capital-gains(int);
 }

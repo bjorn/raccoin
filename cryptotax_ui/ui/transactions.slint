@@ -9,7 +9,7 @@ import {
     HeaderCell,
     MonoTextCell
 } from "./common.slint";
-import { TestData } from "./test-data.slint";
+import { Facade } from "./global.slint";
 import { UiTransactionType, UiTransaction } from "./structs.slint";
 
 component SmallButton inherits Rectangle {
@@ -84,9 +84,7 @@ component TransactionsHeader inherits TableHeader {
 }
 
 component TransactionDisplay inherits Rectangle {
-    callback open-transaction(string);
-
-    in property <UiTransaction> tx : TestData.transactions[0];
+    in property <UiTransaction> tx: Facade.transactions[0];
     in property <bool> even;
 
     property <bool> is-hovered: touch.has-hover || tx-btn.has-hover || desc-btn.has-hover;
@@ -182,7 +180,7 @@ component TransactionDisplay inherits Rectangle {
                 tooltip: tx.tx-hash;
                 tooltip-font-family: "DejaVu Sans Mono";
 
-                clicked => { root.open-transaction(tx.tx-hash) }
+                clicked => { Facade.open-transaction(tx.tx-hash) }
             }
 
             desc-btn := SmallButton {
@@ -195,9 +193,7 @@ component TransactionDisplay inherits Rectangle {
 }
 
 export component Transactions inherits VerticalLayout {
-    in property <[UiTransaction]> transactions: TestData.transactions;
-
-    callback open-transaction(string);
+    in property <[UiTransaction]> transactions: Facade.transactions;
 
     spacing: 2px;
 
@@ -207,7 +203,6 @@ export component Transactions inherits VerticalLayout {
         for tx[index] in transactions: TransactionDisplay {
             even: mod(index, 2) == 0;
             tx: tx;
-            open-transaction => { root.open-transaction(tx.tx_hash); }
         }
     }
 }

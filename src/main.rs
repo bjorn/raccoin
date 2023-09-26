@@ -545,11 +545,12 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
 
 fn initialize_ui() -> Result<AppWindow, slint::PlatformError> {
     let ui = AppWindow::new()?;
+    let facade = ui.global::<Facade>();
 
     let source_types: Vec<SharedString> = TransactionsSourceType::iter().map(|s| SharedString::from(s.to_string())).collect();
-    ui.set_source_types(Rc::new(VecModel::from(source_types)).into());
+    facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
-    ui.on_open_transaction(move |tx_hash| {
+    facade.on_open_transaction(move |tx_hash| {
         let _ = open::that(format!("http://blockchair.com/bitcoin/transaction/{}", tx_hash));
     });
 
@@ -566,7 +567,7 @@ fn ui_set_sources(ui: &AppWindow, sources: &Vec<TransactionSource>) {
             transaction_count: source.transaction_count as i32,
         }
     }).collect();
-    ui.set_sources(Rc::new(VecModel::from(ui_sources)).into());
+    ui.global::<Facade>().set_sources(Rc::new(VecModel::from(ui_sources)).into());
 }
 
 fn ui_set_transactions(ui: &AppWindow, app: &App) {
@@ -663,12 +664,14 @@ fn ui_set_transactions(ui: &AppWindow, app: &App) {
         });
     }
 
-    ui.set_transactions(Rc::new(VecModel::from(ui_transactions)).into());
+    ui.global::<Facade>().set_transactions(Rc::new(VecModel::from(ui_transactions)).into());
 }
 
 fn ui_set_reports(ui: &AppWindow, app: &App) {
+    let facade = ui.global::<Facade>();
+
     let report_years: Vec<StandardListViewItem> = app.reports.iter().map(|report| StandardListViewItem::from(report.year.to_string().as_str())).collect();
-    ui.set_report_years(Rc::new(VecModel::from(report_years)).into());
+    facade.set_report_years(Rc::new(VecModel::from(report_years)).into());
 
     let ui_reports: Vec<UiTaxReport> = app.reports.iter().map(|report| {
         let ui_gains: Vec<UiCapitalGain> = report.gains.iter().map(|gain| {
@@ -718,7 +721,8 @@ fn ui_set_reports(ui: &AppWindow, app: &App) {
             year: report.year,
         }
     }).collect();
-    ui.set_reports(Rc::new(VecModel::from(ui_reports)).into());
+
+    facade.set_reports(Rc::new(VecModel::from(ui_reports)).into());
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -735,11 +739,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui_set_reports(&ui, &app);
 
     let app = Rc::new(RefCell::new(app));
-    let actions = ui.global::<Actions>();
+    let facade = ui.global::<Facade>();
     let ui_weak = ui.as_weak();
 
     let app_for_set_source_enabled = app.clone();
-    actions.on_set_source_enabled(move |index, enabled| {
+    facade.on_set_source_enabled(move |index, enabled| {
         let mut app = app_for_set_source_enabled.borrow_mut();
         let source = app.sources.get_mut(index as usize);
         if let Some(source) = source {
@@ -768,7 +772,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let app_for_export_summary = app.clone();
-    actions.on_export_summary(move |index| {
+    facade.on_export_summary(move |index| {
         let app = app_for_export_summary.borrow();
         let report = app.reports.get(index as usize).expect("report index should be valid");
         let file_name = format!("report_summary_{}.csv", report.year);
@@ -790,7 +794,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let app_for_export_capital_gains = app.clone();
-    actions.on_export_capital_gains(move |index| {
+    facade.on_export_capital_gains(move |index| {
         let app = app_for_export_capital_gains.borrow();
         let report = app.reports.get(index as usize).expect("report index should be valid");
         let file_name = format!("capital_gains_{}.csv", report.year);

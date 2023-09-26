@@ -1,11 +1,10 @@
 import { ListView, HorizontalBox, CheckBox, ComboBox } from "std-widgets.slint";
 import { Badge } from "./common.slint";
-import { Actions } from "./global.slint";
+import { Facade } from "./global.slint";
 import { UiTransactionSource } from "./structs.slint";
 
 export component Sources inherits ListView {
-    in property <[UiTransactionSource]> sources;
-    in property <[string]> source_types;
+    in property <[UiTransactionSource]> sources: Facade.sources;
 
     for source[index] in sources: HorizontalBox {
         CheckBox {
@@ -14,7 +13,7 @@ export component Sources inherits ListView {
 
             toggled => {
                 source.enabled = self.checked;
-                Actions.set-source-enabled(index, self.checked);
+                Facade.set-source-enabled(index, self.checked);
             }
         }
         Text {
@@ -28,7 +27,7 @@ export component Sources inherits ListView {
         }
         Rectangle {}
         ComboBox {
-            model: source_types;
+            model: Facade.source-types;
             horizontal-stretch: 0;
             current-value: source.source_type;
             enabled: false;
