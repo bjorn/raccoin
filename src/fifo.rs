@@ -93,7 +93,6 @@ impl FIFO {
                 Operation::OutgoingGift(amount) => {
                     transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, amount, &transaction.value));
                 },
-                Operation::Noop |
                 Operation::FiatDeposit(_) |
                 Operation::FiatWithdrawal(_) |
                 Operation::Receive(_) |

@@ -423,7 +423,6 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>) {
     let estimate_transaction_value = |tx: &mut Transaction| {
         if tx.value.is_none() {
             tx.value = match &tx.operation {
-                Operation::Noop => None,
                 Operation::Trade { incoming, outgoing } => {
                     if incoming.is_fiat() {
                         Some(incoming.clone())
@@ -582,10 +581,6 @@ fn ui_set_transactions(ui: &AppWindow, app: &App) {
         let mut tx_hash = transaction.tx_hash.as_ref();
 
         let (tx_type, sent, received, from, to) = match &transaction.operation {
-            Operation::Noop => {
-                // ignore Noop transactions
-                continue;
-            }
             Operation::Buy(amount) => (UiTransactionType::Buy, None, Some(amount), None, source_name),
             Operation::Sell(amount) => (UiTransactionType::Sell, Some(amount), None, source_name, None),
             Operation::Trade { incoming, outgoing } => {

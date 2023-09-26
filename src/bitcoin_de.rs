@@ -54,15 +54,17 @@ pub(crate) struct BitcoinDeAction {
     // pub account_balance: Decimal,
 }
 
-impl From<BitcoinDeAction> for Transaction {
+impl TryFrom<BitcoinDeAction> for Transaction {
+    type Error = &'static str;
+
     // todo: take trading fee into account?
     // todo: translate btc_address?
-    fn from(item: BitcoinDeAction) -> Self {
+    fn try_from(item: BitcoinDeAction) -> Result<Self, Self::Error> {
         let utc_time = Berlin.from_local_datetime(&item.date).unwrap().naive_utc();
         let mut tx = match item.type_ {
-            BitcoinDeActionType::Registration => Transaction::noop(utc_time),
+            BitcoinDeActionType::Registration => Err("Registration is not a transaction"),
             BitcoinDeActionType::Purchase => {
-                Transaction::trade(
+                Ok(Transaction::trade(
                     utc_time,
                     Amount {
                         quantity: item.incoming_outgoing,
@@ -72,12 +74,12 @@ impl From<BitcoinDeAction> for Transaction {
                         quantity: item.amount_after_bitcoin_de_fee.expect("Purchase should have an amount"),
                         currency: item.unit_amount_after_bitcoin_de_fee
                     },
-                )
+                ))
             },
-            BitcoinDeActionType::Disbursement => Transaction::send(utc_time, Amount::new(-item.incoming_outgoing, item.currency)),
-            BitcoinDeActionType::Deposit => Transaction::receive(utc_time, Amount::new(item.incoming_outgoing, item.currency)),
+            BitcoinDeActionType::Disbursement => Ok(Transaction::send(utc_time, Amount::new(-item.incoming_outgoing, item.currency))),
+            BitcoinDeActionType::Deposit => Ok(Transaction::receive(utc_time, Amount::new(item.incoming_outgoing, item.currency))),
             BitcoinDeActionType::Sale => {
-                Transaction::trade(
+                Ok(Transaction::trade(
                     utc_time,
                     Amount {
                         quantity: item.amount_after_bitcoin_de_fee.expect("Sale should have an amount"),
@@ -87,10 +89,10 @@ impl From<BitcoinDeAction> for Transaction {
                         quantity: -item.incoming_outgoing,
                         currency: item.currency,
                     },
-                )
+                ))
             },
-            BitcoinDeActionType::NetworkFee => Transaction::fee(utc_time, Amount::new(-item.incoming_outgoing, item.currency)),
-        };
+            BitcoinDeActionType::NetworkFee => Ok(Transaction::fee(utc_time, Amount::new(-item.incoming_outgoing, item.currency))),
+        }?;
         match item.type_ {
             BitcoinDeActionType::Registration => {},
             BitcoinDeActionType::Purchase => tx.description = Some(item.reference),
@@ -99,7 +101,7 @@ impl From<BitcoinDeAction> for Transaction {
             BitcoinDeActionType::Sale => tx.description = Some(item.reference),
             BitcoinDeActionType::NetworkFee => tx.tx_hash = Some(item.reference),
         };
-        tx
+        Ok(tx)
     }
 }
 
@@ -113,7 +115,10 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>,
 
     for result in rdr.deserialize() {
         let record: BitcoinDeAction = result?;
-        transactions.push(record.into());
+        match Transaction::try_from(record) {
+            Ok(tx) => transactions.push(tx),
+            Err(_) => continue,
+        };
     }
 
     Ok(transactions)

@@ -66,11 +66,9 @@ impl fmt::Display for Amount {
 }
 
 /// Unified transaction type for all exchanges and wallets
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub(crate) enum Operation {
-    #[default]
-    Noop,
     Buy(Amount),
     Sell(Amount),
     Trade {
@@ -131,7 +129,7 @@ impl Operation {
 }
 
 /// Unified transaction type for all exchanges and wallets
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Transaction {
     pub timestamp: NaiveDateTime,
     pub operation: Operation,
@@ -154,63 +152,43 @@ pub(crate) struct Transaction {
 }
 
 impl Transaction {
-    pub(crate) fn noop(timestamp: NaiveDateTime) -> Self {
+    pub(crate) fn new(timestamp: NaiveDateTime, operation: Operation) -> Self {
         Self {
             timestamp,
-            operation: Operation::Noop,
-            ..Default::default()
+            operation,
+            description: None,
+            tx_hash: None,
+            fee: None,
+            fee_value: None,
+            gain: None,
+            source_index: 0,
+            value: None,
+            matching_tx: None,
         }
     }
 
     pub(crate) fn fiat_deposit(timestamp: NaiveDateTime, amount: Amount) -> Self {
-        Self {
-            timestamp,
-            operation: Operation::FiatDeposit(amount),
-            ..Default::default()
-        }
+        Self::new(timestamp, Operation::FiatDeposit(amount))
     }
 
     pub(crate) fn fiat_withdrawal(timestamp: NaiveDateTime, amount: Amount) -> Self {
-        Self {
-            timestamp,
-            operation: Operation::FiatWithdrawal(amount),
-            ..Default::default()
-        }
+        Self::new(timestamp, Operation::FiatWithdrawal(amount))
     }
 
     pub(crate) fn send(timestamp: NaiveDateTime, amount: Amount) -> Self {
-        Self {
-            timestamp,
-            operation: Operation::Send(amount),
-            ..Default::default()
-        }
+        Self::new(timestamp, Operation::Send(amount))
     }
 
     pub(crate) fn receive(timestamp: NaiveDateTime, amount: Amount) -> Self {
-        Self {
-            timestamp,
-            operation: Operation::Receive(amount),
-            ..Default::default()
-        }
+        Self::new(timestamp, Operation::Receive(amount))
     }
 
     pub(crate) fn fee(timestamp: NaiveDateTime, amount: Amount) -> Self {
-        Self {
-            timestamp,
-            operation: Operation::Fee(amount),
-            ..Default::default()
-        }
+        Self::new(timestamp, Operation::Fee(amount))
     }
 
     pub(crate) fn trade(timestamp: NaiveDateTime, incoming: Amount, outgoing: Amount) -> Self {
-        Self {
-            timestamp,
-            operation: Operation::Trade {
-                incoming,
-                outgoing,
-            },
-            ..Default::default()
-        }
+        Self::new(timestamp, Operation::Trade { incoming, outgoing })
     }
 }
 

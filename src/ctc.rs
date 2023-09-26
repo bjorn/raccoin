@@ -276,55 +276,47 @@ impl<'a> CtcTx<'a> {
     }
 }
 
-impl<'a> TryFrom<&'a Transaction> for CtcTx<'a> {
-    type Error = &'static str;
-
-    fn try_from(item: &'a Transaction) -> Result<Self, Self::Error> {
-        match item.operation {
-            Operation::Noop => Err("Noop operation not supported!"),
-            _ => {
-                let (operation, base, quote) = match &item.operation {
-                    Operation::Noop => unreachable!(),
-                    Operation::Buy(amount) => (CtcTxType::Buy, amount, item.value.as_ref()),
-                    Operation::Sell(amount) => (CtcTxType::Sell, amount, item.value.as_ref()),
-                    Operation::Trade { incoming, outgoing } => {
-                        if outgoing.is_fiat() {
-                            (CtcTxType::Buy, incoming, Some(outgoing))
-                        } else {
-                            (CtcTxType::Sell, outgoing, Some(incoming))
-                        }
-                    }
-                    Operation::FiatDeposit(amount) => (CtcTxType::FiatDeposit, amount, None),
-                    Operation::FiatWithdrawal(amount) => (CtcTxType::FiatWithdrawal, amount, None),
-                    Operation::Fee(amount) => (CtcTxType::Fee, amount, None),
-                    Operation::Receive(amount) => (CtcTxType::Receive, amount, None),
-                    Operation::Send(amount) => (CtcTxType::Send, amount, None),
-                    Operation::ChainSplit(amount) => (CtcTxType::ChainSplit, amount, None),
-                    Operation::Expense(amount) => (CtcTxType::Expense, amount, None),
-                    Operation::Income(amount) => (CtcTxType::Income, amount, None),
-                    Operation::Airdrop(amount) => (CtcTxType::Airdrop, amount, None),
-                    Operation::IncomingGift(amount) => (CtcTxType::IncomingGift, amount, None),
-                    Operation::OutgoingGift(amount) => (CtcTxType::OutgoingGift, amount, None),
-                    Operation::Spam(amount) => (CtcTxType::Spam, amount, None),
-                };
-                Ok(Self {
-                    timestamp: item.timestamp,
-                    operation,
-                    base_currency: &base.currency,
-                    base_amount: base.quantity,
-                    quote_currency: quote.map(|item| item.currency.as_str()),
-                    quote_amount: quote.map(|item| item.quantity),
-                    fee_currency: item.fee.as_ref().map(|fee| fee.currency.as_str()),
-                    fee_amount: item.fee.as_ref().map(|fee| fee.quantity),
-                    from: None,
-                    to: None,
-                    blockchain: None,
-                    id: item.tx_hash.as_ref().map(|s| s.as_str()),
-                    description: item.description.as_ref().map(|s| s.as_str()),
-                    reference_price_per_unit: None,
-                    reference_price_currency: None,
-                })
-            },
+impl<'a> From<&'a Transaction> for CtcTx<'a> {
+    fn from(item: &'a Transaction) -> Self {
+        let (operation, base, quote) = match &item.operation {
+            Operation::Buy(amount) => (CtcTxType::Buy, amount, item.value.as_ref()),
+            Operation::Sell(amount) => (CtcTxType::Sell, amount, item.value.as_ref()),
+            Operation::Trade { incoming, outgoing } => {
+                if outgoing.is_fiat() {
+                    (CtcTxType::Buy, incoming, Some(outgoing))
+                } else {
+                    (CtcTxType::Sell, outgoing, Some(incoming))
+                }
+            }
+            Operation::FiatDeposit(amount) => (CtcTxType::FiatDeposit, amount, None),
+            Operation::FiatWithdrawal(amount) => (CtcTxType::FiatWithdrawal, amount, None),
+            Operation::Fee(amount) => (CtcTxType::Fee, amount, None),
+            Operation::Receive(amount) => (CtcTxType::Receive, amount, None),
+            Operation::Send(amount) => (CtcTxType::Send, amount, None),
+            Operation::ChainSplit(amount) => (CtcTxType::ChainSplit, amount, None),
+            Operation::Expense(amount) => (CtcTxType::Expense, amount, None),
+            Operation::Income(amount) => (CtcTxType::Income, amount, None),
+            Operation::Airdrop(amount) => (CtcTxType::Airdrop, amount, None),
+            Operation::IncomingGift(amount) => (CtcTxType::IncomingGift, amount, None),
+            Operation::OutgoingGift(amount) => (CtcTxType::OutgoingGift, amount, None),
+            Operation::Spam(amount) => (CtcTxType::Spam, amount, None),
+        };
+        Self {
+            timestamp: item.timestamp,
+            operation,
+            base_currency: &base.currency,
+            base_amount: base.quantity,
+            quote_currency: quote.map(|item| item.currency.as_str()),
+            quote_amount: quote.map(|item| item.quantity),
+            fee_currency: item.fee.as_ref().map(|fee| fee.currency.as_str()),
+            fee_amount: item.fee.as_ref().map(|fee| fee.quantity),
+            from: None,
+            to: None,
+            blockchain: None,
+            id: item.tx_hash.as_ref().map(|s| s.as_str()),
+            description: item.description.as_ref().map(|s| s.as_str()),
+            reference_price_per_unit: None,
+            reference_price_currency: None,
         }
     }
 }
@@ -414,10 +406,8 @@ pub(crate) fn save_transactions_to_ctc_csv(transactions: &Vec<Transaction>, outp
     let mut wtr = csv::Writer::from_path(output_path)?;
 
     for tx in transactions {
-        match CtcTx::try_from(tx) {
-            Ok(ctc_tx) => wtr.serialize(ctc_tx)?,
-            Err(_e) => continue,
-        }
+        let ctc_tx: CtcTx = tx.into();
+        wtr.serialize(ctc_tx)?;
     }
 
     Ok(())
