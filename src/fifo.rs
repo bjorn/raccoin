@@ -155,6 +155,7 @@ impl FIFO {
         }
 
         let sold_unit_price = incoming_fiat / sold_quantity;
+        let mut cost_base_error = Ok(());
 
         while let Some(holding) = currency_holdings.front_mut() {
             if holding.timestamp > timestamp {
@@ -163,7 +164,13 @@ impl FIFO {
 
             // we can process up to the amount in the holding entry
             let processed_quantity = holding.remaining.min(sold_quantity);
-            let cost = processed_quantity * holding.unit_price.map_err(|_| GainError::MissingCostBase)?;
+            let cost = match holding.unit_price {
+                Ok(price) => processed_quantity * price,
+                Err(e) => {
+                    cost_base_error = Err(GainError::MissingCostBase);
+                    Decimal::ZERO
+                },
+            };
             let proceeds = processed_quantity * sold_unit_price;
 
             capital_gains.push(CapitalGain {
@@ -193,7 +200,7 @@ impl FIFO {
             return Err(GainError::InsufficientBalance);
         }
 
-        Ok(capital_gains)
+        cost_base_error.map(|_| capital_gains)
     }
 
     pub(crate) fn currency_balance(&self, currency: &str) -> Decimal {
@@ -227,7 +234,7 @@ impl FIFO {
         let unit_price = fiat_value(value).map(|value| value / amount.quantity);
         self.holdings_for_currency(&amount.currency).push_back(Entry {
             timestamp: tx.timestamp,
-            unit_price: unit_price.clone(),
+            unit_price,
             remaining: amount.quantity,
         });
 
