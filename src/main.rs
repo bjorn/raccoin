@@ -232,6 +232,7 @@ fn cmc_id(currency: &str) -> i32 {
         ("LTC", 2),
         ("MANA", 1966),
         ("MIOTA", 1720),
+        ("NXT", 66),
         ("PPC", 5),
         ("RDD", 118),
         ("XEM", 873),
