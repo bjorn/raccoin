@@ -121,6 +121,7 @@ component TransactionDisplay inherits Rectangle {
                 tx.tx-type == UiTransactionType.airdrop ? "Airdrop" :
                 tx.tx-type == UiTransactionType.spam ? "Spam" :
                 "Unknown";
+            font-italic: tx.tx-type == UiTransactionType.sell || tx.tx-type == UiTransactionType.buy;
         }
         Cell {
             horizontal-stretch: 2;

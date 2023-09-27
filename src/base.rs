@@ -7,8 +7,8 @@ use rust_decimal::prelude::*;
 #[derive(Debug)]
 pub enum GainError {
     InvalidTransactionOrder,    // should only happen in case of a bug
-    MissingTransactionValue,
-    InvalidTransactionValue,
+    MissingFiatValue,
+    InvalidFiatValue,
     InsufficientBalance,
 }
 
@@ -16,8 +16,8 @@ impl fmt::Display for GainError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             GainError::InvalidTransactionOrder => f.write_str("Invalid transaction order"),
-            GainError::MissingTransactionValue => f.write_str("Missing transaction value"),
-            GainError::InvalidTransactionValue => f.write_str("Invalid transaction value (not fiat?)"),
+            GainError::MissingFiatValue => f.write_str("Missing fiat value"),
+            GainError::InvalidFiatValue => f.write_str("Invalid fiat value"),
             GainError::InsufficientBalance => f.write_str("Insufficient balance"),
         }
     }
@@ -60,7 +60,7 @@ impl fmt::Display for Amount {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.currency.as_str() {
             "EUR" => write!(f, "{:.2} €", self.quantity),
-            _ => write!(f, "{} {}", self.quantity, self.currency),
+            _ => write!(f, "{} {}", self.quantity.normalize(), self.currency),
         }
     }
 }

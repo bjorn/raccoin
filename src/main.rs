@@ -376,7 +376,7 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                 if let Some(matching_index) = matching_index {
                     // this send is now matched, so remove it from the list of unmatched sends
                     let matching_tx_index = unmatched_sends_receives.remove(matching_index);
-                    matching_pairs.push((index, matching_tx_index));
+                    matching_pairs.push(if tx.operation.is_send() { (index, matching_tx_index) } else { (matching_tx_index, index) });
                 } else {
                     // no match was found for this transactions, so add it to the unmatched list
                     unmatched_sends_receives.push(index);
@@ -401,9 +401,48 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
         }
     });
 
-    for (a, b) in matching_pairs {
-        (&mut transactions[a]).matching_tx = Some(b);
-        (&mut transactions[b]).matching_tx = Some(a);
+    for (send_index, receive_index) in matching_pairs {
+        (&mut transactions[send_index]).matching_tx = Some(receive_index);
+        (&mut transactions[receive_index]).matching_tx = Some(send_index);
+
+        // Derive the fee based on received amount and sent amount
+        let adjusted = match (&transactions[send_index].operation, &transactions[receive_index].operation) {
+            (Operation::Send(sent), Operation::Receive(received)) if received.quantity < sent.quantity => {
+                assert!(sent.currency == received.currency);
+
+                let implied_fee = Amount {
+                    quantity: sent.quantity - received.quantity,
+                    currency: sent.currency.clone(),
+                };
+                match &transactions[send_index].fee {
+                    Some(existing_fee) => {
+                        if existing_fee.currency != implied_fee.currency {
+                            println!("warning: send/receive amounts imply fee, but existing fee is set in a different currency for transaction {:?}", transactions[send_index]);
+                            None
+                        } else if existing_fee.quantity != implied_fee.quantity {
+                            println!("warning: replacing existing fee {:?} with implied fee of {:?} and adjusting sent amount to {:?}", existing_fee, implied_fee, received);
+                            Some((received.clone(), implied_fee))
+                        } else {
+                            println!("warning: fee {:?} appears to have been included in the sent amount {:?}, adjusting sent amount to {:?}", existing_fee, sent, received);
+                            Some((received.clone(), implied_fee))
+                        }
+                    },
+                    None => {
+                        println!("warning: a fee of {:?} appears to have been included in the sent amount {:?}, adjusting sent amount to {:?} and setting fee", implied_fee, sent, received);
+                        Some((received.clone(), implied_fee))
+                    },
+                }
+            }
+            _ => None,
+        };
+
+        if let Some((adjusted_send_amount, adjusted_fee)) = adjusted {
+            let tx = &mut transactions[send_index];
+            tx.fee = Some(adjusted_fee);
+            if let Operation::Send(send_amount) = &mut tx.operation {
+                *send_amount = adjusted_send_amount;
+            }
+        }
     }
 }
 

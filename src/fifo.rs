@@ -46,10 +46,10 @@ fn fiat_value(amount: &Option<Amount>) -> Result<Decimal, GainError> {
             if amount.is_fiat() {
                 Ok(amount.quantity)
             } else {
-                Err(GainError::InvalidTransactionValue)
+                Err(GainError::InvalidFiatValue)
             }
         },
-        None => Err(GainError::MissingTransactionValue),
+        None => Err(GainError::MissingFiatValue),
     }
 }
 
