@@ -54,6 +54,7 @@ fn fiat_value(amount: &Option<Amount>) -> Result<Decimal, GainError> {
 }
 
 pub(crate) struct FIFO {
+    /// Holdings represented as a map of currency -> deque.
     holdings: HashMap<String, VecDeque<Entry>>,
 }
 
@@ -65,11 +66,17 @@ impl FIFO {
     }
 
     pub(crate) fn process(&mut self, transactions: &mut [Transaction]) -> Vec<CapitalGain> {
-        // holdings represented as a map of currency -> deque
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
 
         for transaction in transactions {
             match &transaction.operation {
+                Operation::Staking(amount) => {
+                    // Staking reward is treated as a zero-cost buy
+                    transaction.gain = Some(self.add_holdings(transaction, amount, &Some(Amount {
+                        quantity: Decimal::ZERO,
+                        currency: "EUR".to_owned()
+                    })));
+                }
                 Operation::IncomingGift(amount) |
                 Operation::Airdrop(amount) |
                 Operation::Buy(amount) |
@@ -77,9 +84,9 @@ impl FIFO {
                     transaction.gain = Some(self.add_holdings(transaction, amount, &transaction.value));
                 },
                 Operation::Trade{incoming, outgoing} => {
-                    // When we're trading crypto for crypto, it is
-                    // technically handled as if we sold one crypto for fiat
-                    // and then used fiat to buy another crypto.
+                    // When we're trading crypto for crypto, it is technically
+                    // handled as if we sold one crypto for fiat and then used
+                    // fiat to buy another crypto.
                     if !outgoing.is_fiat() {
                         transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, outgoing, &transaction.value));
                     }

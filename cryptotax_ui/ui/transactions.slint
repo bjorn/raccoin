@@ -119,6 +119,8 @@ component TransactionDisplay inherits Rectangle {
                 tx.tx-type == UiTransactionType.expense ? "Expense" :
                 tx.tx-type == UiTransactionType.income ? "Income" :
                 tx.tx-type == UiTransactionType.airdrop ? "Airdrop" :
+                tx.tx-type == UiTransactionType.staking ? "Staking" :
+                tx.tx-type == UiTransactionType.gift ? "Gift" :
                 tx.tx-type == UiTransactionType.spam ? "Spam" :
                 "Unknown";
             font-italic: tx.tx-type == UiTransactionType.sell || tx.tx-type == UiTransactionType.buy;

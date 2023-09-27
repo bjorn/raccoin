@@ -90,7 +90,7 @@ pub(crate) enum Operation {
     // Interest(Amount),
     // Mining(Amount),
     Airdrop(Amount),
-    // Staking,
+    Staking(Amount),
     // StakingDeposit,
     // StakingWithdrawal,
     // Cashback,

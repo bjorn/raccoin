@@ -297,6 +297,7 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
             Operation::Expense(amount) => (CtcTxType::Expense, amount, None),
             Operation::Income(amount) => (CtcTxType::Income, amount, None),
             Operation::Airdrop(amount) => (CtcTxType::Airdrop, amount, None),
+            Operation::Staking(amount) => (CtcTxType::Staking, amount, None),
             Operation::IncomingGift(amount) => (CtcTxType::IncomingGift, amount, None),
             Operation::OutgoingGift(amount) => (CtcTxType::OutgoingGift, amount, None),
             Operation::Spam(amount) => (CtcTxType::Spam, amount, None),
@@ -395,7 +396,10 @@ impl<'a> From<CtcTx<'a>> for Transaction {
             fee_value: None,
             gain: None,
             source_index: 0,
-            value: None,
+            value: item.reference_price_per_unit.map(|price| Amount {
+                quantity: price * item.base_amount,
+                currency: item.reference_price_currency.unwrap_or("EUR").to_owned()
+            }),
             matching_tx: None,
         }
     }

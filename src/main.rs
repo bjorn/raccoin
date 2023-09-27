@@ -42,6 +42,7 @@ enum TransactionsSourceType {
     PoloniexDepositsCsv,
     PoloniexTradesCsv,
     PoloniexWithdrawalsCsv,
+    ReddcoinCoreCsv,
     TrezorCsv,
 }
 
@@ -60,6 +61,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
             TransactionsSourceType::PoloniexWithdrawalsCsv => "Poloniex Withdrawals (CSV)".to_owned(),
+            TransactionsSourceType::ReddcoinCoreCsv => "Reddcoin Core (CSV)".to_owned(),
             TransactionsSourceType::TrezorCsv => "Trezor (CSV)".to_owned(),
         }
     }
@@ -220,7 +222,7 @@ pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path
 /// Maps currencies to their CMC ID
 /// todo: support more currencies and load from file
 fn cmc_id(currency: &str) -> i32 {
-    const CMC_ID_MAP: [(&str, i32); 15] = [
+    const CMC_ID_MAP: &[(&str, i32)] = &[
         ("BCH", 1831),
         ("BNB", 1839),
         ("BTC", 1),
@@ -231,6 +233,7 @@ fn cmc_id(currency: &str) -> i32 {
         ("MANA", 1966),
         ("MIOTA", 1720),
         ("PPC", 5),
+        ("RDD", 118),
         ("XEM", 873),
         ("XLM", 512),
         ("XMR", 328),
@@ -293,6 +296,9 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
             },
             TransactionsSourceType::PoloniexWithdrawalsCsv => {
                 poloniex::load_poloniex_withdrawals_csv(&source.full_path)
+            },
+            TransactionsSourceType::ReddcoinCoreCsv => {
+                bitcoin_core::load_reddcoin_core_csv(&source.full_path)
             },
             TransactionsSourceType::TrezorCsv => {
                 trezor::load_trezor_csv(&source.full_path)
@@ -513,6 +519,7 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                 Operation::Expense(amount) |
                 Operation::Income(amount) |
                 Operation::Airdrop(amount) |
+                Operation::Staking(amount) |
                 Operation::IncomingGift(amount) |
                 Operation::OutgoingGift(amount) |
                 Operation::Spam(amount) => {
@@ -626,6 +633,7 @@ fn initialize_ui() -> Result<AppWindow, slint::PlatformError> {
             "ETH" => open::that(format!("https://etherscan.io/tx/{}", tx_hash)),
             "LTC" => open::that(format!("https://blockchair.com/litecoin/transaction/{}", tx_hash)),
             "PPC" => open::that(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
+            "RDD" => open::that(format!("https://rddblockexplorer.com/tx/{}", tx_hash)),
             "ZEC" => open::that(format!("https://blockchair.com/zcash/transaction/{}", tx_hash)),
             _ => Ok(()),
         };
@@ -712,10 +720,16 @@ fn ui_set_transactions(ui: &AppWindow, app: &App) {
             Operation::Airdrop(amount) => {
                 (UiTransactionType::Airdrop, None, Some(amount), None, source_name)
             }
+            Operation::Staking(amount) => {
+                (UiTransactionType::Staking, None, Some(amount), None, source_name)
+            },
+            Operation::IncomingGift(amount) |
+            Operation::OutgoingGift(amount) => {
+                (UiTransactionType::Gift, None, Some(amount), None, source_name)
+            },
             Operation::Spam(amount) => {
                 (UiTransactionType::Spam, None, Some(amount), None, source_name)
             }
-            _ => todo!("unsupported operation: {:?}", transaction.operation),
         };
 
         let (gain, gain_error) = match &transaction.gain {
