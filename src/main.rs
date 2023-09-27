@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, SharedString};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell};
+use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, process::exit};
 
 #[derive(EnumIter, Serialize, Deserialize)]
 enum TransactionsSourceType {
@@ -141,11 +141,11 @@ impl App {
         }
     }
 
-    fn load_sources(&mut self, sources_file: &Path) {
+    fn load_sources(&mut self, sources_file: &Path) -> Result<(), Box<dyn Error>> {
         self.sources_file = sources_file.into();
         let sources_path = sources_file.parent().unwrap_or(Path::new(""));
         // todo: report sources file loading error in UI
-        self.sources = serde_json::from_str(&std::fs::read_to_string(sources_file).unwrap()).unwrap();
+        self.sources = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
         self.sources.iter_mut().for_each(|source| {
             match source.source_type {
                 TransactionsSourceType::BitcoinAddress => {},
@@ -156,6 +156,7 @@ impl App {
         });
 
         self.refresh_transactions();
+        Ok(())
     }
 
     fn save_sources(&self) -> Result<(), Box<dyn Error>> {
@@ -871,11 +872,21 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // todo: use command-line parameter
-    let sources_file = Path::new("/home/bjorn/ledger/sources.json");
+    let sources_file: PathBuf = match env::args().skip(1).next() {
+        Some(arg) => arg.into(),
+        None => {
+            println!("No sources file specified");
+            println!("Usage:");
+            println!("    {} <sources_file>", std::env::args().next().unwrap_or("cryptotax".to_owned()));
+            exit(1);
+        },
+    };
 
     let mut app = App::new();
-    app.load_sources(sources_file);
+    if let Err(e) = app.load_sources(&sources_file) {
+        println!("Error loading sources from {}: {}", sources_file.display(), e);
+        return Ok(());
+    }
 
     let ui = initialize_ui()?;
 
