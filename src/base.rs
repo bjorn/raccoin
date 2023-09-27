@@ -4,10 +4,11 @@ use chrono::NaiveDateTime;
 use serde::{Serialize, Deserialize};
 use rust_decimal::prelude::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum GainError {
     InvalidTransactionOrder,    // should only happen in case of a bug
     MissingFiatValue,
+    MissingCostBase,
     InvalidFiatValue,
     InsufficientBalance,
 }
@@ -17,6 +18,7 @@ impl fmt::Display for GainError {
         match *self {
             GainError::InvalidTransactionOrder => f.write_str("Invalid transaction order"),
             GainError::MissingFiatValue => f.write_str("Missing fiat value"),
+            GainError::MissingCostBase => f.write_str("Missing cost base"),
             GainError::InvalidFiatValue => f.write_str("Invalid fiat value"),
             GainError::InsufficientBalance => f.write_str("Insufficient balance"),
         }

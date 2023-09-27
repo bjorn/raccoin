@@ -11,13 +11,16 @@ use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_d
 #[derive(Debug)]
 struct Entry {
     timestamp: NaiveDateTime,
-    unit_price: Decimal,
+    unit_price: Result<Decimal, GainError>,
     remaining: Decimal,
 }
 
 impl Entry {
     fn cost_base(&self) -> Decimal {
-        self.unit_price * self.remaining
+        match self.unit_price {
+            Ok(unit_price) => unit_price * self.remaining,
+            Err(_) => Decimal::ZERO
+        }
     }
 }
 
@@ -160,7 +163,7 @@ impl FIFO {
 
             // we can process up to the amount in the holding entry
             let processed_quantity = holding.remaining.min(sold_quantity);
-            let cost = processed_quantity * holding.unit_price;
+            let cost = processed_quantity * holding.unit_price.map_err(|_| GainError::MissingCostBase)?;
             let proceeds = processed_quantity * sold_unit_price;
 
             capital_gains.push(CapitalGain {
@@ -216,22 +219,29 @@ impl FIFO {
     }
 
     fn add_holdings(&mut self, tx: &Transaction, amount: &Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {
+        // Refuse to add zero balances (and protect against division by zero)
+        if amount.quantity.is_zero() {
+            return Ok(Decimal::ZERO);
+        }
+
+        let unit_price = fiat_value(value).map(|value| value / amount.quantity);
         self.holdings_for_currency(&amount.currency).push_back(Entry {
             timestamp: tx.timestamp,
-            unit_price: fiat_value(value)? / amount.quantity,
+            unit_price: unit_price.clone(),
             remaining: amount.quantity,
         });
 
-        Ok(Decimal::ZERO)
+        unit_price
     }
 
     fn dispose_holdings(&mut self, capital_gains: &mut Vec<CapitalGain>, timestamp: NaiveDateTime, outgoing: &Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {
-        let tx_gains = self.gains(timestamp, outgoing, fiat_value(value)?);
-        match tx_gains {
+        let fiat = fiat_value(value);
+
+        match self.gains(timestamp, outgoing, *fiat.as_ref().unwrap_or(&Decimal::ZERO)) {
             Ok(gains) => {
                 let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
                 capital_gains.extend(gains);
-                Ok(gain)
+                fiat.map(|_| gain).map_err(|_| GainError::MissingFiatValue)
             },
             Err(e) => Err(e),
         }
