@@ -18,7 +18,6 @@ use chrono_tz::Europe;
 use chrono::{NaiveDateTime, Duration, Datelike, Utc};
 use coinmarketcap::{load_btc_price_history_data, estimate_btc_price, PricePoint};
 use cryptotax_ui::*;
-use esplora::{blocking_esplora_client, address_transactions};
 use fifo::{FIFO, CapitalGain};
 use rust_decimal_macros::dec;
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -31,6 +30,7 @@ use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, proce
 #[derive(EnumIter, Serialize, Deserialize)]
 enum TransactionsSourceType {
     BitcoinAddress,
+    BitcoinXpubs,
     BitcoinCoreCsv,
     BitcoinDeCsv,
     BitonicCsv,     // todo: remove custom format
@@ -50,6 +50,7 @@ impl ToString for TransactionsSourceType {
     fn to_string(&self) -> String {
         match self {
             TransactionsSourceType::BitcoinAddress => "Bitcoin Address".to_owned(),
+            TransactionsSourceType::BitcoinXpubs => "Bitcoin HD Wallet".to_owned(),
             TransactionsSourceType::BitcoinCoreCsv => "Bitcoin Core (CSV)".to_owned(),
             TransactionsSourceType::BitcoinDeCsv => "bitcoin.de (CSV)".to_owned(),
             TransactionsSourceType::BitonicCsv => "Bitonic (CSV)".to_owned(),
@@ -128,6 +129,11 @@ struct App {
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
     price_history: PriceHistory,
+
+    ui_sources: Rc<VecModel<UiTransactionSource>>,
+    ui_transactions: Rc<VecModel<UiTransaction>>,
+    ui_report_years: Rc<VecModel<StandardListViewItem>>,
+    ui_reports: Rc<VecModel<UiTaxReport>>,
 }
 
 impl App {
@@ -138,6 +144,11 @@ impl App {
             transactions: Vec::new(),
             reports: Vec::new(),
             price_history: PriceHistory::new(),
+
+            ui_sources: Rc::new(Default::default()),
+            ui_transactions: Rc::new(Default::default()),
+            ui_report_years: Rc::new(Default::default()),
+            ui_reports: Rc::new(Default::default()),
         }
     }
 
@@ -253,7 +264,7 @@ fn cmc_id_for_amount(amount: &Amount) -> i32 {
 }
 
 fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
-    let esplora_client = blocking_esplora_client()?;
+    let esplora_client = esplora::blocking_esplora_client()?;
     let mut transactions = Vec::new();
 
     for (index, source) in sources.iter_mut().enumerate() {
@@ -264,8 +275,11 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
 
         let source_txs = match source.source_type {
             TransactionsSourceType::BitcoinAddress => {
-                address_transactions(&esplora_client, &source.path)
+                esplora::address_transactions(&esplora_client, &source.path)
             },
+            TransactionsSourceType::BitcoinXpubs => {
+                esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())
+            }
             TransactionsSourceType::BitcoinCoreCsv => {
                 bitcoin_core::load_bitcoin_core_csv(&source.full_path)
             },
@@ -323,8 +337,8 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
         }
     }
 
-    // sort transactions by date
-    transactions.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    // sort transactions
+    transactions.sort_by(|a, b| a.cmp(&b) );
 
     match_send_receive(&mut transactions);
     estimate_transaction_values(&mut transactions, price_history);
@@ -621,17 +635,24 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
     }).collect()
 }
 
-fn initialize_ui() -> Result<AppWindow, slint::PlatformError> {
+fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
     let ui = AppWindow::new()?;
     let facade = ui.global::<Facade>();
 
     let source_types: Vec<SharedString> = TransactionsSourceType::iter().map(|s| SharedString::from(s.to_string())).collect();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
+    facade.set_sources(app.ui_sources.clone().into());
+    facade.set_transactions(app.ui_transactions.clone().into());
+    facade.set_report_years(app.ui_report_years.clone().into());
+    facade.set_reports(app.ui_reports.clone().into());
+
     facade.on_open_transaction(move |blockchain, tx_hash| {
         let _ = match blockchain.as_str() {
             "BCH" => open::that(format!("https://blockchair.com/bitcoin-cash/transaction/{}", tx_hash)),
-            "BTC" => open::that(format!("https://blockchair.com/bitcoin/transaction/{}", tx_hash)),  // or "https://btc.com/tx/{}"
+            "BTC" => open::that(format!("https://blockchair.com/bitcoin/transaction/{}", tx_hash)),
+            // or "https://btc.com/tx/{}"
+            // or "https://live.blockcypher.com/btc/tx/{}"
             "ETH" => open::that(format!("https://etherscan.io/tx/{}", tx_hash)),
             "LTC" => open::that(format!("https://blockchair.com/litecoin/transaction/{}", tx_hash)),
             "PPC" => open::that(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
@@ -644,8 +665,8 @@ fn initialize_ui() -> Result<AppWindow, slint::PlatformError> {
     Ok(ui)
 }
 
-fn ui_set_sources(ui: &AppWindow, sources: &Vec<TransactionSource>) {
-    let ui_sources: Vec<UiTransactionSource> = sources.iter().map(|source| {
+fn ui_set_sources(app: &App) {
+    let ui_sources: Vec<UiTransactionSource> = app.sources.iter().map(|source| {
         UiTransactionSource {
             source_type: source.source_type.to_string().into(),
             name: source.name.clone().into(),
@@ -654,10 +675,10 @@ fn ui_set_sources(ui: &AppWindow, sources: &Vec<TransactionSource>) {
             transaction_count: source.transaction_count as i32,
         }
     }).collect();
-    ui.global::<Facade>().set_sources(Rc::new(VecModel::from(ui_sources)).into());
+    app.ui_sources.set_vec(ui_sources);
 }
 
-fn ui_set_transactions(ui: &AppWindow, app: &App) {
+fn ui_set_transactions(app: &App) {
     let (sources, transactions) = (&app.sources, &app.transactions);
     let mut ui_transactions = Vec::new();
     for transaction in transactions {
@@ -760,14 +781,12 @@ fn ui_set_transactions(ui: &AppWindow, app: &App) {
         });
     }
 
-    ui.global::<Facade>().set_transactions(Rc::new(VecModel::from(ui_transactions)).into());
+    app.ui_transactions.set_vec(ui_transactions);
 }
 
-fn ui_set_reports(ui: &AppWindow, app: &App) {
-    let facade = ui.global::<Facade>();
-
+fn ui_set_reports(app: &App) {
     let report_years: Vec<StandardListViewItem> = app.reports.iter().map(|report| StandardListViewItem::from(report.year.to_string().as_str())).collect();
-    facade.set_report_years(Rc::new(VecModel::from(report_years)).into());
+    app.ui_report_years.set_vec(report_years);
 
     let ui_reports: Vec<UiTaxReport> = app.reports.iter().map(|report| {
         let ui_gains: Vec<UiCapitalGain> = report.gains.iter().map(|gain| {
@@ -818,7 +837,7 @@ fn ui_set_reports(ui: &AppWindow, app: &App) {
         }
     }).collect();
 
-    facade.set_reports(Rc::new(VecModel::from(ui_reports)).into());
+    app.ui_reports.set_vec(ui_reports);
 }
 
 fn ui_set_portfolio(ui: &AppWindow, app: &App) {
@@ -888,11 +907,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let ui = initialize_ui()?;
+    let ui = initialize_ui(&app)?;
 
-    ui_set_sources(&ui, &app.sources);
-    ui_set_transactions(&ui, &app);
-    ui_set_reports(&ui, &app);
+    ui_set_sources(&app);
+    ui_set_transactions(&app);
+    ui_set_reports(&app);
     ui_set_portfolio(&ui, &app);
 
     let app = Rc::new(RefCell::new(app));
@@ -902,23 +921,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let app_for_set_source_enabled = app.clone();
     facade.on_set_source_enabled(move |index, enabled| {
         let mut app = app_for_set_source_enabled.borrow_mut();
-        let source = app.sources.get_mut(index as usize);
-        if let Some(source) = source {
+        if let Some(source) = app.sources.get_mut(index as usize) {
             source.enabled = enabled;
-        }
-        app.refresh_transactions();
 
-        // refresh the UI
-        let ui = ui_weak.unwrap();
-        ui_set_sources(&ui, &app.sources);
-        ui_set_transactions(&ui, &app);
-        ui_set_reports(&ui, &app);
-        ui_set_portfolio(&ui, &app);
+            app.refresh_transactions();
 
-        // save the sources file
-        match app.save_sources() {
-            Ok(_) => { println!("Saved sources to {}", sources_file.display()); },
-            Err(_) => { println!("Error saving sources to {}", sources_file.display()); },
+            // refresh the UI
+            ui_set_sources(&app);
+            ui_set_transactions(&app);
+            ui_set_reports(&app);
+            ui_set_portfolio(&ui_weak.unwrap(), &app);
+
+            // save the sources file
+            match app.save_sources() {
+                Ok(_) => { println!("Saved sources to {}", sources_file.display()); },
+                Err(_) => { println!("Error saving sources to {}", sources_file.display()); },
+            }
         }
     });
 

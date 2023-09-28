@@ -73,8 +73,9 @@ impl FIFO {
 
         for transaction in transactions {
             match &transaction.operation {
-                Operation::Staking(amount) => {
-                    // Staking reward is treated as a zero-cost buy
+                Operation::Staking(amount) |
+                Operation::ChainSplit(amount) => {
+                    // Staking reward, Chain splits and Spam are treated as a zero-cost buy
                     transaction.gain = Some(self.add_holdings(transaction, amount, &Some(Amount {
                         quantity: Decimal::ZERO,
                         currency: "EUR".to_owned()
@@ -83,7 +84,8 @@ impl FIFO {
                 Operation::IncomingGift(amount) |
                 Operation::Airdrop(amount) |
                 Operation::Buy(amount) |
-                Operation::Income(amount) => {
+                Operation::Income(amount) |
+                Operation::Spam(amount) => {
                     transaction.gain = Some(self.add_holdings(transaction, amount, &transaction.value));
                 },
                 Operation::Trade{incoming, outgoing} => {
@@ -108,15 +110,13 @@ impl FIFO {
                     transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, amount, &transaction.value));
                 },
                 Operation::FiatDeposit(_) |
-                Operation::FiatWithdrawal(_) |
+                Operation::FiatWithdrawal(_) => {
+                    // We're not tracking fiat at the moment (it's not relevant for tax purposes)
+                }
                 Operation::Receive(_) |
-                Operation::Send(_) |
-                Operation::Spam(_) => {
-                    // Non-taxable events
-                },
-                Operation::ChainSplit(amount) => {
-                    // Chain split is special in that it adds holdings with 0 cost base
-                    transaction.gain = Some(self.add_holdings(transaction, amount, &Some(Amount { quantity: Decimal::ZERO, currency: "EUR".to_owned() })));
+                Operation::Send(_) => {
+                    // Verify that these are matched as transfer, otherwise they should have been Buy/Sell
+                    assert!(transaction.matching_tx.is_some(), "no matching tx");
                 },
             }
 
@@ -166,7 +166,7 @@ impl FIFO {
             let processed_quantity = holding.remaining.min(sold_quantity);
             let cost = match holding.unit_price {
                 Ok(price) => processed_quantity * price,
-                Err(e) => {
+                Err(_) => {
                     cost_base_error = Err(GainError::MissingCostBase);
                     Decimal::ZERO
                 },
@@ -238,7 +238,7 @@ impl FIFO {
             remaining: amount.quantity,
         });
 
-        unit_price
+        Ok(Decimal::ZERO)
     }
 
     fn dispose_holdings(&mut self, capital_gains: &mut Vec<CapitalGain>, timestamp: NaiveDateTime, outgoing: &Amount, value: &Option<Amount>) -> Result<Decimal, GainError> {

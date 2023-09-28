@@ -1,6 +1,7 @@
 use std::{error::Error, path::Path};
 
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, TimeZone};
+use chrono_tz::Europe::Berlin;
 use csv::Trim;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
@@ -44,10 +45,11 @@ struct MyceliumTransaction {
 impl From<MyceliumTransaction> for Transaction {
     // todo: translate address?
     fn from(item: MyceliumTransaction) -> Self {
+        let utc_time = Berlin.from_local_datetime(&item.timestamp).unwrap().naive_utc();
         let mut tx = if item.value < Decimal::ZERO {
-            Transaction::send(item.timestamp, Amount::new(-item.value, "BTC".to_owned()))
+            Transaction::send(utc_time, Amount::new(-item.value, "BTC".to_owned()))
         } else {
-            Transaction::receive(item.timestamp, Amount::new(item.value, "BTC".to_owned()))
+            Transaction::receive(utc_time, Amount::new(item.value, "BTC".to_owned()))
         };
         tx.description = if item.label.is_empty() { None } else { Some(item.label) };
         tx.tx_hash = Some(item.id);

@@ -1,4 +1,4 @@
-use std::{error::Error, path::Path, fmt};
+use std::{error::Error, path::Path, fmt, cmp::Ordering};
 
 use chrono::NaiveDateTime;
 use serde::{Serialize, Deserialize};
@@ -195,10 +195,57 @@ impl Transaction {
     pub(crate) fn trade(timestamp: NaiveDateTime, incoming: Amount, outgoing: Amount) -> Self {
         Self::new(timestamp, Operation::Trade { incoming, outgoing })
     }
+
+    pub(crate) fn incoming_outgoing(&self) -> (Option<&Amount>, Option<&Amount>) {
+        match &self.operation {
+            Operation::Buy(amount) |
+            Operation::FiatDeposit(amount) |
+            Operation::Receive(amount) |
+            Operation::ChainSplit(amount) |
+            Operation::Income(amount) |
+            Operation::Airdrop(amount) |
+            Operation::Staking(amount) |
+            Operation::IncomingGift(amount) |
+            Operation::Spam(amount) => {
+                (Some(amount), None)
+            },
+            Operation::Sell(amount) |
+            Operation::FiatWithdrawal(amount) |
+            Operation::Fee(amount) |
+            Operation::Send(amount) |
+            Operation::Expense(amount) |
+            Operation::OutgoingGift(amount) => {
+                (None, Some(amount))
+            },
+            Operation::Trade { incoming, outgoing } => {
+                (Some(incoming), Some(outgoing))
+            }
+        }
+    }
+
+    pub(crate) fn has_incoming(&self) -> bool {
+        self.incoming_outgoing().0.is_some()
+    }
+
+    /// Used to sort transactions by date, and placing incoming transactions
+    /// before outgoing ones.
+    pub(crate) fn cmp(&self, other: &Self) -> Ordering {
+        match self.timestamp.cmp(&other.timestamp) {
+            Ordering::Less => Ordering::Less,
+            Ordering::Equal => {
+                match (self.has_incoming(), other.has_incoming()) {
+                    (true, false) => Ordering::Less,
+                    (false, true) => Ordering::Greater,
+                    _ => Ordering::Equal,
+                }
+            },
+            Ordering::Greater => Ordering::Greater,
+        }
+    }
 }
 
-pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_path: &Path) -> Result<(), Box<dyn Error>> {
-    println!("Saving {}", output_path.display());
+pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_path: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+    println!("Saving {}", output_path.as_ref().display());
 
     let json = serde_json::to_string_pretty(&transactions)?;
     std::fs::write(output_path, json)?;
