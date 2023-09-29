@@ -56,6 +56,17 @@ impl Amount {
     pub(crate) fn is_fiat(&self) -> bool {
         self.currency == "EUR"
     }
+
+    pub(crate) fn try_add(&self, amount: &Amount) -> Option<Amount> {
+        if self.currency == amount.currency {
+            Some(Amount {
+                quantity: self.quantity + amount.quantity,
+                currency: self.currency.clone(),
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl fmt::Display for Amount {
