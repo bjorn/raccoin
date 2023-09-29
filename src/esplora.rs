@@ -80,7 +80,7 @@ fn tx_to_transaction(
     transaction
 }
 
-pub(crate) fn address_txs(
+fn address_txs(
     client: &BlockingClient,
     address: &Address,
 ) -> Result<Vec<Tx>, Box<dyn Error>> {
@@ -152,7 +152,7 @@ fn scan_children<C: secp256k1::Verification>(
     Ok(())
 }
 
-pub(crate) fn xpub_addresses_and_txs<C: secp256k1::Verification>(
+fn xpub_addresses_and_txs<C: secp256k1::Verification>(
     client: &BlockingClient,
     secp: &Secp256k1<C>,
     xpub: &str,

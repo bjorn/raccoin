@@ -8,7 +8,7 @@ use serde::Deserialize;
 use crate::{time::deserialize_date_time, base::{Transaction, Amount}};
 
 #[derive(Debug, Deserialize)]
-pub(crate) enum BitcoinDeActionType {
+enum BitcoinDeActionType {
     Registration,
     Purchase,
     Disbursement,
@@ -21,7 +21,7 @@ pub(crate) enum BitcoinDeActionType {
 // struct for storing the following CSV columns:
 // Date;Type;Currency;Reference;BTC-address;Price;"unit (rate)";"BTC incl. fee";"amount before fee";"unit (amount before fee)";"BTC excl. Bitcoin.de fee";"amount after Bitcoin.de-fee";"unit (amount after Bitcoin.de-fee)";"Incoming / Outgoing";"Account balance"
 #[derive(Debug, Deserialize)]
-pub(crate) struct BitcoinDeAction {
+struct BitcoinDeAction {
     #[serde(rename = "Date", deserialize_with = "deserialize_date_time")]
     pub date: NaiveDateTime,
     #[serde(rename = "Type")]

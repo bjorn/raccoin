@@ -3,7 +3,7 @@ use serde::{Deserializer, Serializer, Deserialize};
 
 const FORMAT: &'static str = "%Y-%m-%d %H:%M:%S";
 
-// serialize function for reading NaiveDateTime
+// deserialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
     Ok(NaiveDateTime::parse_from_str(&raw, FORMAT).unwrap())

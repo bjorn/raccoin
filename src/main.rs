@@ -2,6 +2,7 @@ mod base;
 mod bitcoin_core;
 mod bitcoin_de;
 mod bitonic;
+mod bitstamp;
 mod coinmarketcap;
 mod coinpanda;
 mod ctc;
@@ -34,6 +35,7 @@ enum TransactionsSourceType {
     BitcoinCoreCsv,
     BitcoinDeCsv,
     BitonicCsv,     // todo: remove custom format
+    BitstampCsv,
     CtcImportCsv,
     ElectrumCsv,
     Json,
@@ -54,6 +56,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::BitcoinCoreCsv => "Bitcoin Core (CSV)".to_owned(),
             TransactionsSourceType::BitcoinDeCsv => "bitcoin.de (CSV)".to_owned(),
             TransactionsSourceType::BitonicCsv => "Bitonic (CSV)".to_owned(),
+            TransactionsSourceType::BitstampCsv => "Bitstamp (CSV)".to_owned(),
             TransactionsSourceType::ElectrumCsv => "Electrum (CSV)".to_owned(),
             TransactionsSourceType::Json => "JSON".to_owned(),
             TransactionsSourceType::CtcImportCsv => "CryptoTaxCalculator import (CSV)".to_owned(),
@@ -289,6 +292,9 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
             TransactionsSourceType::BitonicCsv => {
                 bitonic::load_bitonic_csv(&source.full_path)
             },
+            TransactionsSourceType::BitstampCsv => {
+                bitstamp::load_bitstamp_csv(&source.full_path)
+            }
             TransactionsSourceType::ElectrumCsv => {
                 electrum::load_electrum_csv(&source.full_path)
             },

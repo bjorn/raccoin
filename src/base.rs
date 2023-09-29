@@ -69,6 +69,20 @@ impl Amount {
     }
 }
 
+impl TryFrom<&str> for Amount {
+    type Error = &'static str;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let mut split = s.split(" ");
+        match (split.next().map(Decimal::try_from), split.next()) {
+            (Some(Ok(quantity)), Some(currency)) => {
+                Ok(Amount { quantity, currency: currency.to_owned() })
+            },
+            _ => return Err("Invalid format, expected: '<amount> <currency>'"),
+        }
+    }
+}
+
 impl fmt::Display for Amount {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.currency.as_str() {

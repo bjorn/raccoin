@@ -24,7 +24,7 @@ export component CurrencyIcon inherits Image {
     in property <int> cmc-id;
 
     width: 14px;
-    source: cmc-id == 1 ? @image-url("icons/coins/1.png"):
+    source: cmc-id == 1 ? @image-url("icons/coins/1.png") :
             cmc-id == 2 ? @image-url("icons/coins/2.png") :
             cmc-id == 5 ? @image-url("icons/coins/5.png") :
             cmc-id == 8 ? @image-url("icons/coins/8.png") :

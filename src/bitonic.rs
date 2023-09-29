@@ -8,13 +8,13 @@ use serde::Deserialize;
 use crate::{base::{Transaction, Operation, Amount}, time::deserialize_date_time};
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) enum BitonicActionType {
+enum BitonicActionType {
     Buy,
     Sell,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct BitonicAction {
+struct BitonicAction {
     #[serde(rename = "Date", deserialize_with = "deserialize_date_time")]
     pub date: NaiveDateTime,
     #[serde(rename = "Action")]

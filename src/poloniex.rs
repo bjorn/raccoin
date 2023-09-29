@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct PoloniexDeposit {
+struct PoloniexDeposit {
     #[serde(rename = "Currency")]
     currency: String,
     #[serde(rename = "Amount")]
@@ -25,7 +25,7 @@ pub(crate) struct PoloniexDeposit {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct PoloniexWithdrawal {
+struct PoloniexWithdrawal {
     #[serde(rename = "Fee Deducted")]
     fee_deducted: Decimal,
     #[serde(rename = "Date", deserialize_with = "deserialize_date_time")]
@@ -52,7 +52,7 @@ enum Operation {
 
 // csv columns: Date,Market,Type,Side,Price,Amount,Total,Fee,Order Number,Fee Currency,Fee Total
 #[derive(Debug, Deserialize)]
-pub(crate) struct PoloniexTrade {
+struct PoloniexTrade {
     #[serde(rename = "Date")]
     date: DateTime<FixedOffset>,
     #[serde(rename = "Market")]
