@@ -2,13 +2,22 @@ use std::{error::Error, path::Path};
 
 use chrono::{NaiveDateTime, FixedOffset, DateTime};
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::{
     ctc::save_transactions_to_ctc_csv,
     time::deserialize_date_time,
     base::{Transaction, Amount}
 };
+
+// deserialize function for reading two time formats
+pub(crate) fn deserialize_poloniex_timestamp<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
+    let raw: &str = Deserialize::deserialize(d)?;
+    match DateTime::<FixedOffset>::parse_from_rfc3339(raw) {
+        Ok(date_and_time) => return Ok(date_and_time.naive_utc()),
+        Err(_) => Ok(NaiveDateTime::parse_from_str(raw, "%Y/%m/%d %H:%M").unwrap()),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct PoloniexDeposit {
@@ -50,31 +59,35 @@ enum Operation {
     Sell,
 }
 
+// Format I got from the website somehow:
 // csv columns: Date,Market,Type,Side,Price,Amount,Total,Fee,Order Number,Fee Currency,Fee Total
+//
+// Format I got when asking Poloniex support for an export:
+// csv columns: ,timestamp,trade_id,market,wallet,side,price,amount,fee,fee_currency,fee_total
 #[derive(Debug, Deserialize)]
 struct PoloniexTrade {
-    #[serde(rename = "Date")]
-    date: DateTime<FixedOffset>,
-    #[serde(rename = "Market")]
+    #[serde(alias = "Date", deserialize_with = "deserialize_poloniex_timestamp")]
+    timestamp: NaiveDateTime,
+    #[serde(alias = "Market")]
     market: String,
     // #[serde(rename = "Type")]
     // type_: String,   // always LIMIT
-    #[serde(rename = "Side")]
+    #[serde(alias = "Side")]
     side: Operation,
-    // #[serde(rename = "Price")]
-    // price: Decimal,
-    #[serde(rename = "Amount")]
+    #[serde(alias = "Price")]
+    price: Decimal,
+    #[serde(alias = "Amount")]
     amount: Decimal,
-    #[serde(rename = "Total")]
-    total: Decimal,
-    #[serde(rename = "Fee")]
-    fee: Decimal,
-    #[serde(rename = "Order Number")]
+    #[serde(alias = "Total")]
+    total: Option<Decimal>,
+    // #[serde(alias = "Fee")]
+    // fee: Decimal,
+    #[serde(rename = "Order Number", alias = "trade_id")]
     order_number: String,
-    #[serde(rename = "Fee Currency")]
+    #[serde(alias = "Fee Currency")]
     fee_currency: String,
-    // #[serde(rename = "Fee Total")]
-    // fee_total: Decimal,  // always same as fee
+    #[serde(alias = "Fee Total")]
+    fee_total: Decimal,
 }
 
 // Poloniex reported XLM as STR
@@ -104,31 +117,44 @@ impl From<PoloniexWithdrawal> for Transaction {
     }
 }
 
-impl From<PoloniexTrade> for Transaction {
-    fn from(item: PoloniexTrade) -> Self {
-        // split record.market at the underscore to obtain the base_currency and the quote_currency
-        let collect = item.market.split("_").collect::<Vec<&str>>();
-        let base_currency = normalize_currency(collect[0]);
-        let quote_currency = normalize_currency(collect[1]);
+impl TryFrom<PoloniexTrade> for Transaction {
+    type Error = &'static str;
 
-        let timestamp = item.date.naive_utc();
+    fn try_from(item: PoloniexTrade) -> Result<Self, Self::Error> {
+        // split record.market at the underscore or dash to obtain the base_currency and the quote_currency
+        let mut split = item.market.split("_");
+        let (base_currency, quote_currency) = match (split.next(), split.next()) {
+            (Some(base_currency), Some(quote_currency)) => Ok::<(&str, &str), &'static str>((base_currency, quote_currency)),
+            _ => {
+                let mut split = item.market.split("-");
+                match (split.next(), split.next()) {
+                    (Some(quote_currency), Some(base_currency)) => Ok((base_currency, quote_currency)),
+                    _ => return Err("Invalid Poloniex market")
+                }
+            },
+        }?;
+
+        let quote_currency = normalize_currency(quote_currency);
+        let base_currency = normalize_currency(base_currency);
+
+        let total = item.total.unwrap_or_else(|| item.price * item.amount);
 
         let mut tx = match item.side {
             Operation::Buy => Transaction::trade(
-                timestamp,
+                item.timestamp,
                 Amount {
                     quantity: item.amount,
                     currency: base_currency.to_owned(),
                 },
                 Amount {
-                    quantity: item.total,
+                    quantity: total,
                     currency: quote_currency.to_owned(),
                 }
             ),
             Operation::Sell => Transaction::trade(
-                timestamp,
+                item.timestamp,
                 Amount {
-                    quantity: item.total,
+                    quantity: total,
                     currency: quote_currency.to_owned(),
                 },
                 Amount {
@@ -137,9 +163,11 @@ impl From<PoloniexTrade> for Transaction {
                 }
             ),
         };
-        tx.fee = Some(Amount { quantity: item.fee, currency: item.fee_currency });
+
+        tx.fee = Some(Amount { quantity: item.fee_total, currency: normalize_currency(&item.fee_currency).to_owned() });
         tx.description = Some(format!("Order #{}", item.order_number));
-        tx
+
+        Ok(tx)
     }
 }
 
@@ -176,7 +204,13 @@ pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transact
 
     for result in rdr.deserialize() {
         let record: PoloniexTrade = result?;
-        transactions.push(record.into());
+        match Transaction::try_from(record) {
+            Ok(tx) => transactions.push(tx),
+            Err(err) => {
+                println!("Error: {:?}", err);
+                continue;
+            },
+        };
     }
 
     Ok(transactions)
