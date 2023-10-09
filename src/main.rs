@@ -15,10 +15,9 @@ mod poloniex;
 mod time;
 mod trezor;
 
-use base::{Operation, Amount, Transaction};
+use base::{Operation, Amount, Transaction, cmc_id, PriceHistory};
 use chrono_tz::Europe;
-use chrono::{NaiveDateTime, Duration, Datelike, Utc};
-use coinmarketcap::{load_btc_price_history_data, estimate_btc_price, PricePoint};
+use chrono::{Duration, Datelike, Utc};
 use cryptotax_ui::*;
 use fifo::{FIFO, CapitalGain};
 use rust_decimal_macros::dec;
@@ -146,12 +145,14 @@ struct App {
 
 impl App {
     fn new() -> Self {
+        let mut price_history = PriceHistory::new();
+
         Self {
             sources_file: PathBuf::new(),
             sources: Vec::new(),
             transactions: Vec::new(),
             reports: Vec::new(),
-            price_history: PriceHistory::new(),
+            price_history,
 
             ui_sources: Rc::new(Default::default()),
             ui_transactions: Rc::new(Default::default()),
@@ -237,38 +238,6 @@ pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path
     }
 
     Ok(())
-}
-
-/// Maps currencies to their CMC ID
-/// todo: support more currencies and load from file
-fn cmc_id(currency: &str) -> i32 {
-    const CMC_ID_MAP: &[(&str, i32)] = &[
-        ("BCH", 1831),
-        ("BNB", 1839),
-        ("BTC", 1),
-        ("DASH", 131),
-        ("ETH", 1027),
-        ("FTC", 8),
-        ("LTC", 2),
-        ("MANA", 1966),
-        ("MIOTA", 1720),
-        ("NXT", 66),
-        ("PPC", 5),
-        ("RDD", 118),
-        ("XEM", 873),
-        ("XLM", 512),
-        ("XMR", 328),
-        ("XRP", 52),
-        ("ZEC", 1437),
-    ];
-    match CMC_ID_MAP.binary_search_by(|(cur, _)| (*cur).cmp(currency)) {
-        Ok(index) => CMC_ID_MAP[index].1,
-        Err(_) => -1
-    }
-}
-
-fn cmc_id_for_amount(amount: &Amount) -> i32 {
-    cmc_id(&amount.currency)
 }
 
 fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
@@ -467,7 +436,7 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                         }
                     },
                     None => {
-                        println!("warning: a fee of {:?} appears to have been included in the sent amount {:?}, adjusting sent amount to {:?} and setting fee", implied_fee, sent, received);
+                        println!("warning: a fee of {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:} and setting fee", implied_fee, sent, received);
                         Some((received.clone(), implied_fee))
                     },
                 }
@@ -482,36 +451,6 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                 *send_amount = adjusted_send_amount;
             }
         }
-    }
-}
-
-struct PriceHistory {
-    prices: Vec<PricePoint>,
-}
-
-impl PriceHistory {
-    fn new() -> Self {
-        Self {
-            prices: load_btc_price_history_data().unwrap_or_default(),
-        }
-    }
-
-    fn estimate_price(&self, timestamp: NaiveDateTime, currency: &str) -> Option<Decimal> {
-        match currency {
-            "BTC" => estimate_btc_price(timestamp, &self.prices),
-            "EUR" => Some(Decimal::ONE),
-            _ => {
-                println!("todo: estimate price for {} at {}", currency, timestamp);
-                None
-            }
-        }
-    }
-
-    fn estimate_value(&self, timestamp: NaiveDateTime, amount: &Amount) -> Option<Amount> {
-        self.estimate_price(timestamp, &amount.currency).map(|price| Amount {
-            quantity: price * amount.quantity,
-            currency: "EUR".to_owned()
-        })
     }
 }
 
@@ -532,7 +471,11 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                             (None, Some(value_outgoing)) => Some(value_outgoing),
                             (Some(value_incoming), None) => Some(value_incoming),
                             (Some(value_incoming), Some(value_outgoing)) => {
-                                println!("incoming {:?} EUR ({}), outgoing {:?} EUR ({})", value_incoming, incoming, value_outgoing, outgoing);
+                                let min_value = value_incoming.quantity.min(value_outgoing.quantity);
+                                let max_value = value_incoming.quantity.max(value_outgoing.quantity);
+                                if min_value < max_value * Decimal::new(95, 2) {
+                                    println!("warning: over 5% value difference between incoming {} ({}) and outgoing {} ({})", incoming, value_incoming, outgoing, value_outgoing);
+                                }
                                 Some(Amount {
                                     quantity: (value_incoming.quantity + value_outgoing.quantity) / Decimal::TWO,
                                     currency: "EUR".to_owned()
@@ -784,9 +727,9 @@ fn ui_set_transactions(app: &App) {
             date: transaction.timestamp.date().to_string().into(),
             time: transaction.timestamp.time().to_string().into(),
             tx_type,
-            received_cmc_id: received.map(cmc_id_for_amount).unwrap_or(-1),
+            received_cmc_id: received.map(Amount::cmc_id).unwrap_or(-1),
             received: received.map_or_else(String::default, Amount::to_string).into(),
-            sent_cmc_id: sent.map(cmc_id_for_amount).unwrap_or(-1),
+            sent_cmc_id: sent.map(Amount::cmc_id).unwrap_or(-1),
             sent: sent.map_or_else(String::default, Amount::to_string).into(),
             fee: transaction.fee.as_ref().map_or_else(String::default, Amount::to_string).into(),
             value: value.map_or_else(String::default, Amount::to_string).into(),
@@ -811,7 +754,7 @@ fn ui_set_reports(app: &App) {
             let sold = gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local();
 
             UiCapitalGain {
-                currency_cmc_id: cmc_id_for_amount(&gain.amount),
+                currency_cmc_id: gain.amount.cmc_id(),
                 bought_date: bought.date().to_string().into(),
                 bought_time: bought.time().to_string().into(),
                 sold_date: sold.date().to_string().into(),

@@ -93,7 +93,7 @@ impl FIFO {
             match &transaction.operation {
                 Operation::Staking(amount) |
                 Operation::ChainSplit(amount) => {
-                    // Staking reward, Chain splits and Spam are treated as a zero-cost buy
+                    // Staking reward and Chain splits are treated as a zero-cost buy
                     transaction.gain = Some(self.add_holdings(transaction, amount, Some(&Amount {
                         quantity: Decimal::ZERO,
                         currency: "EUR".to_owned()
@@ -216,7 +216,8 @@ impl FIFO {
         }
 
         if sold_quantity > Decimal::ZERO {
-            return Err(GainError::InsufficientBalance);
+            println!("warning: at {} a remaining sold amount of {} {} was not found in the holdings", timestamp, sold_quantity, outgoing.currency);
+            return Err(GainError::InsufficientBalance(Amount::new(sold_quantity, outgoing.currency.clone())));
         }
 
         cost_base_error.map(|_| capital_gains)

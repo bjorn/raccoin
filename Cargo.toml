@@ -14,6 +14,7 @@ cryptotax_ui = { path = "cryptotax_ui" }
 csv = "1.2"
 esplora-client = { version = "0.6", default-features = false, features = ["blocking"] }
 open = "5.0.0"
+reqwest = { version = "0.11.22", features = ["blocking"] }
 rfd = { version = "0.12", default-features = false, features = [ "xdg-portal" ] }
 rust_decimal = "1.32"
 rust_decimal_macros = "1.32"

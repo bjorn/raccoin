@@ -1,26 +1,58 @@
-use std::{error::Error, path::Path, fmt, cmp::Ordering};
+use std::{error::Error, path::Path, fmt, cmp::Ordering, collections::HashMap};
 
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Duration};
 use serde::{Serialize, Deserialize};
 use rust_decimal::prelude::*;
 
-#[derive(Debug, Clone, Copy)]
-pub enum GainError {
+/// Maps currencies to their CMC ID
+/// todo: support more currencies and load from file
+pub(crate) fn cmc_id(currency: &str) -> i32 {
+    const CMC_ID_MAP: &[(&str, i32)] = &[
+        ("BCH", 1831),
+        ("BCN", 372),
+        ("BNB", 1839),
+        ("BTC", 1),
+        ("DASH", 131),
+        ("ETH", 1027),
+        ("EUR", 2790),
+        ("FTC", 8),
+        ("LTC", 2),
+        ("MANA", 1966),
+        ("MIOTA", 1720),
+        ("NXT", 66),
+        ("PPC", 5),
+        ("RDD", 118),
+        ("USDT", 825),
+        ("XEM", 873),
+        ("XLM", 512),
+        ("XMR", 328),
+        ("XRP", 52),
+        ("ZCL", 1447),
+        ("ZEC", 1437),
+    ];
+    match CMC_ID_MAP.binary_search_by(|(cur, _)| (*cur).cmp(currency)) {
+        Ok(index) => CMC_ID_MAP[index].1,
+        Err(_) => -1
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum GainError {
     InvalidTransactionOrder,    // should only happen in case of a bug
     MissingFiatValue,
     MissingCostBase,
     InvalidFiatValue,
-    InsufficientBalance,
+    InsufficientBalance(Amount),
 }
 
 impl fmt::Display for GainError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             GainError::InvalidTransactionOrder => f.write_str("Invalid transaction order"),
             GainError::MissingFiatValue => f.write_str("Missing fiat value"),
             GainError::MissingCostBase => f.write_str("Missing cost base"),
             GainError::InvalidFiatValue => f.write_str("Invalid fiat value"),
-            GainError::InsufficientBalance => f.write_str("Insufficient balance"),
+            GainError::InsufficientBalance(amount) => f.write_str(format!("Missing {}", amount).as_str()),
         }
     }
 }
@@ -66,6 +98,10 @@ impl Amount {
         } else {
             None
         }
+    }
+
+    pub(crate) fn cmc_id(&self) -> i32 {
+        cmc_id(&self.currency)
     }
 }
 
@@ -282,4 +318,103 @@ pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Trans
     let json = std::fs::read_to_string(input_path)?;
     let transactions: Vec<Transaction> = serde_json::from_str(&json)?;
     Ok(transactions)
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct PricePoint {
+    pub timestamp: NaiveDateTime,
+    pub price: Decimal,
+}
+
+pub(crate) struct PriceHistory {
+    prices: HashMap<String, Vec<PricePoint>>,
+}
+
+impl PriceHistory {
+    pub(crate) fn new() -> Self {
+        let mut prices = HashMap::new();
+
+        if let Ok(price_points) = load_btc_price_history_data() {
+            prices.insert("BTC".to_owned(), price_points);
+        }
+
+        Self { prices }
+    }
+
+    pub(crate) fn insert_price_points(&mut self, currency: String, price_points: Vec<PricePoint>) {
+        self.prices.insert(currency, price_points);
+    }
+
+    // todo: would be nice to expose the accuracy in the UI
+    pub(crate) fn estimate_price(&self, timestamp: NaiveDateTime, currency: &str) -> Option<Decimal> {
+        let estimate = match currency {
+            "EUR" => Some(Decimal::ONE),
+            _ => {
+                self.prices.get(currency).and_then(|price_points| {
+                    estimate_price(timestamp, price_points).map(|(price, _)| price)
+                })
+            }
+        };
+        if estimate.is_none() {
+            println!("todo: estimate price for {} at {}", currency, timestamp);
+        }
+        estimate
+    }
+
+    pub(crate) fn estimate_value(&self, timestamp: NaiveDateTime, amount: &Amount) -> Option<Amount> {
+        self.estimate_price(timestamp, &amount.currency).map(|price| Amount {
+            quantity: price * amount.quantity,
+            currency: "EUR".to_owned()
+        })
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn save_price_history_data(prices: &Vec<PricePoint>, path: &Path) -> Result<(), Box<dyn Error>> {
+    let mut wtr = csv::Writer::from_path(path)?;
+    for price in prices {
+        wtr.serialize(price)?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn load_btc_price_history_data() -> Result<Vec<PricePoint>, Box<dyn Error>> {
+    // The following file was saved using the above function with data loaded
+    // from the CoinMarketCap API.
+    let btc_price_history_eur = include_bytes!("data/btc-price-history-eur.csv");
+
+    let mut rdr = csv::Reader::from_reader(btc_price_history_eur.as_slice());
+    let mut prices: Vec<PricePoint> = Vec::new();
+    for result in rdr.deserialize() {
+        let record: PricePoint = result?;
+        prices.push(record);
+    }
+    Ok(prices)
+}
+
+fn estimate_price(time: NaiveDateTime, prices: &Vec<PricePoint>) -> Option<(Decimal, Duration)> {
+    let index = prices.partition_point(|p| p.timestamp < time);
+    let next_price_point = prices.get(index).or_else(|| prices.last());
+    let prev_price_point = if index > 0 { prices.get(index - 1) } else { None };
+
+    if let (Some(next_price), Some(prev_price)) = (next_price_point, prev_price_point) {
+        // calculate the most probable price, by linear iterpolation based on the previous and next price
+        let price_difference = next_price.price - prev_price.price;
+        let total_duration: Decimal = (next_price.timestamp - prev_price.timestamp).num_seconds().into();
+
+        // The accuracy is the minimum time difference between the requested time and a price point
+        let accuracy = (time - prev_price.timestamp).abs().min((next_price.timestamp - time).abs());
+
+        if total_duration > Decimal::ZERO {
+            let time_since_prev: Decimal = (time - prev_price.timestamp).num_seconds().into();
+            let time_ratio = time_since_prev / total_duration;
+
+            Some((prev_price.price + time_ratio * price_difference, accuracy))
+        } else {
+            Some((next_price.price, accuracy))
+        }
+    } else {
+        None
+    }
 }
