@@ -312,6 +312,10 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
                 for tx in source_txs.iter_mut() {
                     tx.source_index = index;
                 }
+
+                // merge consecutive trades that are really the same order
+                merge_consecutive_trades(&mut source_txs);
+
                 source.transaction_count = source_txs.len();
                 transactions.extend(source_txs);
             },
@@ -330,6 +334,20 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
     estimate_transaction_values(&mut transactions, price_history);
 
     Ok(transactions)
+}
+
+fn merge_consecutive_trades(source_txs: &mut Vec<Transaction>) {
+    let mut index = 1;
+    while index < source_txs.len() {
+        let (a, b) = source_txs.split_at_mut(index);
+        let (a, b) = (a.last_mut().unwrap(), &b[0]);
+
+        if a.merge(b).is_ok() {
+            source_txs.remove(index);
+        } else {
+            index += 1;
+        }
+    }
 }
 
 fn match_send_receive(transactions: &mut Vec<Transaction>) {

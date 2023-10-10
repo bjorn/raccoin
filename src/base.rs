@@ -216,6 +216,8 @@ pub(crate) struct Transaction {
     pub matching_tx: Option<usize>,
 }
 
+pub(crate) struct MergeError;
+
 impl Transaction {
     pub(crate) fn new(timestamp: NaiveDateTime, operation: Operation) -> Self {
         Self {
@@ -302,6 +304,64 @@ impl Transaction {
             },
             Ordering::Greater => Ordering::Greater,
         }
+    }
+
+    /// Used to merge trade operations to avoid clutter.
+    pub(crate) fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
+        // Some things should be equal before we will merge transactions
+        if self.source_index != other.source_index ||
+            self.blockchain != other.blockchain ||
+            self.tx_hash != other.tx_hash
+        {
+            return Err(MergeError);
+        }
+
+        // The transactions should be close in time
+        if other.timestamp - self.timestamp > Duration::minutes(5) {
+            return Err(MergeError);
+        }
+
+        fn merge_optional_amounts(amount: &Option<Amount>, other_amount: &Option<Amount>) -> Result<Option<Amount>, MergeError> {
+            match (amount, other_amount) {
+                (None, None) => Ok(None),
+                (Some(a), None) => Ok(Some(a.clone())),
+                (None, Some(b)) => Ok(Some(b.clone())),
+                (Some(a), Some(b)) => a.try_add(b).ok_or(MergeError).map(Some),
+            }
+        }
+
+        // Check if we can add up the fees and values
+        let merged_fee = merge_optional_amounts(&self.fee, &other.fee)?;
+        let merged_fee_value = merge_optional_amounts(&self.fee_value, &other.fee_value)?;
+        let merged_value = merge_optional_amounts(&self.value, &other.value)?;
+
+        // And then we only merge trades
+        match (&mut self.operation, &other.operation) {
+            (Operation::Trade { incoming, outgoing }, Operation::Trade { incoming: other_incoming, outgoing: other_outgoing }) => {
+                // And only when their incoming and outgoing amounts can be added
+                let merged_incoming = incoming.try_add(&other_incoming).ok_or(MergeError)?;
+                let merged_outgoing = outgoing.try_add(&other_outgoing).ok_or(MergeError)?;
+                *incoming = merged_incoming;
+                *outgoing = merged_outgoing;
+            },
+            _ => Err(MergeError)?,
+        }
+
+        if self.description != other.description {
+            self.description = match (&self.description, &other.description) {
+                (None, None) => None,
+                (Some(description), None) => Some(description.clone()),
+                (None, Some(description)) => Some(description.clone()),
+                (Some(self_description), Some(other_description)) => {
+                    Some(format!("{}, {}", self_description, other_description))
+                }
+            };
+        }
+        self.fee = merged_fee;
+        self.fee_value = merged_fee_value;
+        self.value = merged_value;
+
+        Ok(())
     }
 }
 
