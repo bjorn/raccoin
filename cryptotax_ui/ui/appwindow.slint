@@ -103,6 +103,10 @@ export component AppWindow inherits Window {
 
             sources-page := Sources {
                 visible: active-page == Page.sources;
+                source-transactions-clicked(index) => {
+                    Facade.set-source-filter(index);
+                    root.active-page = Page.transactions;
+                }
             }
 
             transactions-page := Transactions {

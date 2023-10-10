@@ -17,6 +17,8 @@ export global Facade {
     in-out property <[UiTaxReport]> reports: TestData.reports;
     in-out property <UiPortfolio> portfolio: TestData.portfolio;
 
+    out property <int> source-filter: -1;
+
     // ACTIONS
 
     // params: (blockchain, tx_hash)
@@ -28,4 +30,15 @@ export global Facade {
     // params: (report_index)
     callback export-summary(int);
     callback export-capital-gains(int);
+
+    callback transaction-filter-changed;
+
+    // FUNCTIONS
+
+    function set-source-filter(source-index: int) {
+        if (source-filter != source-index) {
+            source-filter = source-index;
+            transaction-filter-changed();
+        }
+    }
 }

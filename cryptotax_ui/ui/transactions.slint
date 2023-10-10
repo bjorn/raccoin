@@ -1,4 +1,4 @@
-import { ListView } from "std-widgets.slint";
+import { Button, ListView, HorizontalBox } from "std-widgets.slint";
 import {
     Cell,
     CurrencyIcon,
@@ -199,6 +199,20 @@ export component Transactions inherits VerticalLayout {
     in property <[UiTransaction]> transactions: Facade.transactions;
 
     spacing: 2px;
+
+    if (Facade.source-filter != -1): HorizontalBox {
+        Text {
+            text: "Source: " + Facade.sources[Facade.source-filter].name;
+            vertical-alignment: center;
+        }
+        Button {
+            text: "Clear";
+            clicked => {
+                Facade.set-source-filter(-1);
+            }
+        }
+        Rectangle {}
+    }
 
     TransactionsHeader {}
 

@@ -6,6 +6,8 @@ import { UiTransactionSource } from "./structs.slint";
 export component Sources inherits ListView {
     in property <[UiTransactionSource]> sources: Facade.sources;
 
+    callback source-transactions-clicked(int);
+
     for source[index] in sources: HorizontalBox {
         CheckBox {
             checked: source.enabled;
@@ -23,7 +25,7 @@ export component Sources inherits ListView {
         Rectangle { width: 1px; }
         Badge {
             text: "\{source.transaction-count} transactions";
-            opacity: 0.8;
+            clicked => { root.source-transactions-clicked(index); }
         }
         Rectangle {}
         ComboBox {

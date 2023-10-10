@@ -130,12 +130,30 @@ impl TaxReport {
     }
 }
 
+#[derive(Default)]
+enum TransactionFilter {
+    #[default]
+    None,
+    SourceIndex(usize),
+}
+
+impl TransactionFilter {
+    fn matches(&self, tx: &Transaction) -> bool {
+        match self {
+            TransactionFilter::None => true,
+            TransactionFilter::SourceIndex(index) => tx.source_index == *index,
+        }
+    }
+}
+
 struct App {
     sources_file: PathBuf,
     sources: Vec<TransactionSource>,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
     price_history: PriceHistory,
+
+    transaction_filter: TransactionFilter,
 
     ui_sources: Rc<VecModel<UiTransactionSource>>,
     ui_transactions: Rc<VecModel<UiTransaction>>,
@@ -153,6 +171,8 @@ impl App {
             transactions: Vec::new(),
             reports: Vec::new(),
             price_history,
+
+            transaction_filter: TransactionFilter::None,
 
             ui_sources: Rc::new(Default::default()),
             ui_transactions: Rc::new(Default::default()),
@@ -657,9 +677,20 @@ fn ui_set_sources(app: &App) {
 }
 
 fn ui_set_transactions(app: &App) {
-    let (sources, transactions) = (&app.sources, &app.transactions);
+    let sources = &app.sources;
+    let transactions = &app.transactions;
+    let filter = &app.transaction_filter;
+
     let mut ui_transactions = Vec::new();
+
     for transaction in transactions {
+        if !filter.matches(transaction) &&
+            (!transaction.operation.is_send() ||
+             !transaction.matching_tx.map(|index| filter.matches(&transactions[index])).unwrap_or(false))
+        {
+            continue;
+        }
+
         let source = sources.get(transaction.source_index);
         let source_name: Option<SharedString> = source.map(|source| source.name.clone().into());
 
@@ -969,6 +1000,24 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => {},
         }
     });
+
+    {
+        let ui_weak = ui.as_weak();
+        let app = app.clone();
+
+        facade.on_transaction_filter_changed(move || {
+            let mut app = app.borrow_mut();
+            let ui = ui_weak.unwrap();
+            let facade = ui.global::<Facade>();
+            app.transaction_filter = if facade.get_source_filter() < 0 {
+                TransactionFilter::None
+            } else {
+                TransactionFilter::SourceIndex(facade.get_source_filter() as usize)
+            };
+
+            ui_set_transactions(&app);
+        });
+    }
 
     ui.run()?;
 
