@@ -5,7 +5,6 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
 use crate::{
-    ctc::save_transactions_to_ctc_csv,
     time::deserialize_date_time,
     base::{Transaction, Amount}
 };
@@ -214,24 +213,4 @@ pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transact
     }
 
     Ok(transactions)
-}
-
-pub(crate) fn convert_poloniex_to_ctc(input_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
-    let mut txs = Vec::new();
-
-    // deposits
-    let deposits_file = input_path.join("deposit.csv");
-    txs.extend(load_poloniex_deposits_csv(&deposits_file)?);
-
-    // withdrawals
-    let withdrawals_file = input_path.join("withdrawal.csv");
-    txs.extend(load_poloniex_withdrawals_csv(&withdrawals_file)?);
-
-    // trades
-    let trades_file = input_path.join("all-trades.csv");
-    txs.extend(load_poloniex_trades_csv(&trades_file)?);
-
-    save_transactions_to_ctc_csv(&txs, output_path)?;
-
-    Ok(())
 }
