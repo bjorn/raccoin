@@ -12,16 +12,21 @@ pub(crate) fn blocking_esplora_client() -> Result<BlockingClient, esplora_client
 
 pub(crate) fn address_transactions(
     client: &BlockingClient,
-    address: &str,
+    addresses: &Vec<String>,
 ) -> Result<Vec<Transaction>, Box<dyn Error>> {
-    let address = Address::from_str(address)?.require_network(Network::Bitcoin)?;
     let mut pub_keys = HashSet::new();
-    pub_keys.insert(address.script_pubkey());
+    let mut address_transactions: HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>> = HashMap::new();
 
-    let txs = address_txs(client, &address)?;
+    for address in addresses {
+        let address = Address::from_str(address)?.require_network(Network::Bitcoin)?;
+        pub_keys.insert(address.script_pubkey());
 
-    // iterate in reverse order since we want the transactions to be chronological
-    Ok(txs.iter().rev().map(|tx| tx_to_transaction(&pub_keys, tx)).collect())
+        let _ = address_transactions.entry(address).or_insert_with_key(|k| {
+            address_txs(client, &k)
+        });
+    }
+
+    Ok(process_transactions(address_transactions, pub_keys))
 }
 
 fn tx_to_transaction(
@@ -66,9 +71,13 @@ fn tx_to_transaction(
     // determine if send or receive, and convert Satoshi to BTC
     let mut transaction = if own_in > own_out {
         let spent_amount = own_in - own_out - tx.fee;
-        let mut transaction = Transaction::send(naive_utc, Amount::from_satoshis(spent_amount));
-        transaction.fee = Some(Amount::from_satoshis(tx.fee));
-        transaction
+        if spent_amount > 0 {
+            let mut transaction = Transaction::send(naive_utc, Amount::from_satoshis(spent_amount));
+            transaction.fee = Some(Amount::from_satoshis(tx.fee));
+            transaction
+        } else {
+            Transaction::fee(naive_utc, Amount::from_satoshis(tx.fee))
+        }
     } else {
         let received_amount = own_out - own_in;
         Transaction::receive(naive_utc, Amount::from_satoshis(received_amount))
@@ -210,11 +219,17 @@ pub(crate) fn xpub_addresses_transactions(
 
     println!("collected {} active addresses (scanned {})", pub_keys.len(), address_transactions.len());
 
-    // Convert the transactions, using a set of tx_hash to skip duplicates
+    Ok(process_transactions(address_transactions, pub_keys))
+}
+
+// Converts the transactions, using a set of tx_hash to skip duplicates
+fn process_transactions(address_transactions: HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>>, pub_keys: HashSet<ScriptBuf>) -> Vec<Transaction> {
     let mut processed_txs = HashSet::new();
     let mut transactions = Vec::new();
+
     address_transactions.values().for_each(|txs| {
         if let Ok(txs) = txs {
+            // iterate in reverse order to make the transactions somewhat chronological (at least per address...)
             txs.iter().rev().for_each(|tx| {
                 if !processed_txs.contains(&tx.txid) {
                     processed_txs.insert(tx.txid);
@@ -225,6 +240,5 @@ pub(crate) fn xpub_addresses_transactions(
     });
 
     println!("processed {} unique transactions", processed_txs.len());
-
-    Ok(transactions)
+    transactions
 }

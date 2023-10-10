@@ -27,6 +27,9 @@ export global Facade {
     // params: (source_index, enabled)
     callback set-source-enabled(int, bool);
 
+    // params: (source_index)
+    callback sync-source(int);
+
     // params: (report_index)
     callback export-summary(int);
     callback export-capital-gains(int);

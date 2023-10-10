@@ -129,7 +129,7 @@ impl fmt::Display for Amount {
 }
 
 /// Unified transaction type for all exchanges and wallets
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type")]
 pub(crate) enum Operation {
     Buy(Amount),
@@ -192,7 +192,7 @@ impl Operation {
 }
 
 /// Unified transaction type for all exchanges and wallets
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct Transaction {
     pub timestamp: NaiveDateTime,
     pub operation: Operation,

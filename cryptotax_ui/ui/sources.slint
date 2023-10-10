@@ -1,7 +1,7 @@
-import { ListView, HorizontalBox, CheckBox, ComboBox } from "std-widgets.slint";
-import { Badge } from "./common.slint";
-import { Facade } from "./global.slint";
-import { UiTransactionSource } from "./structs.slint";
+import { ListView, HorizontalBox, CheckBox, ComboBox, Button } from "std-widgets.slint";
+import { Badge, ElidingText } from "common.slint";
+import { Facade } from "global.slint";
+import { UiTransactionSource } from "structs.slint";
 
 export component Sources inherits ListView {
     in property <[UiTransactionSource]> sources: Facade.sources;
@@ -18,9 +18,8 @@ export component Sources inherits ListView {
                 Facade.set-source-enabled(index, self.checked);
             }
         }
-        Text {
+        ElidingText {
             text: source.path;
-            vertical-alignment: center;
         }
         Rectangle { width: 1px; }
         Badge {
@@ -33,6 +32,11 @@ export component Sources inherits ListView {
             horizontal-stretch: 0;
             current-value: source.source_type;
             enabled: false;
+        }
+        Button {
+            text: "Sync";
+            enabled: source.source-type == "Bitcoin Address(es)" || source.source-type == "Bitcoin HD Wallet(s)";
+            clicked => { Facade.sync-source(index); }
         }
     }
 }

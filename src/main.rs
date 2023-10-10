@@ -30,7 +30,7 @@ use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, proce
 
 #[derive(EnumIter, Serialize, Deserialize)]
 enum TransactionsSourceType {
-    BitcoinAddress,
+    BitcoinAddresses,
     BitcoinXpubs,
     BitcoinCoreCsv,
     BitcoinDeCsv,
@@ -53,8 +53,8 @@ enum TransactionsSourceType {
 impl ToString for TransactionsSourceType {
     fn to_string(&self) -> String {
         match self {
-            TransactionsSourceType::BitcoinAddress => "Bitcoin Address".to_owned(),
-            TransactionsSourceType::BitcoinXpubs => "Bitcoin HD Wallet".to_owned(),
+            TransactionsSourceType::BitcoinAddresses => "Bitcoin Address(es)".to_owned(),
+            TransactionsSourceType::BitcoinXpubs => "Bitcoin HD Wallet(s)".to_owned(),
             TransactionsSourceType::BitcoinCoreCsv => "Bitcoin Core (CSV)".to_owned(),
             TransactionsSourceType::BitcoinDeCsv => "bitcoin.de (CSV)".to_owned(),
             TransactionsSourceType::BitonicCsv => "Bitonic (CSV)".to_owned(),
@@ -87,6 +87,8 @@ struct TransactionSource {
     full_path: PathBuf,
     #[serde(skip)]
     transaction_count: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    transactions: Vec<Transaction>,
 }
 
 #[derive(Default, Clone)]
@@ -188,7 +190,8 @@ impl App {
         self.sources = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
         self.sources.iter_mut().for_each(|source| {
             match source.source_type {
-                TransactionsSourceType::BitcoinAddress => {},
+                TransactionsSourceType::BitcoinAddresses |
+                TransactionsSourceType::BitcoinXpubs => {}
                 _ => {
                     source.full_path = sources_path.join(&source.path).into();
                 }
@@ -209,6 +212,13 @@ impl App {
     fn refresh_transactions(&mut self) {
         self.transactions = load_transactions(&mut self.sources, &self.price_history).unwrap_or_default();
         self.reports = calculate_tax_reports(&mut self.transactions);
+    }
+
+    fn refresh_ui(&self, ui: &AppWindow) {
+        ui_set_sources(self);
+        ui_set_transactions(self);
+        ui_set_reports(self);
+        ui_set_portfolio(ui, self);
     }
 }
 
@@ -261,7 +271,6 @@ pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path
 }
 
 fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
-    let esplora_client = esplora::blocking_esplora_client()?;
     let mut transactions = Vec::new();
 
     for (index, source) in sources.iter_mut().enumerate() {
@@ -271,11 +280,9 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
         }
 
         let source_txs = match source.source_type {
-            TransactionsSourceType::BitcoinAddress => {
-                esplora::address_transactions(&esplora_client, &source.path)
-            },
+            TransactionsSourceType::BitcoinAddresses |
             TransactionsSourceType::BitcoinXpubs => {
-                esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())
+                Ok(source.transactions.clone())
             }
             TransactionsSourceType::BitcoinCoreCsv => {
                 bitcoin_core::load_bitcoin_core_csv(&source.full_path)
@@ -648,7 +655,7 @@ fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
     facade.on_open_transaction(move |blockchain, tx_hash| {
         let _ = match blockchain.as_str() {
             "BCH" => open::that(format!("https://blockchair.com/bitcoin-cash/transaction/{}", tx_hash)),
-            "BTC" => open::that(format!("https://blockchair.com/bitcoin/transaction/{}", tx_hash)),
+            "BTC" | "" => open::that(format!("https://blockchair.com/bitcoin/transaction/{}", tx_hash)),
             // or "https://btc.com/tx/{}"
             // or "https://live.blockcypher.com/btc/tx/{}"
             "ETH" => open::that(format!("https://etherscan.io/tx/{}", tx_hash)),
@@ -656,7 +663,10 @@ fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
             "PPC" => open::that(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
             "RDD" => open::that(format!("https://rddblockexplorer.com/tx/{}", tx_hash)),
             "ZEC" => open::that(format!("https://blockchair.com/zcash/transaction/{}", tx_hash)),
-            _ => Ok(()),
+            _ => {
+                println!("No explorer URL defind for blockchain: {}", blockchain);
+                Ok(())
+            }
         };
     });
 
@@ -917,37 +927,72 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let ui = initialize_ui(&app)?;
-
-    ui_set_sources(&app);
-    ui_set_transactions(&app);
-    ui_set_reports(&app);
-    ui_set_portfolio(&ui, &app);
+    app.refresh_ui(&ui);
 
     let app = Rc::new(RefCell::new(app));
     let facade = ui.global::<Facade>();
-    let ui_weak = ui.as_weak();
 
-    let app_for_set_source_enabled = app.clone();
-    facade.on_set_source_enabled(move |index, enabled| {
-        let mut app = app_for_set_source_enabled.borrow_mut();
-        if let Some(source) = app.sources.get_mut(index as usize) {
-            source.enabled = enabled;
+    {
+        let ui_weak = ui.as_weak();
+        let app = app.clone();
+        let sources_file = sources_file.clone();
 
-            app.refresh_transactions();
+        facade.on_set_source_enabled(move |index, enabled| {
+            let mut app = app.borrow_mut();
+            if let Some(source) = app.sources.get_mut(index as usize) {
+                source.enabled = enabled;
 
-            // refresh the UI
-            ui_set_sources(&app);
-            ui_set_transactions(&app);
-            ui_set_reports(&app);
-            ui_set_portfolio(&ui_weak.unwrap(), &app);
+                app.refresh_transactions();
+                app.refresh_ui(&ui_weak.unwrap());
 
-            // save the sources file
-            match app.save_sources() {
-                Ok(_) => { println!("Saved sources to {}", sources_file.display()); },
-                Err(_) => { println!("Error saving sources to {}", sources_file.display()); },
+                // save the sources file
+                match app.save_sources() {
+                    Ok(_) => { println!("Saved sources to {}", sources_file.display()); }
+                    Err(_) => { println!("Error saving sources to {}", sources_file.display()); }
+                }
             }
-        }
-    });
+        });
+    }
+
+    {
+        let ui_weak = ui.as_weak();
+        let app = app.clone();
+        let sources_file = sources_file.clone();
+
+        facade.on_sync_source(move |index| {
+            let mut app = app.borrow_mut();
+
+            if let Some(source) = app.sources.get_mut(index as usize) {
+                let esplora_client = esplora::blocking_esplora_client().unwrap();
+                let tx = match source.source_type {
+                    TransactionsSourceType::BitcoinAddresses => {
+                        esplora::address_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).ok()
+                    }
+                    TransactionsSourceType::BitcoinXpubs => {
+                        esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).ok()
+                    }
+                    _ => {
+                        println!("Sync not supported for this source type");
+                        None
+                    }
+                };
+
+                if let Some(mut tx) = tx {
+                    tx.sort_by(|a, b| a.cmp(&b) );
+                    source.transactions = tx;
+
+                    app.refresh_transactions();
+                    app.refresh_ui(&ui_weak.unwrap());
+
+                    // save the sources file
+                    match app.save_sources() {
+                        Ok(_) => { println!("Saved sources to {}", sources_file.display()); }
+                        Err(_) => { println!("Error saving sources to {}", sources_file.display()); }
+                    }
+                }
+            }
+        });
+    }
 
     fn save_csv_file(title: &str, starting_file_name: &str) -> Option<PathBuf> {
         let dialog = rfd::FileDialog::new()
