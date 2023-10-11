@@ -252,30 +252,6 @@ pub(crate) struct CtcTx<'a> {
     pub reference_price_currency: Option<&'a str>,
 }
 
-impl<'a> CtcTx<'a> {
-    /// Constructor that takes the timestamp, type, base currency, and base amount of the transaction
-    /// All other fields are optional
-    pub(crate) fn new(timestamp: NaiveDateTime, operation: CtcTxType, base_currency: &'a str, base_amount: Decimal) -> Self {
-        Self {
-            timestamp,
-            operation,
-            base_currency,
-            base_amount,
-            quote_currency: None,
-            quote_amount: None,
-            fee_currency: None,
-            fee_amount: None,
-            from: None,
-            to: None,
-            blockchain: None,
-            id: None,
-            description: None,
-            reference_price_per_unit: None,
-            reference_price_currency: None,
-        }
-    }
-}
-
 impl<'a> From<&'a Transaction> for CtcTx<'a> {
     fn from(item: &'a Transaction) -> Self {
         let (operation, base, quote) = match &item.operation {

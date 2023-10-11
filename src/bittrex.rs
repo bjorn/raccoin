@@ -34,8 +34,8 @@ struct BittrexOrder {
     side: MarketSide,
     // #[serde(rename = "Type")]
     // type_: String,
-    #[serde(rename = "Price")]
-    price: Decimal,
+    // #[serde(rename = "Price")]
+    // price: Decimal,
     #[serde(rename = "Quantity")]
     quantity: Decimal,
     #[serde(rename = "Total")]

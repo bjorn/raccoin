@@ -71,13 +71,6 @@ impl Amount {
         }
     }
 
-    pub(crate) fn from_f64(quantity: f64, currency: String) -> Self {
-        Self {
-            quantity: Decimal::from_f64(quantity).unwrap(),
-            currency: currency,
-        }
-    }
-
     pub(crate) fn from_satoshis(quantity: u64) -> Self {
         Self {
             quantity: Decimal::new(quantity as i64, 8),

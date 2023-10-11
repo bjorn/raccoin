@@ -200,18 +200,30 @@ export component Transactions inherits VerticalLayout {
 
     spacing: 2px;
 
-    if (Facade.source-filter != -1): HorizontalBox {
-        Text {
-            text: "Source: " + Facade.sources[Facade.source-filter].name;
-            vertical-alignment: center;
-        }
-        Button {
-            text: "Clear";
-            clicked => {
-                Facade.set-source-filter(-1);
+
+    HorizontalBox {
+        if (Facade.source-filter != -1): HorizontalBox {
+            padding: 0;
+            Text {
+                text: "Source: " + Facade.sources[Facade.source-filter].name;
+                vertical-alignment: center;
+            }
+            Button {
+                text: "Clear";
+                clicked => {
+                    Facade.set-source-filter(-1);
+                }
             }
         }
         Rectangle {}
+        Button {
+            text: "Export (JSON)";
+            clicked => { Facade.export-transactions-json() }
+        }
+        Button {
+            text: "Export (CSV)";
+            clicked => { Facade.export-transactions-csv() }
+        }
     }
 
     TransactionsHeader {}

@@ -1047,6 +1047,55 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     {
+        let app = app.clone();
+
+        facade.on_export_transactions_csv(move || {
+            match save_csv_file("Export Transactions (CSV)", "transactions.csv") {
+                Some(path) => {
+                    let app = app.borrow();
+                    // todo: provide this feedback in the UI
+                    match ctc::save_transactions_to_ctc_csv(&app.transactions, &path) {
+                        Ok(_) => {
+                            println!("Exported transactions to {}", path.display());
+                        }
+                        Err(e) => {
+                            println!("Error exporting transactions to {}: {}", path.display(), e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        });
+    }
+
+    {
+        let app = app.clone();
+
+        facade.on_export_transactions_json(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Export Transactions (JSON)")
+                .set_file_name("transactions.json")
+                .add_filter("JSON", &["json"]);
+
+            match dialog.save_file() {
+                Some(path) => {
+                    let app = app.borrow();
+                    // todo: provide this feedback in the UI
+                    match base::save_transactions_to_json(&app.transactions, &path) {
+                        Ok(_) => {
+                            println!("Exported transactions to {}", path.display());
+                        }
+                        Err(e) => {
+                            println!("Error exporting transactions to {}: {}", path.display(), e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        });
+    }
+
+    {
         let ui_weak = ui.as_weak();
         let app = app.clone();
 
