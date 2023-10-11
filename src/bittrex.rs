@@ -82,7 +82,7 @@ impl TryFrom<BittrexOrder> for Transaction {
                     MarketSide::Buy => Ok(Transaction::trade(item.date, base, quote)),
                     MarketSide::Sell => Ok(Transaction::trade(item.date, quote, base)),
                 }
-            },
+            }
             _ => return Err("Invalid market value, expected: '<base_currency>/<quote_currency>'"),
         }
     }

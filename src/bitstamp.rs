@@ -70,21 +70,21 @@ impl TryFrom<BitstampTransaction> for Transaction {
                     (Some(SubType::Sell), Some(value)) => Ok(Transaction::trade(item.datetime, value, item.amount)),
                     _ => Err("Missing Sub Type and/or Value for Market transaction"),
                 }
-            },
+            }
             BitstampTransactionType::Withdrawal => {
                 Ok(if item.amount.is_fiat() {
                     Transaction::fiat_withdrawal(item.datetime, item.amount)
                 } else {
                     Transaction::send(item.datetime, item.amount)
                 })
-            },
+            }
             BitstampTransactionType::Deposit => {
                 Ok(if item.amount.is_fiat() {
                     Transaction::fiat_deposit(item.datetime, item.amount)
                 } else {
                     Transaction::receive(item.datetime, item.amount)
                 })
-            },
+            }
         }?;
 
         tx.fee = item.fee;

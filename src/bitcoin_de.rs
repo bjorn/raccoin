@@ -76,7 +76,7 @@ impl TryFrom<BitcoinDeAction> for Transaction {
                         currency: item.unit_amount_after_bitcoin_de_fee
                     },
                 ))
-            },
+            }
             BitcoinDeActionType::Disbursement => Ok(Transaction::send(utc_time, Amount::new(-item.incoming_outgoing, currency))),
             BitcoinDeActionType::Deposit => Ok(Transaction::receive(utc_time, Amount::new(item.incoming_outgoing, currency))),
             BitcoinDeActionType::Sale => {
@@ -91,7 +91,7 @@ impl TryFrom<BitcoinDeAction> for Transaction {
                         currency: currency,
                     },
                 ))
-            },
+            }
             BitcoinDeActionType::NetworkFee => Ok(Transaction::fee(utc_time, Amount::new(-item.incoming_outgoing, currency))),
         }?;
         match item.type_ {
@@ -99,13 +99,13 @@ impl TryFrom<BitcoinDeAction> for Transaction {
             BitcoinDeActionType::Purchase |
             BitcoinDeActionType::Sale => {
                 tx.description = Some(item.reference);
-            },
+            }
             BitcoinDeActionType::Disbursement |
             BitcoinDeActionType::Deposit |
             BitcoinDeActionType::NetworkFee => {
                 tx.tx_hash = Some(item.reference);
                 tx.blockchain = Some(item.currency);
-            },
+            }
         };
         Ok(tx)
     }

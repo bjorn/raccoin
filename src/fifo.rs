@@ -51,7 +51,7 @@ fn fiat_value(amount: Option<&Amount>) -> Result<Decimal, GainError> {
             } else {
                 Err(GainError::InvalidFiatValue)
             }
-        },
+        }
         None => Err(GainError::MissingFiatValue),
     }
 }
@@ -82,10 +82,10 @@ impl FIFO {
                             (Some(amount), Some(value)) => {
                                 (fee, fee_value) = (None, None);
                                 (amount, Some(value))
-                            },
+                            }
                             _ => (amount.clone(), Some(value.clone()))
                         }
-                    },
+                    }
                     _ => (amount.clone(), value.clone())
                 }
             };
@@ -105,7 +105,7 @@ impl FIFO {
                 Operation::Income(amount) |
                 Operation::Spam(amount) => {
                     transaction.gain = Some(self.add_holdings(transaction, amount, transaction.value.as_ref()));
-                },
+                }
                 Operation::Trade{incoming, outgoing} => {
                     // When we're trading crypto for crypto, it is technically
                     // handled as if we sold one crypto for fiat and then used
@@ -127,7 +127,7 @@ impl FIFO {
                 Operation::OutgoingGift(amount) => {
                     let (amount, value) = try_include_fee(amount, &transaction.value);
                     transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, &amount, value.as_ref()));
-                },
+                }
                 Operation::FiatDeposit(_) |
                 Operation::FiatWithdrawal(_) => {
                     // We're not tracking fiat at the moment (it's not relevant for tax purposes)
@@ -136,7 +136,7 @@ impl FIFO {
                 Operation::Send(_) => {
                     // Verify that these are matched as transfer, otherwise they should have been Buy/Sell
                     assert!(transaction.matching_tx.is_some(), "no matching tx");
-                },
+                }
             }
 
             if let Some(fee) = fee {
@@ -147,13 +147,13 @@ impl FIFO {
                                 Some(Ok(g)) => {
                                     *g += gain;
                                 }
-                                Some(Err(_)) => {},
+                                Some(Err(_)) => {}
                                 None => transaction.gain = Some(Ok(gain)),
                             }
-                        },
+                        }
                         Err(err) => if transaction.gain.is_none() {
                             transaction.gain = Some(Err(err));
-                        },
+                        }
                     }
                 }
             }
@@ -188,7 +188,7 @@ impl FIFO {
                 Err(_) => {
                     cost_base_error = Err(GainError::MissingCostBase);
                     Decimal::ZERO
-                },
+                }
             };
             let proceeds = processed_quantity * sold_unit_price;
 
@@ -269,7 +269,7 @@ impl FIFO {
                 let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
                 capital_gains.extend(gains);
                 fiat.map(|_| gain).map_err(|_| GainError::MissingFiatValue)
-            },
+            }
             Err(e) => Err(e),
         }
     }

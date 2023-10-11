@@ -53,10 +53,10 @@ impl<'a> From<TrezorTransaction<'a>> for Transaction {
         let mut tx = match item.type_ {
             TrezorTransactionType::Sent => {
                 Transaction::send(date_time, Amount::new(item.amount, item.amount_unit.to_owned()))
-            },
+            }
             TrezorTransactionType::Received => {
                 Transaction::receive(date_time, Amount::new(item.amount, item.amount_unit.to_owned()))
-            },
+            }
         };
         tx.description = if item.label.is_empty() { None } else { Some(item.label.to_owned()) };
         tx.tx_hash = Some(item.id.to_owned());

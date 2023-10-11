@@ -130,7 +130,7 @@ impl TryFrom<PoloniexTrade> for Transaction {
                     (Some(quote_currency), Some(base_currency)) => Ok((base_currency, quote_currency)),
                     _ => return Err("Invalid Poloniex market")
                 }
-            },
+            }
         }?;
 
         let quote_currency = normalize_currency(quote_currency);
@@ -208,7 +208,7 @@ pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transact
             Err(err) => {
                 println!("Error: {:?}", err);
                 continue;
-            },
+            }
         };
     }
 

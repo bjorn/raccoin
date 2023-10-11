@@ -41,13 +41,13 @@ impl<'a> BitcoinCoreAction<'a> {
         let mut tx = match self.type_ {
             TransferType::SentTo => {
                 Transaction::send(utc_time, Amount::new(-self.amount, currency.to_owned()))
-            },
+            }
             TransferType::ReceivedWith => {
                 Transaction::receive(utc_time, Amount::new(self.amount, currency.to_owned()))
-            },
+            }
             TransferType::Generated => {
                 Transaction::new(utc_time, Operation::Staking(Amount::new(self.amount, currency.to_owned())))
-            },
+            }
         };
         tx.description = if self.label.is_empty() { None } else { Some(self.label.to_owned()) };
         tx.tx_hash = Some(self.id.trim_end_matches("-000").to_owned());

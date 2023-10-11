@@ -286,13 +286,13 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
             }
             TransactionsSourceType::BitcoinCoreCsv => {
                 bitcoin_core::load_bitcoin_core_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::BitcoinDeCsv => {
                 bitcoin_de::load_bitcoin_de_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::BitonicCsv => {
                 bitonic::load_bitonic_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::BitstampCsv => {
                 bitstamp::load_bitstamp_csv(&source.full_path)
             }
@@ -304,34 +304,34 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
             }
             TransactionsSourceType::ElectrumCsv => {
                 electrum::load_electrum_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::Json => {
                 base::load_transactions_from_json(&source.full_path)
-            },
+            }
             TransactionsSourceType::CtcImportCsv => {
                 ctc::load_ctc_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::MyceliumCsv => {
                 mycelium::load_mycelium_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::PeercoinCsv => {
                 bitcoin_core::load_peercoin_csv(&source.full_path)
             }
             TransactionsSourceType::PoloniexDepositsCsv => {
                 poloniex::load_poloniex_deposits_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::PoloniexTradesCsv => {
                 poloniex::load_poloniex_trades_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::PoloniexWithdrawalsCsv => {
                 poloniex::load_poloniex_withdrawals_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::ReddcoinCoreCsv => {
                 bitcoin_core::load_reddcoin_core_csv(&source.full_path)
-            },
+            }
             TransactionsSourceType::TrezorCsv => {
                 trezor::load_trezor_csv(&source.full_path)
-            },
+            }
         };
 
         match source_txs {
@@ -345,7 +345,7 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
 
                 source.transaction_count = source_txs.len();
                 transactions.extend(source_txs);
-            },
+            }
             // todo: provide this feedback to the UI
             Err(e) => {
                 source.transaction_count = 0;
@@ -421,7 +421,7 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                             }
 
                             true
-                        },
+                        }
                         _ => false,
                     }
                 }).map(|(i, _)| i);
@@ -434,7 +434,7 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                     // no match was found for this transactions, so add it to the unmatched list
                     unmatched_sends_receives.push(index);
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -445,11 +445,11 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
             // Turn unmatched Sends into Sells
             Operation::Send(amount) => {
                 tx.operation = Operation::Sell(amount.clone());
-            },
+            }
             // Turn unmatched Receives into Buys
             Operation::Receive(amount) => {
                 tx.operation = Operation::Buy(amount.clone());
-            },
+            }
             _ => unreachable!("only Send and Receive transactions can be unmatched"),
         }
     });
@@ -479,11 +479,11 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                             println!("warning: fee {:?} appears to have been included in the sent amount {:?}, adjusting sent amount to {:?}", existing_fee, sent, received);
                             Some((received.clone(), implied_fee))
                         }
-                    },
+                    }
                     None => {
                         println!("warning: a fee of {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:} and setting fee", implied_fee, sent, received);
                         Some((received.clone(), implied_fee))
-                    },
+                    }
                 }
             }
             _ => None,
@@ -528,7 +528,7 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                             }
                         }
                     }
-                },
+                }
                 Operation::Buy(amount) |
                 Operation::Sell(amount) |
                 Operation::FiatDeposit(amount) |
@@ -545,7 +545,7 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                 Operation::OutgoingGift(amount) |
                 Operation::Spam(amount) => {
                     price_history.estimate_value(tx.timestamp, amount)
-                },
+                }
             };
         }
 
@@ -764,11 +764,11 @@ fn ui_set_transactions(app: &App) {
             }
             Operation::Staking(amount) => {
                 (UiTransactionType::Staking, None, Some(amount), None, source_name)
-            },
+            }
             Operation::IncomingGift(amount) |
             Operation::OutgoingGift(amount) => {
                 (UiTransactionType::Gift, None, Some(amount), None, source_name)
-            },
+            }
             Operation::Spam(amount) => {
                 (UiTransactionType::Spam, None, Some(amount), None, source_name)
             }
@@ -917,7 +917,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("Usage:");
             println!("    {} <sources_file>", std::env::args().next().unwrap_or("cryptotax".to_owned()));
             exit(1);
-        },
+        }
     };
 
     let mut app = App::new();
@@ -1014,13 +1014,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 match save_summary_to_csv(&report.currencies, &path) {
                     Ok(_) => {
                         println!("Saved summary to {}", path.display());
-                    },
+                    }
                     Err(e) => {
                         println!("Error saving summary to {}: {}", path.display(), e);
                     }
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
     });
 
@@ -1036,13 +1036,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 match fifo::save_gains_to_csv(&report.gains, &path) {
                     Ok(_) => {
                         println!("Saved gains to {}", path.display());
-                    },
+                    }
                     Err(e) => {
                         println!("Error saving gains to {}: {}", path.display(), e);
                     }
                 }
-            },
-            _ => {},
+            }
+            _ => {}
         }
     });
 

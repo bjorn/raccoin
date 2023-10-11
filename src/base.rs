@@ -106,7 +106,7 @@ impl TryFrom<&str> for Amount {
         match (split.next().map(Decimal::try_from), split.next()) {
             (Some(Ok(quantity)), Some(currency)) => {
                 Ok(Amount { quantity, currency: currency.to_owned() })
-            },
+            }
             _ => return Err("Invalid format, expected: '<amount> <currency>'"),
         }
     }
@@ -264,7 +264,7 @@ impl Transaction {
             Operation::IncomingGift(amount) |
             Operation::Spam(amount) => {
                 (Some(amount), None)
-            },
+            }
             Operation::Sell(amount) |
             Operation::FiatWithdrawal(amount) |
             Operation::Fee(amount) |
@@ -272,7 +272,7 @@ impl Transaction {
             Operation::Expense(amount) |
             Operation::OutgoingGift(amount) => {
                 (None, Some(amount))
-            },
+            }
             Operation::Trade { incoming, outgoing } => {
                 (Some(incoming), Some(outgoing))
             }
@@ -294,7 +294,7 @@ impl Transaction {
                     (false, true) => Ordering::Greater,
                     _ => Ordering::Equal,
                 }
-            },
+            }
             Ordering::Greater => Ordering::Greater,
         }
     }
@@ -336,7 +336,7 @@ impl Transaction {
                 let merged_outgoing = outgoing.try_add(&other_outgoing).ok_or(MergeError)?;
                 *incoming = merged_incoming;
                 *outgoing = merged_outgoing;
-            },
+            }
             _ => Err(MergeError)?,
         }
 
