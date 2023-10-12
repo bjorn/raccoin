@@ -373,6 +373,15 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
     // sort transactions
     transactions.sort_by(|a, b| a.cmp(&b) );
 
+    // warn about duplicates
+    let mut last = transactions.first();
+    for tx in transactions.iter().skip(1) {
+        if last.map(|last| last == tx).unwrap_or(false) {
+            println!("Duplicate transaction detected: {:?}", tx);
+        }
+        last = Some(tx);
+    }
+
     match_send_receive(&mut transactions);
     estimate_transaction_values(&mut transactions, price_history);
 

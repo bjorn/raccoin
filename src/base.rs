@@ -36,7 +36,7 @@ pub(crate) fn cmc_id(currency: &str) -> i32 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum GainError {
     InvalidTransactionOrder,    // should only happen in case of a bug
     MissingFiatValue,
@@ -57,7 +57,7 @@ impl fmt::Display for GainError {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Amount {
     pub quantity: Decimal,
     pub currency: String,
@@ -133,7 +133,7 @@ impl fmt::Display for Amount {
 }
 
 /// Unified transaction type for all exchanges and wallets
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(tag = "type")]
 pub(crate) enum Operation {
     Buy(Amount),
@@ -204,7 +204,7 @@ impl Operation {
 }
 
 /// Unified transaction type for all exchanges and wallets
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub(crate) struct Transaction {
     pub timestamp: NaiveDateTime,
     pub operation: Operation,
