@@ -93,20 +93,27 @@ impl FIFO {
             match &transaction.operation {
                 Operation::Staking(amount) |
                 Operation::ChainSplit(amount) => {
-                    // Staking reward and Chain splits are treated as a zero-cost buy
-                    transaction.gain = Some(self.add_holdings(transaction, amount, Some(&Amount {
-                        quantity: Decimal::ZERO,
-                        currency: "EUR".to_owned()
-                    })));
+                    if !amount.is_fiat() {
+                        // Staking reward and Chain splits are treated as a zero-cost buy
+                        transaction.gain = Some(self.add_holdings(transaction, amount, Some(&Amount {
+                            quantity: Decimal::ZERO,
+                            currency: "EUR".to_owned()
+                        })));
+                    }
                 }
                 Operation::IncomingGift(amount) |
                 Operation::Airdrop(amount) |
                 Operation::Buy(amount) |
-                Operation::Income(amount) |
+                Operation::Cashback(amount) |
+                Operation::Income(amount) |     // todo: track income total
                 Operation::Spam(amount) => {
-                    transaction.gain = Some(self.add_holdings(transaction, amount, transaction.value.as_ref()));
+                    if !amount.is_fiat() {
+                        transaction.gain = Some(self.add_holdings(transaction, amount, transaction.value.as_ref()));
+                    }
                 }
                 Operation::Trade{incoming, outgoing} => {
+                    // todo: consider factoring in trading fees to reduce capital gain events
+
                     // When we're trading crypto for crypto, it is technically
                     // handled as if we sold one crypto for fiat and then used
                     // fiat to buy another crypto.
@@ -125,8 +132,10 @@ impl FIFO {
                 Operation::Expense(amount) |
                 Operation::Sell(amount) |
                 Operation::OutgoingGift(amount) => {
-                    let (amount, value) = try_include_fee(amount, &transaction.value);
-                    transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, &amount, value.as_ref()));
+                    if !amount.is_fiat() {
+                        let (amount, value) = try_include_fee(amount, &transaction.value);
+                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, &amount, value.as_ref()));
+                    }
                 }
                 Operation::FiatDeposit(_) |
                 Operation::FiatWithdrawal(_) => {

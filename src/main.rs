@@ -1,4 +1,5 @@
 mod base;
+mod binance;
 mod bitcoin_core;
 mod bitcoin_de;
 mod bitonic;
@@ -46,6 +47,9 @@ enum TransactionsSourceType {
     PoloniexDepositsCsv,
     PoloniexTradesCsv,
     PoloniexWithdrawalsCsv,
+    BinanceBnbConvertCsv,  // todo: document custom format
+    BinanceSpotTradeHistoryCsv,
+    BinanceTransactionHistoryCsv,
     ReddcoinCoreCsv,
     TrezorCsv,
 }
@@ -69,6 +73,9 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
             TransactionsSourceType::PoloniexWithdrawalsCsv => "Poloniex Withdrawals (CSV)".to_owned(),
+            TransactionsSourceType::BinanceBnbConvertCsv => "Binance BNB Convert (CSV)".to_owned(),
+            TransactionsSourceType::BinanceSpotTradeHistoryCsv => "Binance Spot Trade History (CSV)".to_owned(),
+            TransactionsSourceType::BinanceTransactionHistoryCsv => "Binance Transaction History (CSV)".to_owned(),
             TransactionsSourceType::ReddcoinCoreCsv => "Reddcoin Core (CSV)".to_owned(),
             TransactionsSourceType::TrezorCsv => "Trezor (CSV)".to_owned(),
         }
@@ -326,6 +333,15 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
             TransactionsSourceType::PoloniexWithdrawalsCsv => {
                 poloniex::load_poloniex_withdrawals_csv(&source.full_path)
             }
+            TransactionsSourceType::BinanceBnbConvertCsv => {
+                binance::load_binance_bnb_convert_csv(&source.full_path)
+            }
+            TransactionsSourceType::BinanceSpotTradeHistoryCsv => {
+                binance::load_binance_spot_trades_csv(&source.full_path)
+            }
+            TransactionsSourceType::BinanceTransactionHistoryCsv => {
+                binance::load_binance_transaction_records_csv(&source.full_path)
+            }
             TransactionsSourceType::ReddcoinCoreCsv => {
                 bitcoin_core::load_reddcoin_core_csv(&source.full_path)
             }
@@ -473,10 +489,10 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                             println!("warning: send/receive amounts imply fee, but existing fee is set in a different currency for transaction {:?}", transactions[send_index]);
                             None
                         } else if existing_fee.quantity != implied_fee.quantity {
-                            println!("warning: replacing existing fee {:?} with implied fee of {:?} and adjusting sent amount to {:?}", existing_fee, implied_fee, received);
+                            println!("warning: replacing existing fee {:} with implied fee of {:} and adjusting sent amount to {:}", existing_fee, implied_fee, received);
                             Some((received.clone(), implied_fee))
                         } else {
-                            println!("warning: fee {:?} appears to have been included in the sent amount {:?}, adjusting sent amount to {:?}", existing_fee, sent, received);
+                            println!("warning: fee {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:}", existing_fee, sent, received);
                             Some((received.clone(), implied_fee))
                         }
                     }
@@ -541,6 +557,7 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                 Operation::Income(amount) |
                 Operation::Airdrop(amount) |
                 Operation::Staking(amount) |
+                Operation::Cashback(amount) |
                 Operation::IncomingGift(amount) |
                 Operation::OutgoingGift(amount) |
                 Operation::Spam(amount) => {
@@ -751,7 +768,7 @@ fn ui_set_transactions(app: &App) {
                 (UiTransactionType::Fee, Some(amount), None, source_name, None)
             }
             Operation::ChainSplit(amount) => {
-                (UiTransactionType::ChainSplit, Some(amount), None, source_name, None)
+                (UiTransactionType::ChainSplit, None, Some(amount), None, source_name)
             }
             Operation::Expense(amount) => {
                 (UiTransactionType::Expense, Some(amount), None, source_name, None)
@@ -764,6 +781,9 @@ fn ui_set_transactions(app: &App) {
             }
             Operation::Staking(amount) => {
                 (UiTransactionType::Staking, None, Some(amount), None, source_name)
+            }
+            Operation::Cashback(amount) => {
+                (UiTransactionType::Cashback, None, Some(amount), None, source_name)
             }
             Operation::IncomingGift(amount) |
             Operation::OutgoingGift(amount) => {

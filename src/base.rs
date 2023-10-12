@@ -102,12 +102,23 @@ impl TryFrom<&str> for Amount {
     type Error = &'static str;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        let mut split = s.split(" ");
-        match (split.next().map(Decimal::try_from), split.next()) {
-            (Some(Ok(quantity)), Some(currency)) => {
+        // This parses the formats '<amount> <currency>' and '<amount><currency>'
+        let mut quantity_str = s.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+        let currency = &s[quantity_str.len()..];
+        quantity_str = quantity_str.trim_end();
+
+        // Strip commas when necessary, since Decimal::try_from doesn't like those
+        let quantity_owned: String;
+        if quantity_str.contains(',') {
+            quantity_owned = quantity_str.replace(',', "");
+            quantity_str = quantity_owned.as_str();
+        }
+
+        match Decimal::try_from(quantity_str) {
+            Ok(quantity) if !currency.is_empty() => {
                 Ok(Amount { quantity, currency: currency.to_owned() })
             }
-            _ => return Err("Invalid format, expected: '<amount> <currency>'"),
+            _ => Err("Invalid format, expected: '<amount> <currency>' or '<amount><currency>'"),
         }
     }
 }
@@ -149,7 +160,7 @@ pub(crate) enum Operation {
     Staking(Amount),
     // StakingDeposit,
     // StakingWithdrawal,
-    // Cashback,
+    Cashback(Amount),
     // Royalties,
     // PersonalUse,
     IncomingGift(Amount),
@@ -175,6 +186,14 @@ pub(crate) enum Operation {
 }
 
 impl Operation {
+    /// Returns `true` if the operation is [`Receive`].
+    ///
+    /// [`Receive`]: Operation::Receive
+    #[must_use]
+    pub(crate) fn is_receive(&self) -> bool {
+        matches!(self, Self::Receive(..))
+    }
+
     /// Returns `true` if the operation is [`Send`].
     ///
     /// [`Send`]: Operation::Send
@@ -261,6 +280,7 @@ impl Transaction {
             Operation::Income(amount) |
             Operation::Airdrop(amount) |
             Operation::Staking(amount) |
+            Operation::Cashback(amount) |
             Operation::IncomingGift(amount) |
             Operation::Spam(amount) => {
                 (Some(amount), None)

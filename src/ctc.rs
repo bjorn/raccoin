@@ -274,6 +274,7 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
             Operation::Income(amount) => (CtcTxType::Income, amount, None),
             Operation::Airdrop(amount) => (CtcTxType::Airdrop, amount, None),
             Operation::Staking(amount) => (CtcTxType::Staking, amount, None),
+            Operation::Cashback(amount) => (CtcTxType::Cashback, amount, None),
             Operation::IncomingGift(amount) => (CtcTxType::IncomingGift, amount, None),
             Operation::OutgoingGift(amount) => (CtcTxType::OutgoingGift, amount, None),
             Operation::Spam(amount) => (CtcTxType::Spam, amount, None),
