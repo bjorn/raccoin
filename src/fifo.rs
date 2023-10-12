@@ -9,7 +9,7 @@ use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_d
 
 // Temporary bookkeeping entry for FIFO
 #[derive(Debug)]
-struct Entry {
+pub(crate) struct Entry {
     timestamp: NaiveDateTime,
     unit_price: Result<Decimal, GainError>,
     remaining: Decimal,
@@ -238,6 +238,11 @@ impl FIFO {
 
     pub(crate) fn currency_cost_base(&self, currency: &str) -> Decimal {
         self.holdings.get(currency).map_or(Decimal::ZERO, |h| h.iter().map(|e| e.cost_base()).sum())
+    }
+
+    /// Read-only access to the holdings.
+    pub(crate) fn holdings(&self) -> &HashMap<String, VecDeque<Entry>> {
+        &self.holdings
     }
 
     fn holdings_for_currency(&mut self, currency: &str) -> &mut VecDeque<Entry> {
