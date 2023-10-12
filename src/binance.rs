@@ -18,7 +18,7 @@ fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Am
 //     Spot,
 // }
 
-#[derive(Debug, Deserialize, Copy, Clone)]
+#[derive(Debug, Deserialize, Copy, Clone, PartialEq)]
 enum Operation {
     Distribution,
     Deposit,
@@ -119,7 +119,9 @@ struct BinanceBnbConvert {
 fn normalize_currency(timestamp: NaiveDateTime, currency: String) -> String {
     match currency.as_str() {
         "BCC" => "BCH".to_owned(),
+        "NANO" => "XNO".to_owned(),
         // rename LUNA to LUNC if it is mentioned before the rename that happened between 2022-05-26 and 2022-05-30
+        // https://www.binance.com/en/support/announcement/binance-will-list-terra-2-0-luna-in-the-innovation-zone-luna-old-renamed-as-lunc-d044a6742e484b77a170111460b0eed3
         "LUNA" if timestamp < NaiveDate::from_ymd_opt(2022, 5, 27).unwrap().and_time(NaiveTime::MIN) => "LUNC".to_owned(),
         _ => currency,
     }
@@ -142,6 +144,11 @@ impl TryFrom<BinanceTransactionRecord> for Transaction {
     type Error = ConversionError;
 
     fn try_from(item: BinanceTransactionRecord) -> Result<Self, Self::Error> {
+        // https://www.binance.com/en/support/announcement/binance-will-update-the-ticker-of-nano-to-xno-3dc8f6de281f4781a246a1658a21cb80
+        if item.operation == Operation::Distribution && (item.coin == "NANO" || item.coin == "XNO") {
+            return Err(ConversionError::IgnoreReason("Ignored NANO -> XNO conversion"));
+        }
+
         let currency = normalize_currency(item.timestamp, item.coin);
 
         // Depending on the operation we expect a negative or positive amount,
@@ -240,7 +247,7 @@ impl From<BinanceSpotTrade> for Transaction {
             Side::Sell => Transaction::trade(item.timestamp, amount, executed),
         };
 
-        tx.fee = Some(item.fee);
+        tx.fee = Some(normalize_currency_for_amount(item.timestamp, item.fee));
         tx
     }
 }

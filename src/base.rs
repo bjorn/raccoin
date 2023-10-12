@@ -10,22 +10,32 @@ pub(crate) fn cmc_id(currency: &str) -> i32 {
     const CMC_ID_MAP: &[(&str, i32)] = &[
         ("BCH", 1831),
         ("BCN", 372),
+        ("BCX", 2281),
         ("BNB", 1839),
         ("BTC", 1),
+        ("BUSD", 4687),
         ("DASH", 131),
         ("ETH", 1027),
         ("EUR", 2790),
+        ("FLR", 7950),
         ("FTC", 8),
+        ("IOTA", 1720),
         ("LTC", 2),
+        ("LUNA", 20314),
+        ("LUNC", 4172),
         ("MANA", 1966),
-        ("MIOTA", 1720),
         ("NXT", 66),
         ("PPC", 5),
         ("RDD", 118),
+        ("SBTC", 2282),
+        ("SGB", 12186),
+        ("SNT", 1759),
+        ("USDC", 3408),
         ("USDT", 825),
         ("XEM", 873),
         ("XLM", 512),
         ("XMR", 328),
+        ("XNO", 1567),
         ("XRP", 52),
         ("ZCL", 1447),
         ("ZEC", 1437),
@@ -450,6 +460,19 @@ pub(crate) fn save_price_history_data(prices: &Vec<PricePoint>, path: &Path) -> 
     }
 
     Ok(())
+}
+
+pub(crate) fn load_price_history_data(path: &Path) -> Result<Vec<PricePoint>, Box<dyn Error>> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .from_path(path)?;
+
+    let mut prices: Vec<PricePoint> = Vec::new();
+    for result in rdr.deserialize() {
+        let record: PricePoint = result?;
+        prices.push(record);
+    }
+
+    Ok(prices)
 }
 
 pub(crate) fn load_btc_price_history_data() -> Result<Vec<PricePoint>, Box<dyn Error>> {

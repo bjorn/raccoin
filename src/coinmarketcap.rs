@@ -4,7 +4,7 @@ use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{cmc_id, PricePoint};
+use crate::base::{cmc_id, PricePoint, save_price_history_data};
 
 // struct to deserialize the following json data:
 // {"data":{"id":1,"name":"Bitcoin","symbol":"BTC","timeEnd":"1259279999","quotes":[{"timeOpen":"2010-07-13T00:00:00.000Z","timeClose":"2010-07-13T23:59:59.999Z","timeHigh":"2010-07-13T02:30:00.000Z","timeLow":"2010-07-13T18:06:00.000Z","quote":{"open":0.0487103725,"high":0.0609408726,"low":0.0483279245,"close":0.0534224523,"volume":59.4135378071,"marketCap":153229.6094699791,"timestamp":"2010-07-13T23:59:59.999Z"}},{"timeOpen":"2010-07-14T00:00:00.000Z","timeClose":"2010-07-14T23:59:59.999Z","timeHigh":"2010-07-14T00:34:00.000Z","timeLow":"2010-07-14T19:24:00.000Z","quote":{"open":0.0534167944,"high":0.0565679556,"low":0.0446813119,"close":0.0518047635,"volume":240.2216130600,"marketCap":174751.3956688508,"timestamp":"2010-07-14T23:59:59.999Z"}},{"timeOpen":"2010-07-15T00:00:00.000Z","timeClose":"2010-07-15T23:59:59.999Z","timeHigh":"2010-07-15T11:39:00.000Z","timeLow":"2010-07-15T00:41:00.000Z","quote":{"open":0.0518051769,"high":0.0624153413,"low":0.0495701257,"close":0.0528756482,"volume":409.4623962000,"marketCap":180007.4397864608,"timestamp":"2010-07-15T23:59:59.999Z"}},{"timeOpen":"2010-07-16T00:00:00.000Z","timeClose":"2010-07-16T23:59:59.999Z","timeHigh":"2010-07-16T02:11:00.000Z","timeLow":"2010-07-16T00:24:00.000Z"}}]},"status":{"timestamp":"2023-08-30T09:28:02.491Z","error_code":"0","error_message":"SUCCESS","elapsed":"74","credit_count":0}}
@@ -56,16 +56,28 @@ struct Quote {
     // timestamp: DateTime<FixedOffset>,
 }
 
-// command to download price history for BTC from 2023:
-// curl "https://api.coinmarketcap.com/data-api/v3.1/cryptocurrency/historical?id=1&convertId=2790&timeStart=1672527600&timeEnd=1704063600&interval=1d" -o btc-price-history-2023.json
 #[allow(dead_code)]
-pub(crate) fn load_price_history_data_json(currency: &str) -> Result<Vec<PricePoint>, Box<dyn Error>> {
+pub(crate) fn download_price_history(currency: &str) -> Result<(), Box<dyn Error>> {
+    let id = cmc_id(currency);
+    if id == -1 {
+        println!("Unsupported currency (cmc id not known): {}", currency);
+        return Ok(());
+    }
+
+    let convert_id = cmc_id("EUR");
+
     let mut prices: Vec<PricePoint> = Vec::new();
-    let base = format!("{}-price-history-", currency.to_lowercase());
 
     for year in 2010..2024 {
-        let file = base.to_owned() + &year.to_string() + ".json";
-        let response: CmcHistoricalDataResponse = serde_json::from_str(&std::fs::read_to_string(&file)?)?;
+        let time_start = DateTime::parse_from_rfc3339(&format!("{}-01-01T00:00:00+00:00", year)).unwrap().timestamp();
+        let time_end = DateTime::parse_from_rfc3339(&format!("{}-12-31T23:59:59+00:00", year)).unwrap().timestamp();
+        let url = format!("https://api.coinmarketcap.com/data-api/v3.1/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval=1d", id, convert_id, time_start, time_end);
+
+        let response = reqwest::blocking::Client::builder()
+            .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0")
+            .build()?.get(url.clone()).send()?.text()?;
+
+        let response: CmcHistoricalDataResponse = serde_json::from_str(&response)?;
         let price_point_count = response.data.quotes.len();
 
         for quote in response.data.quotes {
@@ -75,31 +87,12 @@ pub(crate) fn load_price_history_data_json(currency: &str) -> Result<Vec<PricePo
             });
         }
 
-        println!("Loaded {} price points from {}", price_point_count, file);
+        println!("Loaded {} price points from {}", price_point_count, url);
     }
 
-    Ok(prices)
-}
-
-#[allow(dead_code)]
-pub(crate) fn download_price_history(currency: &str) -> Result<(), Box<dyn Error>> {
-    let id = cmc_id(currency);
-    let convert_id = cmc_id("EUR");
-    let base = format!("{}-price-history-", currency.to_lowercase());
-
-    for year in 2010..2024 {
-        let time_start = DateTime::parse_from_rfc3339(&format!("{}-01-01T00:00:00+00:00", year)).unwrap().timestamp();
-        let time_end = DateTime::parse_from_rfc3339(&format!("{}-12-31T23:59:59+00:00", year)).unwrap().timestamp();
-        let url = format!("https://api.coinmarketcap.com/data-api/v3.1/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval=1d", id, convert_id, time_start, time_end);
-        let file = base.to_owned() + &year.to_string() + ".json";
-
-        println!("curl \"{}\" > {}", url, file);
-
-        let response = reqwest::blocking::Client::builder()
-            .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0")
-            .build()?.get(url).send()?.text()?;
-        std::fs::write(file, response)?;
-    }
+    let path = format!("src/data/{}-price-history-eur.csv", currency.to_lowercase());
+    println!("Saving {} price points to {}", prices.len(), path);
+    save_price_history_data(&prices, path.as_ref())?;
 
     Ok(())
 }
