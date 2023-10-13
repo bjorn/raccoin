@@ -71,6 +71,7 @@ impl fmt::Display for GainError {
 pub(crate) struct Amount {
     pub quantity: Decimal,
     pub currency: String,
+    pub token_id: Option<String>,
 }
 
 impl Amount {
@@ -78,6 +79,15 @@ impl Amount {
         Self {
             quantity,
             currency,
+            token_id: None,
+        }
+    }
+
+    pub(crate) fn new_token(token_id: String, contract: String) -> Self {
+        Self {
+            quantity: Decimal::ONE,
+            currency: contract,
+            token_id: Some(token_id),
         }
     }
 
@@ -85,6 +95,7 @@ impl Amount {
         Self {
             quantity: Decimal::new(quantity as i64, 8),
             currency: "BTC".to_owned(),
+            token_id: None,
         }
     }
 
@@ -92,11 +103,18 @@ impl Amount {
         self.currency == "EUR"
     }
 
+    pub(crate) fn token_currency(&self) -> Option<String> {
+        self.token_id.as_ref().map(|token_id| format!("{}:{}", token_id, self.currency))
+    }
+
     pub(crate) fn try_add(&self, amount: &Amount) -> Option<Amount> {
-        if self.currency == amount.currency {
+        if self.token_id.is_some() || amount.token_id.is_some() {
+            None
+        } else if self.currency == amount.currency {
             Some(Amount {
                 quantity: self.quantity + amount.quantity,
                 currency: self.currency.clone(),
+                token_id: None,
             })
         } else {
             None
@@ -126,7 +144,7 @@ impl TryFrom<&str> for Amount {
 
         match Decimal::try_from(quantity_str) {
             Ok(quantity) if !currency.is_empty() => {
-                Ok(Amount { quantity, currency: currency.to_owned() })
+                Ok(Amount::new(quantity, currency.to_owned()))
             }
             _ => Err("Invalid format, expected: '<amount> <currency>' or '<amount><currency>'"),
         }
@@ -445,10 +463,7 @@ impl PriceHistory {
     }
 
     pub(crate) fn estimate_value(&self, timestamp: NaiveDateTime, amount: &Amount) -> Option<Amount> {
-        self.estimate_price(timestamp, &amount.currency).map(|price| Amount {
-            quantity: price * amount.quantity,
-            currency: "EUR".to_owned()
-        })
+        self.estimate_price(timestamp, &amount.currency).map(|price| Amount::new(price * amount.quantity, "EUR".to_owned()))
     }
 }
 

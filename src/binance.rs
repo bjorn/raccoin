@@ -129,7 +129,8 @@ fn normalize_currency(timestamp: NaiveDateTime, currency: String) -> String {
 fn normalize_currency_for_amount(timestamp: NaiveDateTime, amount: Amount) -> Amount {
     Amount {
         quantity: amount.quantity,
-        currency: normalize_currency(timestamp, amount.currency)
+        currency: normalize_currency(timestamp, amount.currency),
+        token_id: amount.token_id,
     }
 }
 
@@ -162,7 +163,7 @@ impl TryFrom<BinanceTransactionRecord> for Transaction {
             Operation::TransactionBuy |
             Operation::TransactionRevenue => {
                 if item.change > Decimal::ZERO {
-                    Ok(Amount { quantity: item.change, currency })
+                    Ok(Amount::new(item.change, currency))
                 } else {
                     Err(ConversionError::InvalidValue(item.operation, item.change))
                 }
@@ -174,7 +175,7 @@ impl TryFrom<BinanceTransactionRecord> for Transaction {
             Operation::TransactionSpend |
             Operation::TransactionSold => {
                 if item.change < Decimal::ZERO {
-                    Ok(Amount { quantity: -item.change, currency })
+                    Ok(Amount::new(-item.change, currency))
                 } else {
                     Err(ConversionError::InvalidValue(item.operation, item.change))
                 }
@@ -184,7 +185,7 @@ impl TryFrom<BinanceTransactionRecord> for Transaction {
             Operation::Convert |
             Operation::SmallAssetsExchange |
             Operation::CardSpending => {
-                Ok(Amount { quantity: item.change.abs(), currency })
+                Ok(Amount::new(item.change.abs(), currency))
             }
         }?;
 
@@ -254,10 +255,10 @@ impl From<BinanceSpotTrade> for Transaction {
 
 impl From<BinanceBnbConvert> for Transaction {
     fn from(item: BinanceBnbConvert) -> Self {
-        let incoming = Amount { quantity: item.converted_bnb, currency: "BNB".to_owned() };
-        let outgoing = Amount { quantity: item.amount, currency: normalize_currency(item.timestamp, item.coin) };
+        let incoming = Amount::new(item.converted_bnb, "BNB".to_owned());
+        let outgoing = Amount::new(item.amount, normalize_currency(item.timestamp, item.coin));
         let mut tx = Transaction::trade(item.timestamp, incoming, outgoing);
-        tx.fee = Some(Amount { quantity: item.fee_bnb, currency: "BNB".to_owned() });
+        tx.fee = Some(Amount::new(item.fee_bnb, "BNB".to_owned()));
         tx
     }
 }

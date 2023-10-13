@@ -76,8 +76,8 @@ impl TryFrom<BittrexOrder> for Transaction {
         let mut split = item.market.split("/");
         match (split.next(), split.next()) {
             (Some(base_currency), Some(quote_currency)) => {
-                let base = Amount { quantity: item.quantity, currency: base_currency.to_owned() };
-                let quote = Amount { quantity: item.total, currency: quote_currency.to_owned() };
+                let base = Amount::new(item.quantity, base_currency.to_owned());
+                let quote = Amount::new(item.total, quote_currency.to_owned());
                 match item.side {
                     MarketSide::Buy => Ok(Transaction::trade(item.date, base, quote)),
                     MarketSide::Sell => Ok(Transaction::trade(item.date, quote, base)),
@@ -92,8 +92,8 @@ impl From<BittrexTransaction> for Transaction {
     fn from(item: BittrexTransaction) -> Self {
         let blockchain = item.currency.clone();
         let mut tx = match item.type_ {
-            BittrexTransactionType::Withdrawal => Transaction::send(item.date, Amount { quantity: -item.amount, currency: item.currency }),
-            BittrexTransactionType::Deposit => Transaction::receive(item.date, Amount { quantity: item.amount, currency: item.currency }),
+            BittrexTransactionType::Withdrawal => Transaction::send(item.date, Amount::new(-item.amount, item.currency)),
+            BittrexTransactionType::Deposit => Transaction::receive(item.date, Amount::new(item.amount, item.currency)),
         };
         tx.tx_hash = Some(item.tx_id);
         tx.blockchain = Some(blockchain);

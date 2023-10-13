@@ -301,16 +301,9 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
 
 impl<'a> From<CtcTx<'a>> for Transaction {
     fn from(item: CtcTx<'a>) -> Self {
-        let base_amount = Amount {
-            quantity: item.base_amount,
-            currency: item.base_currency.to_owned(),
-        };
-
+        let base_amount = Amount::new(item.base_amount, item.base_currency.to_owned());
         let quote_amount = if let (Some(quote_amount), Some(quote_currency)) = (item.quote_amount, item.quote_currency) {
-            Some(Amount {
-                quantity: quote_amount,
-                currency: quote_currency.to_owned(),
-            })
+            Some(Amount::new(quote_amount, quote_currency.to_owned()))
         } else {
             None
         };
@@ -366,17 +359,14 @@ impl<'a> From<CtcTx<'a>> for Transaction {
             tx_hash: item.id.map(|s| s.to_owned()),
             blockchain: item.blockchain.map(|s| s.to_owned()),
             fee: if let (Some(fee_amount), Some(fee_currency)) = (item.fee_amount, item.fee_currency) {
-                Some(Amount { quantity: fee_amount, currency: fee_currency.to_owned() })
+                Some(Amount::new(fee_amount, fee_currency.to_owned()))
             } else {
                 None
             },
             fee_value: None,
             gain: None,
             source_index: 0,
-            value: item.reference_price_per_unit.map(|price| Amount {
-                quantity: price * item.base_amount,
-                currency: item.reference_price_currency.unwrap_or("EUR").to_owned()
-            }),
+            value: item.reference_price_per_unit.map(|price| Amount::new(price * item.base_amount, item.reference_price_currency.unwrap_or("EUR").to_owned())),
             matching_tx: None,
         }
     }

@@ -95,10 +95,7 @@ impl FIFO {
                 Operation::ChainSplit(amount) => {
                     if !amount.is_fiat() {
                         // Staking reward and Chain splits are treated as a zero-cost buy
-                        transaction.gain = Some(self.add_holdings(transaction, amount, Some(&Amount {
-                            quantity: Decimal::ZERO,
-                            currency: "EUR".to_owned()
-                        })));
+                        transaction.gain = Some(self.add_holdings(transaction, amount, Some(&Amount::new(Decimal::ZERO, "EUR".to_owned()))));
                     }
                 }
                 Operation::IncomingGift(amount) |
@@ -174,7 +171,7 @@ impl FIFO {
     /// Determines the capital gains made with this sale based on the oldest
     /// holdings and the current price. Consumes the holdings in the process.
     fn gains(&mut self, timestamp: NaiveDateTime, outgoing: &Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
-        let currency_holdings = self.holdings_for_currency(&outgoing.currency);
+        let currency_holdings = self.holdings_for_currency(outgoing.token_currency().as_ref().unwrap_or(&outgoing.currency));
 
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
         let mut sold_quantity = outgoing.quantity;
@@ -207,6 +204,7 @@ impl FIFO {
                 amount: Amount {
                     quantity: processed_quantity,
                     currency: outgoing.currency.clone(),
+                    token_id: outgoing.token_id.clone(),
                 },
                 cost,
                 proceeds,
@@ -266,7 +264,7 @@ impl FIFO {
         }
 
         let unit_price = fiat_value(value).map(|value| value / amount.quantity);
-        self.holdings_for_currency(&amount.currency).push_back(Entry {
+        self.holdings_for_currency(amount.token_currency().as_ref().unwrap_or(&amount.currency)).push_back(Entry {
             timestamp: tx.timestamp,
             unit_price,
             remaining: amount.quantity,

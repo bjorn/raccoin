@@ -32,15 +32,15 @@ impl From<BitonicAction> for Transaction {
             BitonicActionType::Buy => {
                 Transaction::trade(
                     utc_time,
-                    Amount { quantity: item.amount, currency: "BTC".to_owned() },
-                    Amount { quantity: -item.price, currency: "EUR".to_owned() }
+                    Amount::new(item.amount, "BTC".to_owned()),
+                    Amount::new(-item.price, "EUR".to_owned()),
                 )
             }
             BitonicActionType::Sell => {
                 Transaction::trade(
                     utc_time,
-                    Amount { quantity: item.price, currency: "EUR".to_owned() },
-                    Amount { quantity: -item.amount, currency: "BTC".to_owned() }
+                    Amount::new(item.price, "EUR".to_owned()),
+                    Amount::new(-item.amount, "BTC".to_owned()),
                 )
             }
         }

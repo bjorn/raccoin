@@ -488,10 +488,7 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
             (Operation::Send(sent), Operation::Receive(received)) if received.quantity < sent.quantity => {
                 assert!(sent.currency == received.currency);
 
-                let implied_fee = Amount {
-                    quantity: sent.quantity - received.quantity,
-                    currency: sent.currency.clone(),
-                };
+                let implied_fee = Amount::new(sent.quantity - received.quantity, sent.currency.clone());
                 match &transactions[send_index].fee {
                     Some(existing_fee) => {
                         if existing_fee.currency != implied_fee.currency {
@@ -546,10 +543,8 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                                 if min_value < max_value * Decimal::new(95, 2) {
                                     println!("warning: over 5% value difference between incoming {} ({}) and outgoing {} ({})", incoming, value_incoming, outgoing, value_outgoing);
                                 }
-                                Some(Amount {
-                                    quantity: (value_incoming.quantity + value_outgoing.quantity) / Decimal::TWO,
-                                    currency: "EUR".to_owned()
-                                })
+                                let average = (value_incoming.quantity + value_outgoing.quantity) / Decimal::TWO;
+                                Some(Amount::new(average, "EUR".to_owned()))
                             }
                         }
                     }

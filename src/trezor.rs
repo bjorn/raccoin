@@ -2,7 +2,7 @@ use std::{error::Error, path::Path};
 
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::base::{Transaction, Amount};
 
@@ -12,6 +12,20 @@ enum TrezorTransactionType {
     Sent,
     #[serde(rename = "RECV")]
     Received,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+enum TrezorAmount {
+    Quantity(Decimal),
+    TokenId(String),
+}
+
+fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<TrezorAmount, D::Error> {
+    let raw: &str = Deserialize::deserialize(d)?;
+    match Decimal::try_from(raw) {
+        Ok(quantity) => Ok(TrezorAmount::Quantity(quantity)),
+        Err(_) => Ok(TrezorAmount::TokenId(raw.trim_start_matches("ID ").to_owned())),
+    }
 }
 
 // Stores values loaded from CSV file exported by TREZOR Suite, with the following header:
@@ -36,8 +50,8 @@ struct TrezorTransaction<'a> {
     // address: &'a str,
     #[serde(rename = "Label")]
     label: &'a str,
-    #[serde(rename = "Amount")]
-    amount: Decimal,
+    #[serde(rename = "Amount", deserialize_with = "deserialize_amount")]
+    amount: TrezorAmount,
     #[serde(rename = "Amount unit")]
     amount_unit: &'a str,
     // #[serde(rename = "Fiat (EUR)")]
@@ -50,21 +64,25 @@ impl<'a> From<TrezorTransaction<'a>> for Transaction {
     // todo: translate address?
     fn from(item: TrezorTransaction) -> Self {
         let date_time = NaiveDateTime::from_timestamp_opt(item.timestamp, 0).expect("valid timestamp");
+        let amount = match item.amount {
+            TrezorAmount::Quantity(quantity) => Amount::new(quantity, item.amount_unit.to_owned()),
+            TrezorAmount::TokenId(token_id) => Amount::new_token(token_id, item.amount_unit.to_owned()),
+        };
         let mut tx = match item.type_ {
-            TrezorTransactionType::Sent => {
-                Transaction::send(date_time, Amount::new(item.amount, item.amount_unit.to_owned()))
-            }
-            TrezorTransactionType::Received => {
-                Transaction::receive(date_time, Amount::new(item.amount, item.amount_unit.to_owned()))
-            }
+            TrezorTransactionType::Sent => Transaction::send(date_time, amount),
+            TrezorTransactionType::Received => Transaction::receive(date_time, amount),
         };
         tx.description = if item.label.is_empty() { None } else { Some(item.label.to_owned()) };
         tx.tx_hash = Some(item.id.to_owned());
         tx.blockchain = Some(item.amount_unit.to_owned());
-        tx.fee = if let Some(fee) = item.fee {
-            Some(Amount { quantity: fee, currency: item.fee_unit.unwrap().to_owned() })
-        } else {
-            None
+        tx.fee = match (item.fee, item.fee_unit) {
+            (None, None) |
+            (None, Some(_)) => None,
+            (Some(fee), None) => {
+                println!("warning: ignoring fee of {}, missing fee unit", fee);
+                None
+            }
+            (Some(fee), Some(fee_unit)) => Some(Amount::new(fee, fee_unit.to_owned())),
         };
         tx
     }

@@ -110,7 +110,7 @@ impl From<PoloniexWithdrawal> for Transaction {
     fn from(item: PoloniexWithdrawal) -> Self {
         let currency = normalize_currency(item.currency.as_str());
         let mut tx = Transaction::send(item.date, Amount::new(item.amount_minus_fee, currency.to_owned()));
-        tx.fee = Some(Amount { quantity: item.fee_deducted, currency: currency.to_owned() });
+        tx.fee = Some(Amount::new(item.fee_deducted, currency.to_owned()));
         tx.description = Some(item.address);
         tx
     }
@@ -141,29 +141,17 @@ impl TryFrom<PoloniexTrade> for Transaction {
         let mut tx = match item.side {
             Operation::Buy => Transaction::trade(
                 item.timestamp,
-                Amount {
-                    quantity: item.amount,
-                    currency: base_currency.to_owned(),
-                },
-                Amount {
-                    quantity: total,
-                    currency: quote_currency.to_owned(),
-                }
+                Amount::new(item.amount, base_currency.to_owned()),
+                Amount::new(total, quote_currency.to_owned()),
             ),
             Operation::Sell => Transaction::trade(
                 item.timestamp,
-                Amount {
-                    quantity: total,
-                    currency: quote_currency.to_owned(),
-                },
-                Amount {
-                    quantity: item.amount,
-                    currency: base_currency.to_owned(),
-                }
+                Amount::new(total, quote_currency.to_owned()),
+                Amount::new(item.amount, base_currency.to_owned()),
             ),
         };
 
-        tx.fee = Some(Amount { quantity: item.fee_total, currency: normalize_currency(&item.fee_currency).to_owned() });
+        tx.fee = Some(Amount::new(item.fee_total, normalize_currency(&item.fee_currency).to_owned()));
         tx.description = Some(format!("Order #{}", item.order_number));
 
         Ok(tx)

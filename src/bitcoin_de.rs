@@ -67,14 +67,8 @@ impl TryFrom<BitcoinDeAction> for Transaction {
             BitcoinDeActionType::Purchase => {
                 Ok(Transaction::trade(
                     utc_time,
-                    Amount {
-                        quantity: item.incoming_outgoing,
-                        currency: currency,
-                    },
-                    Amount {
-                        quantity: item.amount_after_bitcoin_de_fee.expect("Purchase should have an amount"),
-                        currency: item.unit_amount_after_bitcoin_de_fee
-                    },
+                    Amount::new(item.incoming_outgoing, currency),
+                    Amount::new(item.amount_after_bitcoin_de_fee.expect("Purchase should have an amount"), item.unit_amount_after_bitcoin_de_fee),
                 ))
             }
             BitcoinDeActionType::Disbursement => Ok(Transaction::send(utc_time, Amount::new(-item.incoming_outgoing, currency))),
@@ -82,14 +76,8 @@ impl TryFrom<BitcoinDeAction> for Transaction {
             BitcoinDeActionType::Sale => {
                 Ok(Transaction::trade(
                     utc_time,
-                    Amount {
-                        quantity: item.amount_after_bitcoin_de_fee.expect("Sale should have an amount"),
-                        currency: item.unit_amount_after_bitcoin_de_fee
-                    },
-                    Amount {
-                        quantity: -item.incoming_outgoing,
-                        currency: currency,
-                    },
+                    Amount::new(item.amount_after_bitcoin_de_fee.expect("Sale should have an amount"), item.unit_amount_after_bitcoin_de_fee),
+                    Amount::new(-item.incoming_outgoing, currency,),
                 ))
             }
             BitcoinDeActionType::NetworkFee => Ok(Transaction::fee(utc_time, Amount::new(-item.incoming_outgoing, currency))),
