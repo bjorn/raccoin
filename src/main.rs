@@ -10,6 +10,7 @@ mod coinpanda;
 mod ctc;
 mod electrum;
 mod esplora;
+mod etherscan;
 mod fifo;
 mod mycelium;
 mod poloniex;
@@ -41,6 +42,7 @@ enum TransactionsSourceType {
     BittrexTransactionHistoryCsv,
     CtcImportCsv,
     ElectrumCsv,
+    EthereumAddress,
     Json,
     MyceliumCsv,
     PeercoinCsv,
@@ -66,6 +68,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::BittrexOrderHistoryCsv => "Bittrex Order History (CSV)".to_owned(),
             TransactionsSourceType::BittrexTransactionHistoryCsv => "Bittrex Transaction History (CSV)".to_owned(),
             TransactionsSourceType::ElectrumCsv => "Electrum (CSV)".to_owned(),
+            TransactionsSourceType::EthereumAddress => "Ethereum Address".to_owned(),
             TransactionsSourceType::Json => "JSON".to_owned(),
             TransactionsSourceType::CtcImportCsv => "CryptoTaxCalculator import (CSV)".to_owned(),
             TransactionsSourceType::MyceliumCsv => "Mycelium (CSV)".to_owned(),
@@ -288,7 +291,8 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
 
         let source_txs = match source.source_type {
             TransactionsSourceType::BitcoinAddresses |
-            TransactionsSourceType::BitcoinXpubs => {
+            TransactionsSourceType::BitcoinXpubs |
+            TransactionsSourceType::EthereumAddress => {
                 Ok(source.transactions.clone())
             }
             TransactionsSourceType::BitcoinCoreCsv => {
@@ -863,9 +867,9 @@ fn ui_set_reports(app: &App) {
             UiCurrencySummary {
                 currency_cmc_id: cmc_id(&currency.currency),
                 currency: currency.currency.clone().into(),
-                balance_start: currency.balance_start.to_string().into(),
-                balance_end: currency.balance_end.to_string().into(),
-                quantity_disposed: currency.quantity_disposed.to_string().into(),
+                balance_start: currency.balance_start.normalize().to_string().into(),
+                balance_end: currency.balance_end.normalize().to_string().into(),
+                quantity_disposed: currency.quantity_disposed.normalize().to_string().into(),
                 cost: format!("{:.2}", currency.cost).into(),
                 fees: format!("{:.2}", currency.fees).into(),
                 proceeds: format!("{:.2}", currency.proceeds).into(),
@@ -940,7 +944,8 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let sources_file: PathBuf = match env::args().skip(1).next() {
         Some(arg) => arg.into(),
         None => {
@@ -1001,6 +1006,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     TransactionsSourceType::BitcoinXpubs => {
                         esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).ok()
+                    }
+                    TransactionsSourceType::EthereumAddress => {
+                        futures::executor::block_on(etherscan::address_transactions(&source.path)).ok()
                     }
                     _ => {
                         println!("Sync not supported for this source type");

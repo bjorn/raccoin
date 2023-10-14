@@ -71,6 +71,7 @@ impl fmt::Display for GainError {
 pub(crate) struct Amount {
     pub quantity: Decimal,
     pub currency: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub token_id: Option<String>,
 }
 
