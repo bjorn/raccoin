@@ -1,17 +1,17 @@
-use std::{error::Error, str::FromStr, collections::{HashMap, HashSet}};
+use std::{error::Error, str::FromStr, collections::{HashMap, HashSet, hash_map::Entry}};
 use bitcoin::{Address, Network, bip32::{ExtendedPubKey, DerivationPath, ChildNumber}, secp256k1::{Secp256k1, self}, base58, ScriptBuf};
 use chrono::NaiveDateTime;
-use esplora_client::{Builder, BlockingClient, Tx};
+use esplora_client::{Builder, AsyncClient, Tx};
 
 use crate::base::{Transaction, Amount};
 
-pub(crate) fn blocking_esplora_client() -> Result<BlockingClient, esplora_client::Error> {
+pub(crate) fn blocking_esplora_client() -> Result<AsyncClient, esplora_client::Error> {
     let builder = Builder::new("https://blockstream.info/api");
-    builder.build_blocking()
+    builder.build_async()
 }
 
-pub(crate) fn address_transactions(
-    client: &BlockingClient,
+pub(crate) async fn address_transactions(
+    client: &AsyncClient,
     addresses: &Vec<String>,
 ) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut pub_keys = HashSet::new();
@@ -21,9 +21,13 @@ pub(crate) fn address_transactions(
         let address = Address::from_str(address)?.require_network(Network::Bitcoin)?;
         pub_keys.insert(address.script_pubkey());
 
-        let _ = address_transactions.entry(address).or_insert_with_key(|k| {
-            address_txs(client, &k)
-        });
+        match address_transactions.entry(address) {
+            Entry::Occupied(_) => {}
+            Entry::Vacant(e) => {
+                let value = address_txs(client, e.key()).await;
+                e.insert(value);
+            }
+        };
     }
 
     Ok(process_transactions(address_transactions, pub_keys))
@@ -89,14 +93,14 @@ fn tx_to_transaction(
     transaction
 }
 
-fn address_txs(
-    client: &BlockingClient,
+async fn address_txs(
+    client: &AsyncClient,
     address: &Address,
 ) -> Result<Vec<Tx>, Box<dyn Error>> {
     let script_pubkey = address.script_pubkey();
     let script = script_pubkey.as_script();
 
-    let mut txs = client.scripthash_txs(script, None)?;
+    let mut txs = client.scripthash_txs(script, None).await?;
 
     // we may get up to 50 unconfirmed transactions, so filter them
     txs.retain(|tx| tx.status.confirmed);
@@ -104,7 +108,7 @@ fn address_txs(
     // repeat the request until we have all transactions
     if txs.len() == 25 {
         loop {
-            let mut more_txs = client.scripthash_txs(script, Some(txs.last().unwrap().txid))?;
+            let mut more_txs = client.scripthash_txs(script, Some(txs.last().unwrap().txid)).await?;
             let n = more_txs.len();
             txs.append(&mut more_txs);
             if n < 25 {
@@ -123,8 +127,8 @@ enum AddressType {
     P2WPKH,         // Segwit
 }
 
-fn scan_children<C: secp256k1::Verification>(
-    client: &BlockingClient,
+async fn scan_children<C: secp256k1::Verification>(
+    client: &AsyncClient,
     address_transactions: &mut HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>>,
     secp: &Secp256k1<C>,
     xpub_key: &ExtendedPubKey,
@@ -144,9 +148,15 @@ fn scan_children<C: secp256k1::Verification>(
 
         println!("  checking address {}: {}", child, address);
 
-        let txs = address_transactions.entry(address).or_insert_with_key(|k| {
-            address_txs(client, &k)
-        });
+        let txs = match address_transactions.entry(address) {
+            Entry::Occupied(e) => {
+                e.into_mut()
+            }
+            Entry::Vacant(e) => {
+                let value = address_txs(client, e.key()).await;
+                e.insert(value)
+            }
+        };
 
         println!("   transaction count: {}", txs.as_ref().map(Vec::len).unwrap_or_default());
 
@@ -161,8 +171,8 @@ fn scan_children<C: secp256k1::Verification>(
     Ok(())
 }
 
-fn xpub_addresses_and_txs<C: secp256k1::Verification>(
-    client: &BlockingClient,
+async fn xpub_addresses_and_txs<C: secp256k1::Verification>(
+    client: &AsyncClient,
     secp: &Secp256k1<C>,
     xpub: &str,
     address_transactions: &mut HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>>,
@@ -186,18 +196,18 @@ fn xpub_addresses_and_txs<C: secp256k1::Verification>(
     println!(" receive addresses:");
 
     let receive_path = DerivationPath::master().child(ChildNumber::Normal { index: 0 });
-    scan_children(client, address_transactions, &secp, &xpub_key, &receive_path, address_type)?;
+    scan_children(client, address_transactions, &secp, &xpub_key, &receive_path, address_type).await?;
 
     println!(" change addresses:");
 
     let change_path = DerivationPath::master().child(ChildNumber::Normal { index: 1 });
-    scan_children(client, address_transactions, &secp, &xpub_key, &change_path, address_type)?;
+    scan_children(client, address_transactions, &secp, &xpub_key, &change_path, address_type).await?;
 
     Ok(())
 }
 
-pub(crate) fn xpub_addresses_transactions(
-    client: &BlockingClient,
+pub(crate) async fn xpub_addresses_transactions(
+    client: &AsyncClient,
     xpubs: &Vec<String>,
 ) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let secp = Secp256k1::new();
@@ -205,8 +215,9 @@ pub(crate) fn xpub_addresses_transactions(
     // Collect all relevant transactions in a map from Address -> Vec<Tx>
     let mut address_transactions: HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>> = HashMap::new();
 
+    // todo: do in parallel
     for xpub in xpubs {
-        xpub_addresses_and_txs(client, &secp, xpub, &mut address_transactions)?;
+        xpub_addresses_and_txs(client, &secp, xpub, &mut address_transactions).await?;
     }
 
     let mut pub_keys = HashSet::new();

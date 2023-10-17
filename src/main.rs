@@ -12,6 +12,7 @@ mod electrum;
 mod esplora;
 mod etherscan;
 mod fifo;
+mod horizon;
 mod mycelium;
 mod poloniex;
 mod time;
@@ -49,6 +50,7 @@ enum TransactionsSourceType {
     PoloniexDepositsCsv,
     PoloniexTradesCsv,
     PoloniexWithdrawalsCsv,
+    StellarAccount,
     BinanceBnbConvertCsv,  // todo: document custom format
     BinanceSpotTradeHistoryCsv,
     BinanceTransactionHistoryCsv,
@@ -76,6 +78,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
             TransactionsSourceType::PoloniexWithdrawalsCsv => "Poloniex Withdrawals (CSV)".to_owned(),
+            TransactionsSourceType::StellarAccount => "Stellar Account".to_owned(),
             TransactionsSourceType::BinanceBnbConvertCsv => "Binance BNB Convert (CSV)".to_owned(),
             TransactionsSourceType::BinanceSpotTradeHistoryCsv => "Binance Spot Trade History (CSV)".to_owned(),
             TransactionsSourceType::BinanceTransactionHistoryCsv => "Binance Transaction History (CSV)".to_owned(),
@@ -292,8 +295,9 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
         let source_txs = match source.source_type {
             TransactionsSourceType::BitcoinAddresses |
             TransactionsSourceType::BitcoinXpubs |
-            TransactionsSourceType::EthereumAddress => {
-                Ok(source.transactions.clone())
+            TransactionsSourceType::EthereumAddress |
+            TransactionsSourceType::StellarAccount => {
+                    Ok(source.transactions.clone())
             }
             TransactionsSourceType::BitcoinCoreCsv => {
                 bitcoin_core::load_bitcoin_core_csv(&source.full_path)
@@ -695,6 +699,7 @@ fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
             "PPC" => open::that(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
             "RDD" => open::that(format!("https://rddblockexplorer.com/tx/{}", tx_hash)),
             "ZEC" => open::that(format!("https://blockchair.com/zcash/transaction/{}", tx_hash)),
+            "XLM" => open::that(format!("https://stellar.expert/explorer/public/tx/{}", tx_hash)),
             _ => {
                 println!("No explorer URL defind for blockchain: {}", blockchain);
                 Ok(())
@@ -712,6 +717,13 @@ fn ui_set_sources(app: &App) {
             name: source.name.clone().into(),
             path: source.path.clone().into(),
             enabled: source.enabled,
+            can_sync: match &source.source_type {
+                TransactionsSourceType::BitcoinAddresses |
+                TransactionsSourceType::BitcoinXpubs |
+                TransactionsSourceType::EthereumAddress |
+                TransactionsSourceType::StellarAccount => true,
+                _ => false,
+            },
             transaction_count: source.transaction_count as i32,
         }
     }).collect();
@@ -1002,13 +1014,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let esplora_client = esplora::blocking_esplora_client().unwrap();
                 let tx = match source.source_type {
                     TransactionsSourceType::BitcoinAddresses => {
-                        esplora::address_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).ok()
+                        futures::executor::block_on(esplora::address_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()
                     }
                     TransactionsSourceType::BitcoinXpubs => {
-                        esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).ok()
+                        futures::executor::block_on(esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()
                     }
                     TransactionsSourceType::EthereumAddress => {
                         futures::executor::block_on(etherscan::address_transactions(&source.path)).ok()
+                    }
+                    TransactionsSourceType::StellarAccount => {
+                        futures::executor::block_on(horizon::address_transactions(&source.path)).ok()
                     }
                     _ => {
                         println!("Sync not supported for this source type");

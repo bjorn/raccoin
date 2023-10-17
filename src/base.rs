@@ -449,18 +449,14 @@ impl PriceHistory {
 
     // todo: would be nice to expose the accuracy in the UI
     pub(crate) fn estimate_price(&self, timestamp: NaiveDateTime, currency: &str) -> Option<Decimal> {
-        let estimate = match currency {
+        match currency {
             "EUR" => Some(Decimal::ONE),
             _ => {
                 self.prices.get(currency).and_then(|price_points| {
                     estimate_price(timestamp, price_points).map(|(price, _)| price)
                 })
             }
-        };
-        if estimate.is_none() {
-            println!("todo: estimate price for {} at {}", currency, timestamp);
         }
-        estimate
     }
 
     pub(crate) fn estimate_value(&self, timestamp: NaiveDateTime, amount: &Amount) -> Option<Amount> {

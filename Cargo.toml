@@ -7,12 +7,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.75"
 bitcoin = "0.30.1"
 chrono = { version = "0.4.31", features = ["serde"] }
 chrono-tz = "0.8"
 cryptotax_ui = { path = "cryptotax_ui" }
 csv = "1.2"
-esplora-client = { version = "0.6", default-features = false, features = ["blocking"] }
+esplora-client = { version = "0.6", default-features = false, features = ["async"] }
 ethers-core = "2.0.10"
 ethers-etherscan = "2.0.10"
 futures = "0.3.28"
@@ -25,5 +26,7 @@ serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"
 slice-group-by = "0.3.1"
 slint = "1.2.1"
+stellar-base = { git = 'https://github.com/salessandri/stellar-base-rs', branch = "new-master" }
+stellar-horizon = { git = "https://github.com/salessandri/stellar-horizon-rs.git", branch = "new-master" }
 strum = { version = "0.25", features = ["derive"] }
 tokio = { version = "1.33.0", features = ["full"] }
