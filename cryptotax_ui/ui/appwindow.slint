@@ -99,6 +99,10 @@ export component AppWindow inherits Window {
         Rectangle {
             portfolio-page := Portfolio {
                 visible: active-page == Page.portfolio;
+                currency-filter-clicked(currency) => {
+                    Facade.set-currency-filter(currency);
+                    root.active-page = Page.transactions;
+                }
             }
 
             sources-page := Sources {

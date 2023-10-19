@@ -216,6 +216,19 @@ export component Transactions inherits VerticalLayout {
                 }
             }
         }
+        if (Facade.currency-filter != ""): HorizontalBox {
+            padding: 0;
+            Text {
+                text: "Currency: " + Facade.currency-filter;
+                vertical-alignment: center;
+            }
+            Button {
+                text: "Clear";
+                clicked => {
+                    Facade.set-currency-filter("");
+                }
+            }
+        }
         Rectangle {}
         Button {
             text: "Export (JSON)";

@@ -6,10 +6,12 @@ import {
     HeaderCell,
     MonoTextCell,
     TableHeader
-} from "./common.slint";
-import { Facade } from "./global.slint";
+} from "common.slint";
+import { Facade } from "global.slint";
 
 export component Portfolio inherits Rectangle {
+    callback currency-filter-clicked(string);
+
     VerticalBox {
         HorizontalBox {
             padding: 0;
@@ -62,19 +64,40 @@ export component Portfolio inherits Rectangle {
                         touch := TouchArea {}
 
                         HorizontalLayout {
-                            padding-left: 5px;
+                            padding-left: 0px;
                             padding-right: 2px;
-                            padding-top: 2px;
-                            padding-bottom: 2px;
                             spacing: 2px;
 
                             Cell {
-                                CurrencyIcon {
-                                    cmc-id: holding.currency-cmc-id;
+                                spacing: 0;
+
+                                Rectangle {
+                                    background: currency-touch.has-hover ? #456 : transparent;
+                                    border-radius: self.height / 4;
+
+                                    HorizontalLayout {
+                                        padding-left: 4px;
+                                        padding-right: 4px;
+                                        padding-top: 2px;
+                                        padding-bottom: 2px;
+                                        spacing: 5px;
+
+                                        CurrencyIcon {
+                                            cmc-id: holding.currency-cmc-id;
+                                        }
+                                        ElidingText {
+                                            font-family: "DejaVu Sans Mono";
+                                            max-width: self.preferred-width;
+                                            text: holding.currency;
+                                        }
+                                    }
+
+                                    currency-touch := TouchArea {
+                                        clicked => { root.currency-filter-clicked(holding.currency) }
+                                        mouse-cursor: pointer;
+                                    }
                                 }
-                                ElidingText {
-                                    text: holding.currency;
-                                }
+                                Rectangle {}
                             }
                             quantity-text := MonoTextCell { text: holding.quantity; }
                             MonoTextCell { text: holding.cost; }

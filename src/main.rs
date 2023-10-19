@@ -157,6 +157,7 @@ enum TransactionFilter {
     #[default]
     None,
     SourceIndex(usize),
+    Currency(String),
 }
 
 impl TransactionFilter {
@@ -164,6 +165,14 @@ impl TransactionFilter {
         match self {
             TransactionFilter::None => true,
             TransactionFilter::SourceIndex(index) => tx.source_index == *index,
+            TransactionFilter::Currency(currency) => match tx.incoming_outgoing() {
+                (None, None) => false,
+                (None, Some(amount)) |
+                (Some(amount), None) => &amount.currency == currency,
+                (Some(incoming), Some(outgoing)) => {
+                    &incoming.currency == currency || &outgoing.currency == currency
+                }
+            }
         }
     }
 }
@@ -1179,10 +1188,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mut app = app.borrow_mut();
             let ui = ui_weak.unwrap();
             let facade = ui.global::<Facade>();
-            app.transaction_filter = if facade.get_source_filter() < 0 {
-                TransactionFilter::None
-            } else {
+            app.transaction_filter = if facade.get_source_filter() >= 0 {
                 TransactionFilter::SourceIndex(facade.get_source_filter() as usize)
+            } else if facade.get_currency_filter().len() > 0 {
+                TransactionFilter::Currency(facade.get_currency_filter().into())
+            } else {
+                TransactionFilter::None
             };
 
             ui_set_transactions(&app);
