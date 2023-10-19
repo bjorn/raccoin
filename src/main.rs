@@ -636,7 +636,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
 
     // Process transactions per-year
     let mut fifo = FIFO::new();
-    transactions.linear_group_by_key_mut(|tx| tx.timestamp.year()).map(|txs| {
+    let mut reports: Vec<TaxReport> = transactions.linear_group_by_key_mut(|tx| tx.timestamp.year()).map(|txs| {
         // prepare currency summary
         currencies.retain_mut(|summary| {
             summary.balance_start = summary.balance_end;
@@ -704,7 +704,40 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
             currencies: currencies.clone(),
             gains,
         }
-    }).collect()
+    }).collect();
+
+    // add an "all time" report
+    let mut all_time = TaxReport {
+        year: 0,
+        long_term_capital_gains: Decimal::ZERO,
+        short_term_capital_gains: Decimal::ZERO,
+        total_capital_losses: Decimal::ZERO,
+        currencies: Vec::new(),
+        gains: Vec::new(),
+    };
+    for report in &reports {
+        all_time.long_term_capital_gains += report.long_term_capital_gains;
+        all_time.short_term_capital_gains += report.short_term_capital_gains;
+        all_time.total_capital_losses += report.total_capital_losses;
+        for currency_summary in &report.currencies {
+            let summary = summary_for(&mut all_time.currencies, &currency_summary.currency);
+            summary.balance_end = currency_summary.balance_end;
+            summary.cost_end = currency_summary.cost_end;
+            summary.quantity_disposed += currency_summary.quantity_disposed;
+            summary.quantity_income += currency_summary.quantity_income;
+            summary.cost += currency_summary.cost;
+            summary.fees += currency_summary.fees;
+            summary.proceeds += currency_summary.proceeds;
+            summary.capital_profit_loss += currency_summary.capital_profit_loss;
+            summary.income += currency_summary.income;
+            summary.total_profit_loss += currency_summary.total_profit_loss;
+        }
+        all_time.gains.extend_from_slice(&report.gains);
+    }
+    all_time.currencies.sort_by(|a, b| b.cost.cmp(&a.cost));
+    reports.push(all_time);
+
+    reports
 }
 
 fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
@@ -882,7 +915,13 @@ fn ui_set_transactions(app: &App) {
 }
 
 fn ui_set_reports(app: &App) {
-    let report_years: Vec<StandardListViewItem> = app.reports.iter().map(|report| StandardListViewItem::from(report.year.to_string().as_str())).collect();
+    let report_years: Vec<StandardListViewItem> = app.reports.iter().map(|report| {
+        if report.year == 0 {
+            StandardListViewItem::from("All Time")
+        } else {
+            StandardListViewItem::from(report.year.to_string().as_str())
+        }
+    }).collect();
     app.ui_report_years.set_vec(report_years);
 
     let ui_reports: Vec<UiTaxReport> = app.reports.iter().map(|report| {

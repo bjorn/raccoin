@@ -24,7 +24,7 @@ impl Entry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CapitalGain {
     pub bought: NaiveDateTime,
     pub sold: NaiveDateTime,
