@@ -204,7 +204,9 @@ impl App {
         self.sources.iter_mut().for_each(|source| {
             match source.source_type {
                 TransactionsSourceType::BitcoinAddresses |
-                TransactionsSourceType::BitcoinXpubs => {}
+                TransactionsSourceType::BitcoinXpubs |
+                TransactionsSourceType::EthereumAddress |
+                TransactionsSourceType::StellarAccount => {}
                 _ => {
                     source.full_path = sources_path.join(&source.path).into();
                 }
@@ -1011,7 +1013,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mut app = app.borrow_mut();
 
             if let Some(source) = app.sources.get_mut(index as usize) {
-                let esplora_client = esplora::blocking_esplora_client().unwrap();
+                let esplora_client = esplora::async_esplora_client().unwrap();
                 let tx = match source.source_type {
                     TransactionsSourceType::BitcoinAddresses => {
                         futures::executor::block_on(esplora::address_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()

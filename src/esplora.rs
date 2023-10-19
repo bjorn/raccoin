@@ -5,7 +5,7 @@ use esplora_client::{Builder, AsyncClient, Tx};
 
 use crate::base::{Transaction, Amount};
 
-pub(crate) fn blocking_esplora_client() -> Result<AsyncClient, esplora_client::Error> {
+pub(crate) fn async_esplora_client() -> Result<AsyncClient, esplora_client::Error> {
     let builder = Builder::new("https://blockstream.info/api");
     builder.build_async()
 }

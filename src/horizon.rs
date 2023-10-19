@@ -105,7 +105,6 @@ async fn address_payments(client: &HorizonHttpClient, address: &str) -> Result<V
                     let request = api::effects::for_operation(&op.base.id);
                     let (_, response) = client.request(request).await?;
                     println!("Looking up merged XLM amount for account merge...");
-                    dbg!(&response.records);
                     let amount = response.records.into_iter().find_map(|effect| {
                         match effect {
                             Effect::AccountDebited(effect) => {
@@ -126,12 +125,16 @@ async fn address_payments(client: &HorizonHttpClient, address: &str) -> Result<V
                         match effect {
                             Effect::ClaimableBalanceClaimed(effect) => {
                                 let quantity = Decimal::from_str(&effect.amount);
-                                let currency = effect.asset;
+                                let currency = if effect.asset == "native" {
+                                    "XLM".to_owned()
+                                } else {
+                                    effect.asset
+                                };
                                 Some(quantity.map(|quantity| Amount::new(quantity, currency)))
                             },
                             _ => None
                         }
-                    }).context("Missing Effect::AccountCredited for Operation::ClaimClaimableBalance")?;
+                    }).context("Missing Effect::ClaimableBalanceClaimed for Operation::ClaimClaimableBalance")?;
                     // todo: determine sender?
                     (op.base, String::new(), op.claimant, amount?, Some(format!("Claimable Balance ID {}", op.balance_id)))
                 }
