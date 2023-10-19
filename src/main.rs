@@ -104,6 +104,13 @@ struct TransactionSource {
     transactions: Vec<Transaction>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct Portfolio {
+    sources: Vec<TransactionSource>,
+    #[serde(default)]
+    ignored_currencies: Vec<String>,
+}
+
 #[derive(Default, Clone)]
 struct CurrencySummary {
     currency: String,
@@ -162,8 +169,8 @@ impl TransactionFilter {
 }
 
 struct App {
-    sources_file: PathBuf,
-    sources: Vec<TransactionSource>,
+    portfolio_file: PathBuf,
+    portfolio: Portfolio,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
     price_history: PriceHistory,
@@ -181,8 +188,8 @@ impl App {
         let mut price_history = PriceHistory::new();
 
         Self {
-            sources_file: PathBuf::new(),
-            sources: Vec::new(),
+            portfolio_file: PathBuf::new(),
+            portfolio: Portfolio { sources: Vec::new(), ignored_currencies: Vec::new() },
             transactions: Vec::new(),
             reports: Vec::new(),
             price_history,
@@ -196,12 +203,12 @@ impl App {
         }
     }
 
-    fn load_sources(&mut self, sources_file: &Path) -> Result<(), Box<dyn Error>> {
-        self.sources_file = sources_file.into();
-        let sources_path = sources_file.parent().unwrap_or(Path::new(""));
-        // todo: report sources file loading error in UI
-        self.sources = serde_json::from_str(&std::fs::read_to_string(sources_file)?)?;
-        self.sources.iter_mut().for_each(|source| {
+    fn load_portfolio(&mut self, file_path: &Path) -> Result<(), Box<dyn Error>> {
+        self.portfolio_file = file_path.into();
+        let sources_path = file_path.parent().unwrap_or(Path::new(""));
+        // todo: report portfolio loading error in UI
+        self.portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
+        self.portfolio.sources.iter_mut().for_each(|source| {
             match source.source_type {
                 TransactionsSourceType::BitcoinAddresses |
                 TransactionsSourceType::BitcoinXpubs |
@@ -217,15 +224,15 @@ impl App {
         Ok(())
     }
 
-    fn save_sources(&self) -> Result<(), Box<dyn Error>> {
-        let json = serde_json::to_string_pretty(&self.sources)?;
+    fn save_portfolio(&self) -> Result<(), Box<dyn Error>> {
+        let json = serde_json::to_string_pretty(&self.portfolio)?;
         // todo: set all `path` members to relative from `sources_file`
-        std::fs::write(&self.sources_file, json)?;
+        std::fs::write(&self.portfolio_file, json)?;
         Ok(())
     }
 
     fn refresh_transactions(&mut self) {
-        self.transactions = load_transactions(&mut self.sources, &self.price_history).unwrap_or_default();
+        self.transactions = load_transactions(&mut self.portfolio.sources, &self.portfolio.ignored_currencies, &self.price_history).unwrap_or_default();
         self.reports = calculate_tax_reports(&mut self.transactions);
     }
 
@@ -285,7 +292,7 @@ pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path
     Ok(())
 }
 
-fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
+fn load_transactions(sources: &mut Vec<TransactionSource>, ignored_currencies: &Vec<String>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
     for (index, source) in sources.iter_mut().enumerate() {
@@ -379,6 +386,19 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, price_history: &Price
             }
         }
     }
+
+    // remove transactions with ignored currencies
+    transactions.retain(|tx| {
+        match tx.incoming_outgoing() {
+            (None, None) => true,
+            (None, Some(amount)) |
+            (Some(amount), None) => !ignored_currencies.contains(&amount.currency),
+            (Some(incoming), Some(outgoing)) => {
+                // Trades can only be ignored, if both the incoming and outgoing currencies are ignored
+                !(ignored_currencies.contains(&incoming.currency) && ignored_currencies.contains(&outgoing.currency))
+            }
+        }
+    });
 
     // sort transactions
     transactions.sort_by(|a, b| a.cmp(&b) );
@@ -713,7 +733,7 @@ fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
 }
 
 fn ui_set_sources(app: &App) {
-    let ui_sources: Vec<UiTransactionSource> = app.sources.iter().map(|source| {
+    let ui_sources: Vec<UiTransactionSource> = app.portfolio.sources.iter().map(|source| {
         UiTransactionSource {
             source_type: source.source_type.to_string().into(),
             name: source.name.clone().into(),
@@ -733,7 +753,7 @@ fn ui_set_sources(app: &App) {
 }
 
 fn ui_set_transactions(app: &App) {
-    let sources = &app.sources;
+    let sources = &app.portfolio.sources;
     let transactions = &app.transactions;
     let filter = &app.transaction_filter;
 
@@ -960,19 +980,19 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let sources_file: PathBuf = match env::args().skip(1).next() {
+    let portfolio_file: PathBuf = match env::args().skip(1).next() {
         Some(arg) => arg.into(),
         None => {
-            println!("No sources file specified");
+            println!("No portfolio file specified");
             println!("Usage:");
-            println!("    {} <sources_file>", std::env::args().next().unwrap_or("cryptotax".to_owned()));
+            println!("    {} <portfolio_file>", std::env::args().next().unwrap_or("cryptotax".to_owned()));
             exit(1);
         }
     };
 
     let mut app = App::new();
-    if let Err(e) = app.load_sources(&sources_file) {
-        println!("Error loading sources from {}: {}", sources_file.display(), e);
+    if let Err(e) = app.load_portfolio(&portfolio_file) {
+        println!("Error loading sources from {}: {}", portfolio_file.display(), e);
         return Ok(());
     }
 
@@ -985,20 +1005,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     {
         let ui_weak = ui.as_weak();
         let app = app.clone();
-        let sources_file = sources_file.clone();
+        let portfolio_file = portfolio_file.clone();
 
         facade.on_set_source_enabled(move |index, enabled| {
             let mut app = app.borrow_mut();
-            if let Some(source) = app.sources.get_mut(index as usize) {
+            if let Some(source) = app.portfolio.sources.get_mut(index as usize) {
                 source.enabled = enabled;
 
                 app.refresh_transactions();
                 app.refresh_ui(&ui_weak.unwrap());
 
-                // save the sources file
-                match app.save_sources() {
-                    Ok(_) => { println!("Saved sources to {}", sources_file.display()); }
-                    Err(_) => { println!("Error saving sources to {}", sources_file.display()); }
+                // save the portfolio file
+                match app.save_portfolio() {
+                    Ok(_) => { println!("Saved portfolio to {}", portfolio_file.display()); }
+                    Err(_) => { println!("Error saving portfolio to {}", portfolio_file.display()); }
                 }
             }
         });
@@ -1007,12 +1027,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     {
         let ui_weak = ui.as_weak();
         let app = app.clone();
-        let sources_file = sources_file.clone();
+        let portfolio_file = portfolio_file.clone();
 
         facade.on_sync_source(move |index| {
             let mut app = app.borrow_mut();
 
-            if let Some(source) = app.sources.get_mut(index as usize) {
+            if let Some(source) = app.portfolio.sources.get_mut(index as usize) {
                 let esplora_client = esplora::async_esplora_client().unwrap();
                 let tx = match source.source_type {
                     TransactionsSourceType::BitcoinAddresses => {
@@ -1040,10 +1060,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     app.refresh_transactions();
                     app.refresh_ui(&ui_weak.unwrap());
 
-                    // save the sources file
-                    match app.save_sources() {
-                        Ok(_) => { println!("Saved sources to {}", sources_file.display()); }
-                        Err(_) => { println!("Error saving sources to {}", sources_file.display()); }
+                    // save the portfolio file
+                    match app.save_portfolio() {
+                        Ok(_) => { println!("Saved portfolio to {}", portfolio_file.display()); }
+                        Err(_) => { println!("Error saving portfolio to {}", portfolio_file.display()); }
                     }
                 }
             }
