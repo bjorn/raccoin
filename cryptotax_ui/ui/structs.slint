@@ -60,6 +60,17 @@ export struct UiCurrencySummary {
     total_profit_loss: string,
 }
 
+export struct UiBalanceForCurrency {
+    source: string,
+    balance: string,
+}
+
+export struct UiBalanceForSource {
+    currency-cmc-id: int,
+    currency: string,
+    balance: string,
+}
+
 export struct UiCapitalGain {
     currency-cmc-id: int,
     bought_date: string,

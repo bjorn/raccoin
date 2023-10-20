@@ -5,7 +5,9 @@ import {
     ElidingText,
     HeaderCell,
     MonoTextCell,
-    TableHeader
+    TableHeader,
+    TextCell,
+    TouchCell
 } from "common.slint";
 import { Facade } from "global.slint";
 
@@ -46,8 +48,10 @@ export component Portfolio inherits Rectangle {
                 spacing: 2px;
 
                 TableHeader {
+                    horizontal-padding-left: 0;
+
                     HeaderCell { text: "Currency"; }
-                    HeaderCell { text: "Quantity"; horizontal-alignment: right; }
+                    HeaderCell { text: "Quantity"; }
                     HeaderCell { text: "Cost"; horizontal-alignment: right; }
                     HeaderCell { text: "Value"; horizontal-alignment: right; }
                     HeaderCell { text: "ROI"; horizontal-alignment: right; }
@@ -58,7 +62,7 @@ export component Portfolio inherits Rectangle {
                     for holding[index] in Facade.portfolio.holdings: Rectangle {
                         property <bool> even: mod(index, 2) == 0;
 
-                        background: touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
+                        background: touch.has-hover || quantity-touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
                         border-radius: self.height / 4;
 
                         touch := TouchArea {}
@@ -99,14 +103,88 @@ export component Portfolio inherits Rectangle {
                                 }
                                 Rectangle {}
                             }
-                            quantity-text := MonoTextCell { text: holding.quantity; }
-                            MonoTextCell { text: holding.cost; }
+                            quantity-touch := TouchCell {
+                                pointer-event(event) => {
+                                    if (event.kind == PointerEventKind.down) {
+                                        popup.show();
+                                    }
+                                }
+                                VerticalLayout {
+                                    padding-top: 2px;
+                                    padding-bottom: 2px;
+
+                                    quantity-background := Rectangle {
+                                        border-radius: self.height / 4;
+                                        border-color: #3e3e3e;
+                                        border-width: 1px;
+
+                                        states [
+                                            hovered when quantity-touch.has-hover: {
+                                                quantity-background.background: #1e1e1e;
+                                                quantity-background.border-color: #6e6e6e;
+                                            }
+                                        ]
+
+                                        HorizontalLayout {
+                                            padding: 4px;
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            ElidingText {
+                                                text: holding.quantity;
+                                                font-family: "DejaVu Sans Mono";
+                                            }
+                                        }
+
+                                        popup := PopupWindow {
+                                            width: 300px;
+                                            height: balances-list.preferred-height;
+                                            x: parent.width + 5px;
+                                            y: 0;
+                                            Rectangle {
+                                                z: 100;
+                                                background: #000000;
+                                                border-radius: 5px;
+                                                border-color: #3e3e3e;
+                                                border-width: 1px;
+
+                                                balances-list := VerticalLayout {
+                                                    padding-top: 5px;
+                                                    padding-bottom: 5px;
+                                                    padding-left: 1px;
+                                                    padding-right: 1px;
+                                                    spacing: 5px;
+
+                                                    TableHeader {
+                                                        separator: false;
+                                                        horizontal-padding-left: 7px;
+                                                        horizontal-padding-right: 7px;
+                                                        HeaderCell { text: "Wallet"; }
+                                                        HeaderCell { text: "Quantity"; }
+                                                    }
+
+                                                    for balance[index] in Facade.balances-for-currency(holding.currency): Rectangle {
+                                                        HorizontalLayout {
+                                                            padding-left: 9px;
+                                                            padding-right: 9px;
+                                                            spacing: 2px;
+
+                                                            TextCell { text: balance.source; }
+                                                            MonoTextCell { text: balance.balance; horizontal-alignment: left; }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            cost-text := MonoTextCell { text: holding.cost; }
                             MonoTextCell { text: holding.value; }
                             MonoTextCell {
                                 text: holding.roi;
                                 color: {
                                     if (holding.roi == "-") {
-                                        quantity-text.color
+                                        cost-text.color
                                     } else if (holding.is-profit) {
                                         #00ff00
                                     } else {

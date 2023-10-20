@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, SharedString};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, process::exit};
+use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, process::exit, collections::HashMap, cmp::Eq, hash::Hash, default::Default};
 
 #[derive(EnumIter, Serialize, Deserialize)]
 enum TransactionsSourceType {
@@ -94,14 +94,21 @@ struct TransactionSource {
     path: String,
     #[serde(skip_serializing_if = "String::is_empty", default)]
     name: String,
+    /// Whether this source is enabled.
     #[serde(default)]
     enabled: bool,
+    /// The resolved path of the source.
     #[serde(skip)]
     full_path: PathBuf,
+    /// The number of transactions loaded from this source.
     #[serde(skip)]
     transaction_count: usize,
+    /// Transactions from this source. Only used for on-demand synchronized sources.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     transactions: Vec<Transaction>,
+    /// Currency balances, as calculated based on the transactions imported from this source.
+    #[serde(skip)]
+    balances: HashMap<String, Decimal>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -385,7 +392,21 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, ignored_currencies: &
                 // merge consecutive trades that are really the same order
                 merge_consecutive_trades(&mut source_txs);
 
+                // remove transactions with ignored currencies
+                source_txs.retain(|tx| {
+                    match tx.incoming_outgoing() {
+                        (None, None) => true,
+                        (None, Some(amount)) |
+                        (Some(amount), None) => !ignored_currencies.contains(&amount.currency),
+                        (Some(incoming), Some(outgoing)) => {
+                            // Trades can only be ignored, if both the incoming and outgoing currencies are ignored
+                            !(ignored_currencies.contains(&incoming.currency) && ignored_currencies.contains(&outgoing.currency))
+                        }
+                    }
+                });
+
                 source.transaction_count = source_txs.len();
+                source.balances = calculate_balances(&source_txs);
                 transactions.extend(source_txs);
             }
             // todo: provide this feedback to the UI
@@ -395,19 +416,6 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, ignored_currencies: &
             }
         }
     }
-
-    // remove transactions with ignored currencies
-    transactions.retain(|tx| {
-        match tx.incoming_outgoing() {
-            (None, None) => true,
-            (None, Some(amount)) |
-            (Some(amount), None) => !ignored_currencies.contains(&amount.currency),
-            (Some(incoming), Some(outgoing)) => {
-                // Trades can only be ignored, if both the incoming and outgoing currencies are ignored
-                !(ignored_currencies.contains(&incoming.currency) && ignored_currencies.contains(&outgoing.currency))
-            }
-        }
-    });
 
     // sort transactions
     transactions.sort_by(|a, b| a.cmp(&b) );
@@ -439,6 +447,48 @@ fn merge_consecutive_trades(source_txs: &mut Vec<Transaction>) {
             index += 1;
         }
     }
+}
+
+/// A helper function that returns a mutable reference to a value in a hash map,
+/// without allocating a new key when the map already contains a value for that
+/// key.
+fn get_or_default<'a, K, V>(hash_map: &'a mut HashMap<K, V>, key: &K) -> &'a mut V
+    where
+        K: Eq,
+        K: Hash,
+        K: ToOwned<Owned = K>,
+        V: Default,
+{
+    if hash_map.contains_key(key) {
+        hash_map.get_mut(key).unwrap()
+    } else {
+        hash_map.entry(key.to_owned()).or_default()
+    }
+}
+
+fn calculate_balances(source_txs: &[Transaction]) -> HashMap<String, Decimal> {
+    let mut balances = HashMap::new();
+
+    for tx in source_txs {
+        let (incoming, outgoing) = tx.incoming_outgoing();
+        if let Some(incoming) = incoming {
+            if !incoming.is_fiat() {
+                *get_or_default(&mut balances, &incoming.currency) += incoming.quantity;
+            }
+        }
+        if let Some(outgoing) = outgoing {
+            if !outgoing.is_fiat() {
+                *get_or_default(&mut balances, &outgoing.currency) -= outgoing.quantity;
+            }
+        }
+        if let Some(fee) = &tx.fee {
+            if !fee.is_fiat() {
+                *get_or_default(&mut balances, &fee.currency) -= fee.quantity;
+            }
+        }
+    }
+
+    balances
 }
 
 fn match_send_receive(transactions: &mut Vec<Transaction>) {
@@ -1049,6 +1099,60 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let app = Rc::new(RefCell::new(app));
     let facade = ui.global::<Facade>();
+
+    {
+        let app = app.clone();
+
+        facade.on_balances_for_currency(move |currency| {
+            let app = app.borrow();
+            let currency = currency.as_str();
+
+            // collect the balances for the given currency from each source
+            let mut balances: Vec<(String, Decimal)> = app.portfolio.sources.iter().filter_map(|source| {
+                source.balances.get(currency).and_then(|balance|
+                    if *balance != Decimal::ZERO {
+                        Some((source.name.clone(), balance.normalize()))
+                    } else {
+                        None
+                    })
+            }).collect();
+
+            // sort descending
+            balances.sort_by(|(_, a), (_, b)| b.cmp(&a) );
+
+            let balances: Vec<UiBalanceForCurrency> = balances.into_iter().map(|(source, balance)| {
+                UiBalanceForCurrency {
+                    source: source.into(),
+                    balance: balance.to_string().into(),
+                }
+            }).collect();
+            Rc::new(VecModel::from(balances)).into()
+        });
+    }
+
+    {
+        let app = app.clone();
+
+        facade.on_balances_for_source(move |source_index| {
+            let app = app.borrow();
+            let mut balances: Vec<UiBalanceForSource> = Vec::new();
+            if let Some(source) = app.portfolio.sources.get(source_index as usize) {
+                balances.extend(source.balances.iter().filter_map(|(currency, quantity)| {
+                    if *quantity != Decimal::ZERO {
+                        Some(UiBalanceForSource {
+                            currency_cmc_id: cmc_id(currency),
+                            currency: currency.clone().into(),
+                            balance: quantity.normalize().to_string().into(),
+                        })
+                    } else {
+                        None
+                    }
+                }));
+            }
+            // todo: would be nice to sort by fiat value
+            Rc::new(VecModel::from(balances)).into()
+        });
+    }
 
     {
         let ui_weak = ui.as_weak();

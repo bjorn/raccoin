@@ -1,7 +1,7 @@
 import { ListView, HorizontalBox, CheckBox, ComboBox, Button } from "std-widgets.slint";
-import { Badge, ElidingText } from "common.slint";
+import { Badge, ElidingText, TableHeader, HeaderCell, TextCell, MonoTextCell, CurrencyIcon, Cell } from "common.slint";
 import { Facade } from "global.slint";
-import { UiTransactionSource } from "structs.slint";
+import { UiTransactionSource, UiBalanceForSource } from "structs.slint";
 
 export component Sources inherits ListView {
     in property <[UiTransactionSource]> sources: Facade.sources;
@@ -32,6 +32,90 @@ export component Sources inherits ListView {
             horizontal-stretch: 0;
             current-value: source.source_type;
             enabled: false;
+        }
+        holdings-touch := TouchArea {
+            property <[UiBalanceForSource]> balances: Facade.balances-for-source(index);
+
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down && balances.length > 0) {
+                    popup.show();
+                }
+            }
+
+            VerticalLayout {
+                holdings-background := Rectangle {
+                    border-radius: 5px;
+                    border-color: #3e3e3e;
+                    border-width: 1px;
+
+                    states [
+                        disabled when balances.length == 0: {
+                            holdings-text.color: gray;
+                        }
+                        hovered when holdings-touch.has-hover: {
+                            holdings-background.background: #1e1e1e;
+                            holdings-background.border-color: #6e6e6e;
+                        }
+                    ]
+
+                    HorizontalLayout {
+                        padding: 4px;
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        holdings-text := ElidingText {
+                            text: "Holdings";
+                        }
+                    }
+
+                    popup := PopupWindow {
+                        width: 300px;
+                        height: balances-list.preferred-height;
+                        x: 0 - 300px - 5px;
+                        y: 0;
+                        Rectangle {
+                            z: 100;
+                            background: #000000;
+                            border-radius: 5px;
+                            border-color: #3e3e3e;
+                            border-width: 1px;
+
+                            balances-list := VerticalLayout {
+                                padding-top: 5px;
+                                padding-bottom: 5px;
+                                padding-left: 1px;
+                                padding-right: 1px;
+                                spacing: 5px;
+
+                                TableHeader {
+                                    separator: false;
+                                    horizontal-padding-left: 7px;
+                                    horizontal-padding-right: 7px;
+                                    HeaderCell { text: "Currency"; }
+                                    HeaderCell { text: "Quantity"; }
+                                }
+
+                                for balance[index] in balances: Rectangle {
+                                    HorizontalLayout {
+                                        padding-left: 9px;
+                                        padding-right: 9px;
+                                        spacing: 2px;
+
+                                        Cell {
+                                            CurrencyIcon {
+                                                cmc-id: balance.currency-cmc-id;
+                                            }
+                                            ElidingText {
+                                                text: balance.currency;
+                                            }
+                                        }
+                                        MonoTextCell { text: balance.balance; horizontal-alignment: left; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         Button {
             text: "Sync";

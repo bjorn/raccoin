@@ -1,11 +1,13 @@
 import {
+    UiBalanceForCurrency,
+    UiBalanceForSource,
     UiCapitalGain,
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
     UiTransactionSource
-} from "./structs.slint";
-import { TestData } from "./test-data.slint";
+} from "structs.slint";
+import { TestData } from "test-data.slint";
 
 export global Facade {
     // MODELS
@@ -39,6 +41,14 @@ export global Facade {
     callback export-transactions-json;
 
     callback transaction-filter-changed;
+
+    // DATA REQUESTS
+
+    // params: (currency)
+    pure callback balances-for-currency(string) -> [UiBalanceForCurrency];
+
+    // params: (source_index)
+    pure callback balances-for-source(int) -> [UiBalanceForSource];
 
     // FUNCTIONS
 

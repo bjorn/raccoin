@@ -1,4 +1,6 @@
 import {
+    UiBalanceForCurrency,
+    UiBalanceForSource,
     UiCurrencySummary,
     UiPortfolio,
     UiTaxReport,
@@ -153,4 +155,18 @@ export global TestData {
             percentage_of_portfolio: 0.00,
         }],
     };
+
+    out property <[UiBalanceForSource]> balances-for-source : [{
+        currency-cmc-id: 1,
+        currency: "BTC",
+        balance: "1.234",
+    }];
+
+    out property <[UiBalanceForCurrency]> balances-for-currency : [{
+        source: "Bitstamp",
+        balance: "1.234",
+    },{
+        source: "Binance",
+        balance: "0.5",
+    }];
 }

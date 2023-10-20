@@ -73,6 +73,12 @@ export component Cell inherits HorizontalLayout {
     spacing: 5px;
 }
 
+export component TouchCell inherits TouchArea {
+    horizontal-stretch: 1;
+    preferred-width: 0;
+    min-width: 0;
+}
+
 export component ElidingText inherits Text {
     overflow: elide;
     vertical-alignment: center;
@@ -93,10 +99,13 @@ export component TableHeader inherits VerticalLayout {
     spacing: 2px;
     vertical-stretch: 0;
     // width: view.visible-width;   // what we want, but causes binding loop
+    in property <length> horizontal-padding-left: 5px;
+    in property <length> horizontal-padding-right: 13px;
+    in property <bool> separator: true;
 
     HorizontalLayout {
-        padding-left: 7px;
-        padding-right: 15px;
+        padding-left: 2px + root.horizontal-padding-left;
+        padding-right: 2px + root.horizontal-padding-right;
         padding-top: 2px;
         padding-bottom: 2px;
         spacing: 2px;
@@ -104,7 +113,7 @@ export component TableHeader inherits VerticalLayout {
         @children
     }
 
-    Rectangle {
+    if (separator): Rectangle {
         height: 1px;
         background: white;
         opacity: 0.25;
