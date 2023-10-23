@@ -5,7 +5,7 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Transaction, Amount}};
+use crate::{time::deserialize_date_time, base::{Transaction, Amount, Operation}};
 
 #[derive(Debug, Deserialize)]
 enum BitcoinDeActionType {
@@ -113,6 +113,27 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>,
             Ok(tx) => transactions.push(tx),
             Err(_) => continue,
         };
+    }
+
+    // bitcoin.de reports disbursement fees separately. Merge them where possible.
+    let mut index = 1;
+    while index < transactions.len() {
+        let (a, b) = transactions.split_at_mut(index);
+        let (a, b) = (a.last_mut().unwrap(), &b[0]);
+
+        let fee = match (&a.operation, &b.operation) {
+            (Operation::Send(_), Operation::Fee(fee)) if a.fee.is_none() && b.fee.is_none() && a.tx_hash == b.tx_hash => {
+                Some(fee.clone())
+            }
+            _ => None,
+        };
+
+        if fee.is_some() {
+            a.fee = fee;
+            transactions.remove(index);
+        }
+
+        index += 1;
     }
 
     Ok(transactions)
