@@ -250,7 +250,7 @@ pub(crate) struct Transaction {
     #[serde(skip)]
     pub gain: Option<Result<Decimal, GainError>>,
     #[serde(skip)]
-    pub source_index: usize,
+    pub wallet_index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<Amount>,
     #[serde(skip)]
@@ -270,7 +270,7 @@ impl Transaction {
             fee: None,
             fee_value: None,
             gain: None,
-            source_index: 0,
+            wallet_index: 0,
             value: None,
             matching_tx: None,
         }
@@ -351,8 +351,7 @@ impl Transaction {
     /// Used to merge trade operations to avoid clutter.
     pub(crate) fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
         // Some things should be equal before we will merge transactions
-        if self.source_index != other.source_index ||
-            self.blockchain != other.blockchain ||
+        if self.blockchain != other.blockchain ||
             self.tx_hash != other.tx_hash
         {
             return Err(MergeError);

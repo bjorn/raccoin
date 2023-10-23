@@ -1,12 +1,13 @@
 import {
     UiBalanceForCurrency,
-    UiBalanceForSource,
+    UiBalanceForWallet,
     UiCurrencySummary,
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
     UiTransactionSource,
-    UiTransactionType
+    UiTransactionType,
+    UiWallet
 } from "./structs.slint";
 
 export global TestData {
@@ -60,10 +61,23 @@ export global TestData {
         tx_hash: "",
     }];
 
+    out property <[UiWallet]> wallets : [{
+        name: "Binance",
+        enabled: true,
+        transaction_count: 2,
+        sources: root.sources,
+    },{
+        name: "Bitstamp",
+        enabled: true,
+        transaction_count: 0,
+        sources: root.sources,
+    }];
+
     out property <[UiTransactionSource]> sources : [{
         source_type: "ExchangeCsv",
         name: "Exchange",
         path: "/foo/bar/exchange.csv",
+        enabled: true,
         transaction_count: 2,
     }];
 
@@ -156,7 +170,7 @@ export global TestData {
         }],
     };
 
-    out property <[UiBalanceForSource]> balances-for-source : [{
+    out property <[UiBalanceForWallet]> balances-for-wallet : [{
         currency-cmc-id: 1,
         currency: "BTC",
         balance: "1.234",

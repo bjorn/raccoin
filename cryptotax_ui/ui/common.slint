@@ -1,16 +1,24 @@
 export component Badge inherits VerticalLayout {
     in property <string> text <=> txt.text;
+    in property <bool> interactive: false;
 
     callback clicked;
 
     alignment: center;
-    opacity: touch.has-hover ? 1.0 : 0.8;
+    opacity: 0.8;
 
-    Rectangle {
+    states [
+        hovered when self.interactive && touch.has-hover: {
+            opacity: 1.0;
+            rect.background: #456;
+        }
+    ]
+
+    rect := Rectangle {
         vertical-stretch: 0;
         horizontal-stretch: 0;
 
-        background: touch.has-hover ? #456 : #3e3e3e;
+        background: #3e3e3e;
         border-radius: self.height / 2;
         height: txt.preferred-height + 2px;
         width: txt.preferred-width + 12px;
@@ -23,7 +31,7 @@ export component Badge inherits VerticalLayout {
 
         touch := TouchArea {
             clicked => { root.clicked(); }
-            mouse-cursor: pointer;
+            mouse-cursor: root.interactive ? pointer : default;
         }
     }
 }

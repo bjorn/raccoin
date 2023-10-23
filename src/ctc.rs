@@ -365,7 +365,7 @@ impl<'a> From<CtcTx<'a>> for Transaction {
             },
             fee_value: None,
             gain: None,
-            source_index: 0,
+            wallet_index: 0,
             value: item.reference_price_per_unit.map(|price| Amount::new(price * item.base_amount, item.reference_price_currency.unwrap_or("EUR").to_owned())),
             matching_tx: None,
         }

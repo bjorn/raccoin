@@ -203,16 +203,16 @@ export component Transactions inherits VerticalLayout {
 
 
     HorizontalBox {
-        if (Facade.source-filter != -1): HorizontalBox {
+        if (Facade.wallet-filter != -1): HorizontalBox {
             padding: 0;
             Text {
-                text: "Source: " + Facade.sources[Facade.source-filter].name;
+                text: "Wallet: " + Facade.wallets[Facade.wallet-filter].name;
                 vertical-alignment: center;
             }
             Button {
                 text: "Clear";
                 clicked => {
-                    Facade.set-source-filter(-1);
+                    Facade.set-wallet-filter(-1);
                 }
             }
         }

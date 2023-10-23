@@ -49,6 +49,7 @@ enum TransactionsSourceType {
     PeercoinCsv,
     PoloniexDepositsCsv,
     PoloniexTradesCsv,
+    PoloniexTradesSupportCsv,
     PoloniexWithdrawalsCsv,
     StellarAccount,
     BinanceBnbConvertCsv,  // todo: document custom format
@@ -56,6 +57,66 @@ enum TransactionsSourceType {
     BinanceTransactionHistoryCsv,
     ReddcoinCoreCsv,
     TrezorCsv,
+}
+
+impl TransactionsSourceType {
+    fn detect_from_file(path: &Path) -> Option<Self> {
+        Self::iter().find(|source_type| {
+            source_type.delimiter().and_then(|delimiter| {
+                csv::ReaderBuilder::new()
+                    .delimiter(delimiter)
+                    .from_path(path).ok()
+            }).is_some_and(|mut rdr| {
+                rdr.headers().map_or(false, |s| s == source_type.headers())
+            })
+        })
+    }
+
+    fn delimiter(&self) -> Option<u8> {
+        match self {
+            TransactionsSourceType::BitcoinAddresses |
+            TransactionsSourceType::BitcoinXpubs |
+            TransactionsSourceType::EthereumAddress |
+            TransactionsSourceType::StellarAccount |
+            TransactionsSourceType::Json => None,
+
+            TransactionsSourceType::BitcoinDeCsv |
+            TransactionsSourceType::TrezorCsv => Some(b';'),
+
+            _ => Some(b','),
+        }
+    }
+
+    fn headers(&self) -> &[&str] {
+        match self {
+            TransactionsSourceType::BitcoinAddresses |
+            TransactionsSourceType::BitcoinXpubs |
+            TransactionsSourceType::EthereumAddress |
+            TransactionsSourceType::StellarAccount |
+            TransactionsSourceType::Json => &[],
+
+            TransactionsSourceType::BitcoinDeCsv => &["Date", "Type", "Currency", "Reference", "BTC-address", "Price", "unit (rate)", "BTC incl. fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "Incoming / Outgoing", "Account balance"],
+            TransactionsSourceType::TrezorCsv => &["Timestamp", "Date", "Time", "Type", "Transaction ID", "Fee", "Fee unit", "Address", "Label", "Amount", "Amount unit", "Fiat (EUR)", "Other"],
+
+            TransactionsSourceType::BitcoinCoreCsv => &["Confirmed", "Date", "Type", "Label", "Address", "Amount (BTC)", "ID"],
+            TransactionsSourceType::PeercoinCsv => &["Confirmed", "Date", "Type", "Label", "Address", "Amount (PPC)", "ID"],
+            TransactionsSourceType::ReddcoinCoreCsv => &["Confirmed", "Date", "Type", "Label", "Address", "Amount (RDD)", "ID"],
+            TransactionsSourceType::BitonicCsv => &["Date", "Action", "Amount", "Price"],
+            TransactionsSourceType::BitstampCsv => &["Type", "Datetime", "Account", "Amount", "Value", "Rate", "Fee", "Sub Type"],
+            TransactionsSourceType::BittrexOrderHistoryCsv => &["Date", "Market", "Side", "Type", "Price", "Quantity", "Total"],
+            TransactionsSourceType::BittrexTransactionHistoryCsv => &["Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount"],
+            TransactionsSourceType::CtcImportCsv => &["Timestamp (UTC)", "Type", "Base Currency", "Base Amount", "Quote Currency (Optional)", "Quote Amount (Optional)", "Fee Currency (Optional)", "Fee Amount (Optional)", "From (Optional)", "To (Optional)", "Blockchain (Optional)", "ID (Optional)", "Description (Optional)", "Reference Price Per Unit (Optional)", "Reference Price Currency (Optional)"],
+            TransactionsSourceType::ElectrumCsv => &["transaction_hash", "label", "confirmations", "value", "fiat_value", "fee", "fiat_fee", "timestamp"],
+            TransactionsSourceType::MyceliumCsv => &["Account", "Transaction ID", "Destination Address", "Timestamp", "Value", "Currency", "Transaction Label"],
+            TransactionsSourceType::PoloniexDepositsCsv => &["Currency", "Amount", "Address", "Date", "Status"],
+            TransactionsSourceType::PoloniexTradesCsv => &["Date", "Market", "Type", "Side", "Price", "Amount", "Total", "Fee", "Order Number", "Fee Currency", "Fee Total"],
+            TransactionsSourceType::PoloniexTradesSupportCsv => &["", "timestamp", "trade_id", "market", "wallet", "side", "price", "amount", "fee", "fee_currency", "fee_total"],
+            TransactionsSourceType::PoloniexWithdrawalsCsv => &["Fee Deducted", "Date", "Currency", "Amount", "Amount-Fee", "Address", "Status"],
+            TransactionsSourceType::BinanceBnbConvertCsv => &["Date", "Coin", "Amount", "Fee (BNB)", "Converted BNB"],
+            TransactionsSourceType::BinanceSpotTradeHistoryCsv => &["Date(UTC)", "Pair", "Side", "Price", "Executed", "Amount", "Fee"],
+            TransactionsSourceType::BinanceTransactionHistoryCsv => &["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change", "Remark"],
+        }
+    }
 }
 
 impl ToString for TransactionsSourceType {
@@ -77,6 +138,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::PeercoinCsv => "Peercoin Qt (CSV)".to_owned(),
             TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
+            TransactionsSourceType::PoloniexTradesSupportCsv => "Poloniex Trades from Support (CSV)".to_owned(),
             TransactionsSourceType::PoloniexWithdrawalsCsv => "Poloniex Withdrawals (CSV)".to_owned(),
             TransactionsSourceType::StellarAccount => "Stellar Account".to_owned(),
             TransactionsSourceType::BinanceBnbConvertCsv => "Binance BNB Convert (CSV)".to_owned(),
@@ -106,14 +168,39 @@ struct TransactionSource {
     /// Transactions from this source. Only used for on-demand synchronized sources.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     transactions: Vec<Transaction>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Wallet {
+    name: String,
+    /// Whether this wallet is enabled.
+    #[serde(default)]
+    enabled: bool,
+    sources: Vec<TransactionSource>,
     /// Currency balances, as calculated based on the transactions imported from this source.
     #[serde(skip)]
     balances: HashMap<String, Decimal>,
 }
 
+impl Wallet {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            enabled: true,
+            sources: Vec::new(),
+            balances: HashMap::new(),
+        }
+    }
+
+    fn transaction_count(&self) -> usize {
+        self.sources.iter().map(|source| source.transaction_count).sum()
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct Portfolio {
-    sources: Vec<TransactionSource>,
+    #[serde(default)]
+    wallets: Vec<Wallet>,
     #[serde(default)]
     ignored_currencies: Vec<String>,
 }
@@ -163,7 +250,7 @@ impl TaxReport {
 enum TransactionFilter {
     #[default]
     None,
-    SourceIndex(usize),
+    WalletIndex(usize),
     Currency(String),
 }
 
@@ -171,7 +258,7 @@ impl TransactionFilter {
     fn matches(&self, tx: &Transaction) -> bool {
         match self {
             TransactionFilter::None => true,
-            TransactionFilter::SourceIndex(index) => tx.source_index == *index,
+            TransactionFilter::WalletIndex(index) => tx.wallet_index == *index,
             TransactionFilter::Currency(currency) => match tx.incoming_outgoing() {
                 (None, None) => false,
                 (None, Some(amount)) |
@@ -186,6 +273,7 @@ impl TransactionFilter {
 
 struct App {
     portfolio_file: PathBuf,
+    last_source_directory: Option<PathBuf>,
     portfolio: Portfolio,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
@@ -193,7 +281,7 @@ struct App {
 
     transaction_filter: TransactionFilter,
 
-    ui_sources: Rc<VecModel<UiTransactionSource>>,
+    ui_wallets: Rc<VecModel<UiWallet>>,
     ui_transactions: Rc<VecModel<UiTransaction>>,
     ui_report_years: Rc<VecModel<StandardListViewItem>>,
     ui_reports: Rc<VecModel<UiTaxReport>>,
@@ -205,14 +293,15 @@ impl App {
 
         Self {
             portfolio_file: PathBuf::new(),
-            portfolio: Portfolio { sources: Vec::new(), ignored_currencies: Vec::new() },
+            last_source_directory: None,
+            portfolio: Portfolio { wallets: Vec::new(), ignored_currencies: Vec::new() },
             transactions: Vec::new(),
             reports: Vec::new(),
             price_history,
 
             transaction_filter: TransactionFilter::None,
 
-            ui_sources: Rc::new(Default::default()),
+            ui_wallets: Rc::new(Default::default()),
             ui_transactions: Rc::new(Default::default()),
             ui_report_years: Rc::new(Default::default()),
             ui_reports: Rc::new(Default::default()),
@@ -221,39 +310,60 @@ impl App {
 
     fn load_portfolio(&mut self, file_path: &Path) -> Result<(), Box<dyn Error>> {
         self.portfolio_file = file_path.into();
-        let sources_path = file_path.parent().unwrap_or(Path::new(""));
+        let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
         // todo: report portfolio loading error in UI
         self.portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
-        self.portfolio.sources.iter_mut().for_each(|source| {
+        self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
             match source.source_type {
                 TransactionsSourceType::BitcoinAddresses |
                 TransactionsSourceType::BitcoinXpubs |
                 TransactionsSourceType::EthereumAddress |
                 TransactionsSourceType::StellarAccount => {}
                 _ => {
-                    source.full_path = sources_path.join(&source.path).into();
+                    source.full_path = portfolio_path.join(&source.path).into();
                 }
             }
-        });
+        }));
 
         self.refresh_transactions();
         Ok(())
     }
 
-    fn save_portfolio(&self) -> Result<(), Box<dyn Error>> {
-        let json = serde_json::to_string_pretty(&self.portfolio)?;
-        // todo: set all `path` members to relative from `sources_file`
-        std::fs::write(&self.portfolio_file, json)?;
-        Ok(())
+    fn save_portfolio(&mut self) {
+        fn internal_save(portfolio: &Portfolio, portfolio_file: &Path) -> Result<(), Box<dyn Error>> {
+            let json = serde_json::to_string_pretty(&portfolio)?;
+            std::fs::write(&portfolio_file, json)?;
+            Ok(())
+        }
+
+        let portfolio_path = self.portfolio_file.parent().unwrap_or(Path::new(""));
+        self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
+            match source.source_type {
+                TransactionsSourceType::BitcoinAddresses |
+                TransactionsSourceType::BitcoinXpubs |
+                TransactionsSourceType::EthereumAddress |
+                TransactionsSourceType::StellarAccount => {}
+                _ => {
+                    if let Some(relative_path) = pathdiff::diff_paths(&source.full_path, portfolio_path) {
+                        source.path = relative_path.to_str().unwrap_or_default().to_owned();
+                    }
+                }
+            }
+        }));
+
+        match internal_save(&self.portfolio, &self.portfolio_file) {
+            Ok(_) => { println!("Saved portfolio to {}", self.portfolio_file.display()); }
+            Err(_) => { println!("Error saving portfolio to {}", self.portfolio_file.display()); }
+        }
     }
 
     fn refresh_transactions(&mut self) {
-        self.transactions = load_transactions(&mut self.portfolio.sources, &self.portfolio.ignored_currencies, &self.price_history).unwrap_or_default();
+        self.transactions = load_transactions(&mut self.portfolio.wallets, &self.portfolio.ignored_currencies, &self.price_history).unwrap_or_default();
         self.reports = calculate_tax_reports(&mut self.transactions);
     }
 
     fn refresh_ui(&self, ui: &AppWindow) {
-        ui_set_sources(self);
+        ui_set_wallets(self);
         ui_set_transactions(self);
         ui_set_reports(self);
         ui_set_portfolio(ui, self);
@@ -308,113 +418,120 @@ pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path
     Ok(())
 }
 
-fn load_transactions(sources: &mut Vec<TransactionSource>, ignored_currencies: &Vec<String>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
+fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
     let mut transactions = Vec::new();
 
-    for (index, source) in sources.iter_mut().enumerate() {
-        if !source.enabled {
-            source.transaction_count = 0;
-            continue
-        }
+    for (wallet_index, wallet) in wallets.iter_mut().enumerate() {
+        let mut wallet_transactions = Vec::new();
 
-        let source_txs = match source.source_type {
-            TransactionsSourceType::BitcoinAddresses |
-            TransactionsSourceType::BitcoinXpubs |
-            TransactionsSourceType::EthereumAddress |
-            TransactionsSourceType::StellarAccount => {
-                    Ok(source.transactions.clone())
-            }
-            TransactionsSourceType::BitcoinCoreCsv => {
-                bitcoin_core::load_bitcoin_core_csv(&source.full_path)
-            }
-            TransactionsSourceType::BitcoinDeCsv => {
-                bitcoin_de::load_bitcoin_de_csv(&source.full_path)
-            }
-            TransactionsSourceType::BitonicCsv => {
-                bitonic::load_bitonic_csv(&source.full_path)
-            }
-            TransactionsSourceType::BitstampCsv => {
-                bitstamp::load_bitstamp_csv(&source.full_path)
-            }
-            TransactionsSourceType::BittrexOrderHistoryCsv => {
-                bittrex::load_bittrex_order_history_csv(&source.full_path)
-            }
-            TransactionsSourceType::BittrexTransactionHistoryCsv => {
-                bittrex::load_bittrex_transaction_history_csv(&source.full_path)
-            }
-            TransactionsSourceType::ElectrumCsv => {
-                electrum::load_electrum_csv(&source.full_path)
-            }
-            TransactionsSourceType::Json => {
-                base::load_transactions_from_json(&source.full_path)
-            }
-            TransactionsSourceType::CtcImportCsv => {
-                ctc::load_ctc_csv(&source.full_path)
-            }
-            TransactionsSourceType::MyceliumCsv => {
-                mycelium::load_mycelium_csv(&source.full_path)
-            }
-            TransactionsSourceType::PeercoinCsv => {
-                bitcoin_core::load_peercoin_csv(&source.full_path)
-            }
-            TransactionsSourceType::PoloniexDepositsCsv => {
-                poloniex::load_poloniex_deposits_csv(&source.full_path)
-            }
-            TransactionsSourceType::PoloniexTradesCsv => {
-                poloniex::load_poloniex_trades_csv(&source.full_path)
-            }
-            TransactionsSourceType::PoloniexWithdrawalsCsv => {
-                poloniex::load_poloniex_withdrawals_csv(&source.full_path)
-            }
-            TransactionsSourceType::BinanceBnbConvertCsv => {
-                binance::load_binance_bnb_convert_csv(&source.full_path)
-            }
-            TransactionsSourceType::BinanceSpotTradeHistoryCsv => {
-                binance::load_binance_spot_trades_csv(&source.full_path)
-            }
-            TransactionsSourceType::BinanceTransactionHistoryCsv => {
-                binance::load_binance_transaction_records_csv(&source.full_path)
-            }
-            TransactionsSourceType::ReddcoinCoreCsv => {
-                bitcoin_core::load_reddcoin_core_csv(&source.full_path)
-            }
-            TransactionsSourceType::TrezorCsv => {
-                trezor::load_trezor_csv(&source.full_path)
-            }
-        };
-
-        match source_txs {
-            Ok(mut source_txs) => {
-                for tx in source_txs.iter_mut() {
-                    tx.source_index = index;
-                }
-
-                // merge consecutive trades that are really the same order
-                merge_consecutive_trades(&mut source_txs);
-
-                // remove transactions with ignored currencies
-                source_txs.retain(|tx| {
-                    match tx.incoming_outgoing() {
-                        (None, None) => true,
-                        (None, Some(amount)) |
-                        (Some(amount), None) => !ignored_currencies.contains(&amount.currency),
-                        (Some(incoming), Some(outgoing)) => {
-                            // Trades can only be ignored, if both the incoming and outgoing currencies are ignored
-                            !(ignored_currencies.contains(&incoming.currency) && ignored_currencies.contains(&outgoing.currency))
-                        }
-                    }
-                });
-
-                source.transaction_count = source_txs.len();
-                source.balances = calculate_balances(&source_txs);
-                transactions.extend(source_txs);
-            }
-            // todo: provide this feedback to the UI
-            Err(e) => {
+        for source in wallet.sources.iter_mut() {
+            if !source.enabled || !wallet.enabled {
                 source.transaction_count = 0;
-                println!("Error loading source {}: {}", source.full_path.display(), e);
+                continue
+            }
+
+            let source_txs = match source.source_type {
+                TransactionsSourceType::BitcoinAddresses |
+                TransactionsSourceType::BitcoinXpubs |
+                TransactionsSourceType::EthereumAddress |
+                TransactionsSourceType::StellarAccount => {
+                    Ok(source.transactions.clone())
+                }
+                TransactionsSourceType::BitcoinCoreCsv => {
+                    bitcoin_core::load_bitcoin_core_csv(&source.full_path)
+                }
+                TransactionsSourceType::BitcoinDeCsv => {
+                    bitcoin_de::load_bitcoin_de_csv(&source.full_path)
+                }
+                TransactionsSourceType::BitonicCsv => {
+                    bitonic::load_bitonic_csv(&source.full_path)
+                }
+                TransactionsSourceType::BitstampCsv => {
+                    bitstamp::load_bitstamp_csv(&source.full_path)
+                }
+                TransactionsSourceType::BittrexOrderHistoryCsv => {
+                    bittrex::load_bittrex_order_history_csv(&source.full_path)
+                }
+                TransactionsSourceType::BittrexTransactionHistoryCsv => {
+                    bittrex::load_bittrex_transaction_history_csv(&source.full_path)
+                }
+                TransactionsSourceType::ElectrumCsv => {
+                    electrum::load_electrum_csv(&source.full_path)
+                }
+                TransactionsSourceType::Json => {
+                    base::load_transactions_from_json(&source.full_path)
+                }
+                TransactionsSourceType::CtcImportCsv => {
+                    ctc::load_ctc_csv(&source.full_path)
+                }
+                TransactionsSourceType::MyceliumCsv => {
+                    mycelium::load_mycelium_csv(&source.full_path)
+                }
+                TransactionsSourceType::PeercoinCsv => {
+                    bitcoin_core::load_peercoin_csv(&source.full_path)
+                }
+                TransactionsSourceType::PoloniexDepositsCsv => {
+                    poloniex::load_poloniex_deposits_csv(&source.full_path)
+                }
+                TransactionsSourceType::PoloniexTradesCsv |
+                TransactionsSourceType::PoloniexTradesSupportCsv => {
+                    poloniex::load_poloniex_trades_csv(&source.full_path)
+                }
+                TransactionsSourceType::PoloniexWithdrawalsCsv => {
+                    poloniex::load_poloniex_withdrawals_csv(&source.full_path)
+                }
+                TransactionsSourceType::BinanceBnbConvertCsv => {
+                    binance::load_binance_bnb_convert_csv(&source.full_path)
+                }
+                TransactionsSourceType::BinanceSpotTradeHistoryCsv => {
+                    binance::load_binance_spot_trades_csv(&source.full_path)
+                }
+                TransactionsSourceType::BinanceTransactionHistoryCsv => {
+                    binance::load_binance_transaction_records_csv(&source.full_path)
+                }
+                TransactionsSourceType::ReddcoinCoreCsv => {
+                    bitcoin_core::load_reddcoin_core_csv(&source.full_path)
+                }
+                TransactionsSourceType::TrezorCsv => {
+                    trezor::load_trezor_csv(&source.full_path)
+                }
+            };
+
+            match source_txs {
+                Ok(mut source_transactions) => {
+                    // merge consecutive trades that are really the same order
+                    merge_consecutive_trades(&mut source_transactions);
+
+                    // remove transactions with ignored currencies
+                    source_transactions.retain(|tx| {
+                        match tx.incoming_outgoing() {
+                            (None, None) => true,
+                            (None, Some(amount)) |
+                            (Some(amount), None) => !ignored_currencies.contains(&amount.currency),
+                            (Some(incoming), Some(outgoing)) => {
+                                // Trades can only be ignored, if both the incoming and outgoing currencies are ignored
+                                !(ignored_currencies.contains(&incoming.currency) && ignored_currencies.contains(&outgoing.currency))
+                            }
+                        }
+                    });
+
+                    source.transaction_count = source_transactions.len();
+                    wallet_transactions.extend(source_transactions);
+                }
+                // todo: provide this feedback to the UI
+                Err(e) => {
+                    source.transaction_count = 0;
+                    println!("Error loading source {}: {}", source.full_path.display(), e);
+                }
             }
         }
+
+        for tx in wallet_transactions.iter_mut() {
+            tx.wallet_index = wallet_index;
+        }
+
+        wallet.balances = calculate_balances(&wallet_transactions);
+        transactions.extend(wallet_transactions);
     }
 
     // sort transactions
@@ -435,14 +552,14 @@ fn load_transactions(sources: &mut Vec<TransactionSource>, ignored_currencies: &
     Ok(transactions)
 }
 
-fn merge_consecutive_trades(source_txs: &mut Vec<Transaction>) {
+fn merge_consecutive_trades(transactions: &mut Vec<Transaction>) {
     let mut index = 1;
-    while index < source_txs.len() {
-        let (a, b) = source_txs.split_at_mut(index);
+    while index < transactions.len() {
+        let (a, b) = transactions.split_at_mut(index);
         let (a, b) = (a.last_mut().unwrap(), &b[0]);
 
         if a.merge(b).is_ok() {
-            source_txs.remove(index);
+            transactions.remove(index);
         } else {
             index += 1;
         }
@@ -466,10 +583,10 @@ fn get_or_default<'a, K, V>(hash_map: &'a mut HashMap<K, V>, key: &K) -> &'a mut
     }
 }
 
-fn calculate_balances(source_txs: &[Transaction]) -> HashMap<String, Decimal> {
+fn calculate_balances(transactions: &[Transaction]) -> HashMap<String, Decimal> {
     let mut balances = HashMap::new();
 
-    for tx in source_txs {
+    for tx in transactions {
         let (incoming, outgoing) = tx.incoming_outgoing();
         if let Some(incoming) = incoming {
             if !incoming.is_fiat() {
@@ -797,7 +914,7 @@ fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
     let source_types: Vec<SharedString> = TransactionsSourceType::iter().map(|s| SharedString::from(s.to_string())).collect();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
-    facade.set_sources(app.ui_sources.clone().into());
+    facade.set_wallets(app.ui_wallets.clone().into());
     facade.set_transactions(app.ui_transactions.clone().into());
     facade.set_report_years(app.ui_report_years.clone().into());
     facade.set_reports(app.ui_reports.clone().into());
@@ -824,28 +941,39 @@ fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
     Ok(ui)
 }
 
-fn ui_set_sources(app: &App) {
-    let ui_sources: Vec<UiTransactionSource> = app.portfolio.sources.iter().map(|source| {
-        UiTransactionSource {
-            source_type: source.source_type.to_string().into(),
-            name: source.name.clone().into(),
-            path: source.path.clone().into(),
-            enabled: source.enabled,
-            can_sync: match &source.source_type {
-                TransactionsSourceType::BitcoinAddresses |
-                TransactionsSourceType::BitcoinXpubs |
-                TransactionsSourceType::EthereumAddress |
-                TransactionsSourceType::StellarAccount => true,
-                _ => false,
-            },
-            transaction_count: source.transaction_count as i32,
+fn ui_set_wallets(app: &App) {
+    let ui_wallets: Vec<UiWallet> = app.portfolio.wallets.iter().map(|wallet| {
+        let ui_sources: Vec<UiTransactionSource> = wallet.sources.iter().map(|source| {
+            UiTransactionSource {
+                source_type: source.source_type.to_string().into(),
+                name: source.name.clone().into(),
+                path: source.path.clone().into(),
+                enabled: source.enabled,
+                can_sync: match &source.source_type {
+                    TransactionsSourceType::BitcoinAddresses |
+                    TransactionsSourceType::BitcoinXpubs |
+                    TransactionsSourceType::EthereumAddress |
+                    TransactionsSourceType::StellarAccount => true,
+                    _ => false,
+                },
+                transaction_count: source.transaction_count as i32,
+            }
+        }).collect();
+
+        UiWallet {
+            // source_type: source.source_type.to_string().into(),
+            name: wallet.name.clone().into(),
+            enabled: wallet.enabled,
+            transaction_count: wallet.transaction_count() as i32,
+            sources: Rc::new(VecModel::from(ui_sources)).into(),
         }
     }).collect();
-    app.ui_sources.set_vec(ui_sources);
+
+    app.ui_wallets.set_vec(ui_wallets);
 }
 
 fn ui_set_transactions(app: &App) {
-    let sources = &app.portfolio.sources;
+    let wallets = &app.portfolio.wallets;
     let transactions = &app.transactions;
     let filter = &app.transaction_filter;
 
@@ -859,8 +987,8 @@ fn ui_set_transactions(app: &App) {
             continue;
         }
 
-        let source = sources.get(transaction.source_index);
-        let source_name: Option<SharedString> = source.map(|source| source.name.clone().into());
+        let wallet = wallets.get(transaction.wallet_index);
+        let wallet_name: Option<SharedString> = wallet.map(|source| source.name.clone().into());
 
         let mut value = transaction.value.as_ref();
         let mut description = transaction.description.clone();
@@ -868,23 +996,23 @@ fn ui_set_transactions(app: &App) {
         let mut blockchain = transaction.blockchain.as_ref();
 
         let (tx_type, sent, received, from, to) = match &transaction.operation {
-            Operation::Buy(amount) => (UiTransactionType::Buy, None, Some(amount), None, source_name),
-            Operation::Sell(amount) => (UiTransactionType::Sell, Some(amount), None, source_name, None),
+            Operation::Buy(amount) => (UiTransactionType::Buy, None, Some(amount), None, wallet_name),
+            Operation::Sell(amount) => (UiTransactionType::Sell, Some(amount), None, wallet_name, None),
             Operation::Trade { incoming, outgoing } => {
-                (UiTransactionType::Trade, Some(outgoing), Some(incoming), source_name.clone(), source_name)
+                (UiTransactionType::Trade, Some(outgoing), Some(incoming), wallet_name.clone(), wallet_name)
             }
             Operation::FiatDeposit(amount) => {
-                (UiTransactionType::Deposit, None, Some(amount), None, source_name)
+                (UiTransactionType::Deposit, None, Some(amount), None, wallet_name)
             }
             Operation::FiatWithdrawal(amount) => {
-                (UiTransactionType::Withdrawal, Some(amount), None, source_name, None)
+                (UiTransactionType::Withdrawal, Some(amount), None, wallet_name, None)
             }
             Operation::Send(send_amount) => {
                 // matching_tx has to be set at this point, otherwise it should have been a Sell
                 let matching_receive = &transactions[transaction.matching_tx.expect("Send should have matched a Receive transaction")];
                 if let Operation::Receive(receive_amount) = &matching_receive.operation {
-                    let receive_source = sources.get(matching_receive.source_index);
-                    let receive_source_name = receive_source.map(|source| source.name.clone().into());
+                    let receive_wallet = wallets.get(matching_receive.wallet_index);
+                    let receive_wallet_name = receive_wallet.map(|source| source.name.clone().into());
 
                     value = value.or(matching_receive.value.as_ref());
                     tx_hash = tx_hash.or(matching_receive.tx_hash.as_ref());
@@ -896,7 +1024,7 @@ fn ui_set_transactions(app: &App) {
                         (None, None) => None,
                     };
 
-                    (UiTransactionType::Transfer, Some(send_amount), Some(receive_amount), source_name, receive_source_name)
+                    (UiTransactionType::Transfer, Some(send_amount), Some(receive_amount), wallet_name, receive_wallet_name)
                 } else {
                     unreachable!("Send was matched with a non-Receive transaction");
                 }
@@ -906,32 +1034,32 @@ fn ui_set_transactions(app: &App) {
                 continue;   // added as a Transfer when handling the Send
             }
             Operation::Fee(amount) => {
-                (UiTransactionType::Fee, Some(amount), None, source_name, None)
+                (UiTransactionType::Fee, Some(amount), None, wallet_name, None)
             }
             Operation::ChainSplit(amount) => {
-                (UiTransactionType::ChainSplit, None, Some(amount), None, source_name)
+                (UiTransactionType::ChainSplit, None, Some(amount), None, wallet_name)
             }
             Operation::Expense(amount) => {
-                (UiTransactionType::Expense, Some(amount), None, source_name, None)
+                (UiTransactionType::Expense, Some(amount), None, wallet_name, None)
             }
             Operation::Income(amount) => {
-                (UiTransactionType::Income, None, Some(amount), None, source_name)
+                (UiTransactionType::Income, None, Some(amount), None, wallet_name)
             }
             Operation::Airdrop(amount) => {
-                (UiTransactionType::Airdrop, None, Some(amount), None, source_name)
+                (UiTransactionType::Airdrop, None, Some(amount), None, wallet_name)
             }
             Operation::Staking(amount) => {
-                (UiTransactionType::Staking, None, Some(amount), None, source_name)
+                (UiTransactionType::Staking, None, Some(amount), None, wallet_name)
             }
             Operation::Cashback(amount) => {
-                (UiTransactionType::Cashback, None, Some(amount), None, source_name)
+                (UiTransactionType::Cashback, None, Some(amount), None, wallet_name)
             }
             Operation::IncomingGift(amount) |
             Operation::OutgoingGift(amount) => {
-                (UiTransactionType::Gift, None, Some(amount), None, source_name)
+                (UiTransactionType::Gift, None, Some(amount), None, wallet_name)
             }
             Operation::Spam(amount) => {
-                (UiTransactionType::Spam, None, Some(amount), None, source_name)
+                (UiTransactionType::Spam, None, Some(amount), None, wallet_name)
             }
         };
 
@@ -1108,10 +1236,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let currency = currency.as_str();
 
             // collect the balances for the given currency from each source
-            let mut balances: Vec<(String, Decimal)> = app.portfolio.sources.iter().filter_map(|source| {
-                source.balances.get(currency).and_then(|balance|
+            let mut balances: Vec<(String, Decimal)> = app.portfolio.wallets.iter().filter_map(|wallet| {
+                wallet.balances.get(currency).and_then(|balance|
                     if *balance != Decimal::ZERO {
-                        Some((source.name.clone(), balance.normalize()))
+                        Some((wallet.name.clone(), balance.normalize()))
                     } else {
                         None
                     })
@@ -1133,13 +1261,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     {
         let app = app.clone();
 
-        facade.on_balances_for_source(move |source_index| {
+        facade.on_balances_for_wallet(move |index| {
             let app = app.borrow();
-            let mut balances: Vec<UiBalanceForSource> = Vec::new();
-            if let Some(source) = app.portfolio.sources.get(source_index as usize) {
+            let mut balances: Vec<UiBalanceForWallet> = Vec::new();
+            if let Some(source) = app.portfolio.wallets.get(index as usize) {
                 balances.extend(source.balances.iter().filter_map(|(currency, quantity)| {
                     if *quantity != Decimal::ZERO {
-                        Some(UiBalanceForSource {
+                        Some(UiBalanceForWallet {
                             currency_cmc_id: cmc_id(currency),
                             currency: currency.clone().into(),
                             balance: quantity.normalize().to_string().into(),
@@ -1155,22 +1283,113 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     {
+        let app = app.clone();
+
+        facade.on_add_wallet(move |name| {
+            let mut app = app.borrow_mut();
+            let wallet = Wallet::new(name.into());
+            app.portfolio.wallets.push(wallet);
+            ui_set_wallets(&app);
+            app.save_portfolio();
+        });
+    }
+
+    {
+        let app = app.clone();
+        let ui_weak = ui.as_weak();
+
+        facade.on_remove_wallet(move |index| {
+            let mut app = app.borrow_mut();
+            app.portfolio.wallets.remove(index as usize);
+            app.refresh_transactions();
+            app.refresh_ui(&ui_weak.unwrap());
+            app.save_portfolio();
+        });
+    }
+
+    {
+        let app = app.clone();
+        let ui_weak = ui.as_weak();
+
+        facade.on_add_source(move |wallet_index| {
+            let mut app = app.borrow_mut();
+            let mut dialog = rfd::FileDialog::new()
+                .set_title("Add Transaction Source")
+                .add_filter("CSV", &["csv"]);
+
+            if let Some(last_source_directory) = &app.last_source_directory {
+                println!("Using last source directory: {}", last_source_directory.display());
+                dialog = dialog.set_directory(last_source_directory);
+            }
+
+            if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
+                if let Some(file_name) = dialog.pick_file() {
+                    if let Some(source_type) = TransactionsSourceType::detect_from_file(&file_name) {
+                        let source_directory = file_name.parent().unwrap().to_owned();
+                        wallet.sources.push(TransactionSource {
+                            source_type,
+                            path: file_name.to_str().unwrap_or_default().to_owned(),
+                            name: String::default(),
+                            enabled: true,
+                            full_path: file_name,
+                            transaction_count: 0,
+                            transactions: Vec::new(),
+                        });
+                        app.last_source_directory = Some(source_directory);
+
+                        app.refresh_transactions();
+                        app.refresh_ui(&ui_weak.unwrap());
+                        app.save_portfolio();
+                    }
+                }
+            }
+        });
+    }
+
+    {
+        let app = app.clone();
+        let ui_weak = ui.as_weak();
+
+        facade.on_remove_source(move |wallet_index, source_index| {
+            let mut app = app.borrow_mut();
+            if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
+                wallet.sources.remove(source_index as usize);
+                app.refresh_transactions();
+                app.refresh_ui(&ui_weak.unwrap());
+                app.save_portfolio();
+            }
+        });
+    }
+
+    {
         let ui_weak = ui.as_weak();
         let app = app.clone();
-        let portfolio_file = portfolio_file.clone();
 
-        facade.on_set_source_enabled(move |index, enabled| {
+        facade.on_set_wallet_enabled(move |index, enabled| {
             let mut app = app.borrow_mut();
-            if let Some(source) = app.portfolio.sources.get_mut(index as usize) {
-                source.enabled = enabled;
+            if let Some(wallet) = app.portfolio.wallets.get_mut(index as usize) {
+                wallet.enabled = enabled;
 
                 app.refresh_transactions();
                 app.refresh_ui(&ui_weak.unwrap());
+                app.save_portfolio();
+            }
+        });
+    }
 
-                // save the portfolio file
-                match app.save_portfolio() {
-                    Ok(_) => { println!("Saved portfolio to {}", portfolio_file.display()); }
-                    Err(_) => { println!("Error saving portfolio to {}", portfolio_file.display()); }
+    {
+        let ui_weak = ui.as_weak();
+        let app = app.clone();
+
+        facade.on_set_source_enabled(move |wallet_index, source_index, enabled| {
+            let mut app = app.borrow_mut();
+            if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
+                if let Some(source) = wallet.sources.get_mut(source_index as usize) {
+                    source.enabled = enabled;
+
+                    app.refresh_transactions();
+                    app.refresh_ui(&ui_weak.unwrap());
+                    app.save_portfolio();
                 }
             }
         });
@@ -1179,43 +1398,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
     {
         let ui_weak = ui.as_weak();
         let app = app.clone();
-        let portfolio_file = portfolio_file.clone();
 
-        facade.on_sync_source(move |index| {
+        facade.on_sync_source(move |wallet_index, source_index| {
             let mut app = app.borrow_mut();
 
-            if let Some(source) = app.portfolio.sources.get_mut(index as usize) {
-                let esplora_client = esplora::async_esplora_client().unwrap();
-                let tx = match source.source_type {
-                    TransactionsSourceType::BitcoinAddresses => {
-                        futures::executor::block_on(esplora::address_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()
-                    }
-                    TransactionsSourceType::BitcoinXpubs => {
-                        futures::executor::block_on(esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()
-                    }
-                    TransactionsSourceType::EthereumAddress => {
-                        futures::executor::block_on(etherscan::address_transactions(&source.path)).ok()
-                    }
-                    TransactionsSourceType::StellarAccount => {
-                        futures::executor::block_on(horizon::address_transactions(&source.path)).ok()
-                    }
-                    _ => {
-                        println!("Sync not supported for this source type");
-                        None
-                    }
-                };
+            if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
+                if let Some(source) = wallet.sources.get_mut(source_index as usize) {
+                    let esplora_client = esplora::async_esplora_client().unwrap();
+                    let tx = match source.source_type {
+                        TransactionsSourceType::BitcoinAddresses => {
+                            futures::executor::block_on(esplora::address_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()
+                        }
+                        TransactionsSourceType::BitcoinXpubs => {
+                            futures::executor::block_on(esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()
+                        }
+                        TransactionsSourceType::EthereumAddress => {
+                            futures::executor::block_on(etherscan::address_transactions(&source.path)).ok()
+                        }
+                        TransactionsSourceType::StellarAccount => {
+                            futures::executor::block_on(horizon::address_transactions(&source.path)).ok()
+                        }
+                        _ => {
+                            println!("Sync not supported for this source type");
+                            None
+                        }
+                    };
 
-                if let Some(mut tx) = tx {
-                    tx.sort_by(|a, b| a.cmp(&b) );
-                    source.transactions = tx;
+                    if let Some(mut tx) = tx {
+                        tx.sort_by(|a, b| a.cmp(&b) );
+                        source.transactions = tx;
 
-                    app.refresh_transactions();
-                    app.refresh_ui(&ui_weak.unwrap());
-
-                    // save the portfolio file
-                    match app.save_portfolio() {
-                        Ok(_) => { println!("Saved portfolio to {}", portfolio_file.display()); }
-                        Err(_) => { println!("Error saving portfolio to {}", portfolio_file.display()); }
+                        app.refresh_transactions();
+                        app.refresh_ui(&ui_weak.unwrap());
+                        app.save_portfolio();
                     }
                 }
             }
@@ -1331,8 +1546,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mut app = app.borrow_mut();
             let ui = ui_weak.unwrap();
             let facade = ui.global::<Facade>();
-            app.transaction_filter = if facade.get_source_filter() >= 0 {
-                TransactionFilter::SourceIndex(facade.get_source_filter() as usize)
+            app.transaction_filter = if facade.get_wallet_filter() >= 0 {
+                TransactionFilter::WalletIndex(facade.get_wallet_filter() as usize)
             } else if facade.get_currency_filter().len() > 0 {
                 TransactionFilter::Currency(facade.get_currency_filter().into())
             } else {

@@ -25,7 +25,7 @@ component PageButton inherits Rectangle {
     border-radius: self.height / 4;
     border-color: (touch.has-hover || root.active) ? #456 : #3e3e3e;
     border-width: 1px;
-    background: root.active ? #456 : transparent;
+    background: root.active ? #456 : touch.has-hover ? #4564 : transparent;
     height: layout.preferred-height * 1.33;
     width: layout.preferred-width + 20px;
 
@@ -68,12 +68,12 @@ export component AppWindow inherits Window {
                 pressed => { root.active-page = Page.portfolio; }
             }
             PageButton {
-                text: "Sources";
+                text: "Wallets";
                 active: root.active-page == Page.sources;
                 pressed => { root.active-page = Page.sources; }
 
                 Badge {
-                    text: Facade.sources.length;
+                    text: Facade.wallets.length;
                 }
             }
             PageButton {
@@ -107,8 +107,8 @@ export component AppWindow inherits Window {
 
             sources-page := Sources {
                 visible: active-page == Page.sources;
-                source-transactions-clicked(index) => {
-                    Facade.set-source-filter(index);
+                wallet-transactions-clicked(index) => {
+                    Facade.set-wallet-filter(index);
                     root.active-page = Page.transactions;
                 }
             }

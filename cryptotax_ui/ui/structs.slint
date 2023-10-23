@@ -7,6 +7,13 @@ export struct UiTransactionSource {
     transaction_count: int,
 }
 
+export struct UiWallet {
+    name: string,
+    enabled: bool,
+    sources: [UiTransactionSource],
+    transaction_count: int,
+}
+
 export enum UiTransactionType {
     buy,
     sell,
@@ -65,7 +72,7 @@ export struct UiBalanceForCurrency {
     balance: string,
 }
 
-export struct UiBalanceForSource {
+export struct UiBalanceForWallet {
     currency-cmc-id: int,
     currency: string,
     balance: string,

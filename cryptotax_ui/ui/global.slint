@@ -1,17 +1,19 @@
 import {
     UiBalanceForCurrency,
-    UiBalanceForSource,
+    UiBalanceForWallet,
     UiCapitalGain,
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
-    UiTransactionSource
+    UiTransactionSource,
+    UiWallet
 } from "structs.slint";
 import { TestData } from "test-data.slint";
 
 export global Facade {
     // MODELS
 
+    in-out property <[UiWallet]> wallets: TestData.wallets;
     in-out property <[UiTransactionSource]> sources: TestData.sources;
     in-out property <[string]> source-types;
     in-out property <[UiTransaction]> transactions: TestData.transactions;
@@ -19,19 +21,27 @@ export global Facade {
     in-out property <[UiTaxReport]> reports: TestData.reports;
     in-out property <UiPortfolio> portfolio: TestData.portfolio;
 
-    out property <int> source-filter: -1;
+    out property <int> wallet-filter: -1;
     out property <string> currency-filter: "";
 
     // ACTIONS
 
+    callback add-wallet(string);
+    callback remove-wallet(int);
+
+    callback add-source(int);
+    callback remove-source(int,int);
+
     // params: (blockchain, tx_hash)
     callback open-transaction(string, string);
 
-    // params: (source_index, enabled)
-    callback set-source-enabled(int, bool);
+    // params: (wallet_index, enabled)
+    callback set-wallet-enabled(int, bool);
+    // params: (wallet_index, source_index, enabled)
+    callback set-source-enabled(int, int, bool);
 
-    // params: (source_index)
-    callback sync-source(int);
+    // params: (wallet_index, source_index)
+    callback sync-source(int, int);
 
     // params: (report_index)
     callback export-summary(int);
@@ -47,23 +57,23 @@ export global Facade {
     // params: (currency)
     pure callback balances-for-currency(string) -> [UiBalanceForCurrency];
 
-    // params: (source_index)
-    pure callback balances-for-source(int) -> [UiBalanceForSource];
+    // params: (wallet_index)
+    pure callback balances-for-wallet(int) -> [UiBalanceForWallet];
 
     // FUNCTIONS
 
-    function set-source-filter(source-index: int) {
-        if (source-filter != source-index || currency-filter != "") {
-            source-filter = source-index;
+    public function set-wallet-filter(wallet-index: int) {
+        if (wallet-filter != wallet-index || currency-filter != "") {
+            wallet-filter = wallet-index;
             currency-filter = "";
             transaction-filter-changed();
         }
     }
 
-    function set-currency-filter(currency: string) {
-        if (currency-filter != currency || source-filter != -1) {
+    public function set-currency-filter(currency: string) {
+        if (currency-filter != currency || wallet-filter != -1) {
             currency-filter = currency;
-            source-filter = -1;
+            wallet-filter = -1;
             transaction-filter-changed();
         }
     }
