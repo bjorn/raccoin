@@ -17,12 +17,14 @@ export global Facade {
     in-out property <[UiTransactionSource]> sources: TestData.sources;
     in-out property <[string]> source-types;
     in-out property <[UiTransaction]> transactions: TestData.transactions;
+    in-out property <int> transaction-warning-count: 0;
     in-out property <[StandardListViewItem]> report-years: TestData.report-years;
     in-out property <[UiTaxReport]> reports: TestData.reports;
     in-out property <UiPortfolio> portfolio: TestData.portfolio;
 
     out property <int> wallet-filter: -1;
     out property <string> currency-filter: "";
+    out property <bool> warnings-filter: false;
 
     // ACTIONS
 
@@ -79,6 +81,13 @@ export global Facade {
         if (currency-filter != currency || wallet-filter != -1) {
             currency-filter = currency;
             wallet-filter = -1;
+            transaction-filter-changed();
+        }
+    }
+
+    public function set-warnings-filter(enabled: bool) {
+        if (warnings-filter != enabled) {
+            warnings-filter = enabled;
             transaction-filter-changed();
         }
     }

@@ -139,6 +139,7 @@ export component Wallets inherits ScrollView {
                             balances: Facade.balances-for-wallet(wallet-index);
                         }
                         Button {
+                            icon: @image-url("icons/trash-2.svg");
                             text: "Remove Wallet";
                             clicked => { Facade.remove-wallet(wallet-index); }
                         }
@@ -196,12 +197,13 @@ export component Wallets inherits ScrollView {
                                 enabled: false;
                             }
                             Button {
-                                text: "Sync";
+                                icon: @image-url("icons/refresh-cw.svg");
                                 enabled: source.can-sync;
+                                opacity: self.enabled ? 1.0 : 0.3;
                                 clicked => { Facade.sync-source(wallet_index, source_index); }
                             }
                             Button {
-                                text: "Remove";
+                                icon: @image-url("icons/trash-2.svg");
                                 clicked => { Facade.remove-source(wallet_index, source_index); }
                             }
                         }

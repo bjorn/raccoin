@@ -34,7 +34,10 @@ use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, SharedString, ModelRc};
 use strum::{EnumIter, IntoEnumIterator};
 use std::{rc::Rc, path::{Path, PathBuf}, env, collections::HashMap, cmp::{Eq, Ordering}, hash::Hash, default::Default, ffi::OsString, sync::{Arc, Mutex}};
-use std::io::Write;
+
+fn rounded_to_cent(amount: Decimal) -> Decimal {
+    amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
+}
 
 #[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
 enum TransactionsSourceType {
@@ -282,18 +285,15 @@ impl TaxReport {
     }
 }
 
-#[derive(Default)]
 enum TransactionFilter {
-    #[default]
-    None,
     WalletIndex(usize),
     Currency(String),
+    HasGainError,
 }
 
 impl TransactionFilter {
     fn matches(&self, tx: &Transaction) -> bool {
         match self {
-            TransactionFilter::None => true,
             TransactionFilter::WalletIndex(index) => tx.wallet_index == *index,
             TransactionFilter::Currency(currency) => match tx.incoming_outgoing() {
                 (None, None) => false,
@@ -302,6 +302,9 @@ impl TransactionFilter {
                 (Some(incoming), Some(outgoing)) => {
                     &incoming.currency == currency || &outgoing.currency == currency
                 }
+            }
+            TransactionFilter::HasGainError => {
+                tx.gain.as_ref().is_some_and(|gain| gain.is_err())
             }
         }
     }
@@ -315,7 +318,7 @@ struct App {
     reports: Vec<TaxReport>,
     price_history: PriceHistory,
 
-    transaction_filter: TransactionFilter,
+    transaction_filters: Vec<TransactionFilter>,
 
     ui_weak: slint::Weak<AppWindow>,
 }
@@ -340,7 +343,7 @@ impl App {
             reports: Vec::new(),
             price_history,
 
-            transaction_filter: TransactionFilter::None,
+            transaction_filters: Vec::default(),
 
             ui_weak: slint::Weak::default(),
         }
@@ -463,17 +466,17 @@ pub(crate) fn save_summary_to_csv(report: &TaxReport, output_path: &Path) -> Res
     wtr.write_record::<&[_; 0], &&str>(&[])?;   // empty line (actually becomes line with "")
     wtr.write_record(&["", "Short Term", "Long Term", "Total"])?;
     wtr.write_record(&["Capital Gains",
-        report.short_term_capital_gains.to_string().as_str(),
-        report.long_term_capital_gains.to_string().as_str(),
-        report.total_capital_gains().to_string().as_str()])?;
+        rounded_to_cent(report.short_term_capital_gains).to_string().as_str(),
+        rounded_to_cent(report.long_term_capital_gains).to_string().as_str(),
+        rounded_to_cent(report.total_capital_gains()).to_string().as_str()])?;
     wtr.write_record(&["Capital Losses",
-        report.short_term_capital_losses.to_string().as_str(),
-        report.long_term_capital_losses.to_string().as_str(),
-        report.total_capital_losses().to_string().as_str()])?;
+        rounded_to_cent(report.short_term_capital_losses).to_string().as_str(),
+        rounded_to_cent(report.long_term_capital_losses).to_string().as_str(),
+        rounded_to_cent(report.total_capital_losses()).to_string().as_str()])?;
     wtr.write_record(&["Net Capital Gains",
-        report.short_term_net_capital_gains().to_string().as_str(),
-        report.long_term_net_capital_gains().to_string().as_str(),
-        report.total_net_capital_gains().to_string().as_str()])?;
+        rounded_to_cent(report.short_term_net_capital_gains()).to_string().as_str(),
+        rounded_to_cent(report.long_term_net_capital_gains()).to_string().as_str(),
+        rounded_to_cent(report.total_net_capital_gains()).to_string().as_str()])?;
     wtr.write_record::<&[_; 0], &&str>(&[])?;   // empty line (actually becomes line with "")
 
     #[derive(Serialize)]
@@ -505,15 +508,15 @@ pub(crate) fn save_summary_to_csv(report: &TaxReport, output_path: &Path) -> Res
     for currency in &report.currencies {
         wtr.serialize(CsvSummary {
             currency: &currency.currency,
-            proceeds: currency.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
-            cost: currency.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
-            fees: currency.fees.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
-            capital_gains: currency.capital_profit_loss.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
-            other_income: currency.income.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
-            total_gains: currency.total_profit_loss.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
+            proceeds: rounded_to_cent(currency.proceeds),
+            cost: rounded_to_cent(currency.cost),
+            fees: rounded_to_cent(currency.fees),
+            capital_gains: rounded_to_cent(currency.capital_profit_loss),
+            other_income: rounded_to_cent(currency.income),
+            total_gains: rounded_to_cent(currency.total_profit_loss),
             opening_balance: currency.balance_start,
             quantity_traded: currency.quantity_disposed,
-            quantity_income: currency.income,
+            quantity_income: currency.quantity_income,
             closing_balance: currency.balance_end,
         })?;
     }
@@ -1104,14 +1107,19 @@ fn ui_set_wallets(app: &App) {
 fn ui_set_transactions(app: &App) {
     let wallets = &app.portfolio.wallets;
     let transactions = &app.transactions;
-    let filter = &app.transaction_filter;
+    let filters = &app.transaction_filters;
+    let mut transaction_warning_count = 0;
 
     let mut ui_transactions = Vec::new();
 
     for transaction in transactions {
-        if !filter.matches(transaction) &&
+        let filters_match = |transaction: &Transaction| {
+            filters.iter().all(|filter| filter.matches(transaction))
+        };
+
+        if !filters_match(transaction) &&
             (!transaction.operation.is_send() ||
-             !transaction.matching_tx.map(|index| filter.matches(&transactions[index])).unwrap_or(false))
+             !transaction.matching_tx.map(|index| filters_match(&transactions[index])).unwrap_or(false))
         {
             continue;
         }
@@ -1198,6 +1206,10 @@ fn ui_set_transactions(app: &App) {
             None => (Decimal::ZERO, None),
         };
 
+        if gain_error.is_some() {
+            transaction_warning_count += 1;
+        }
+
         ui_transactions.push(UiTransaction {
             from: from.unwrap_or_default(),
             to: to.unwrap_or_default(),
@@ -1210,7 +1222,7 @@ fn ui_set_transactions(app: &App) {
             sent: sent.map_or_else(String::default, Amount::to_string).into(),
             fee: transaction.fee.as_ref().map_or_else(String::default, Amount::to_string).into(),
             value: value.map_or_else(String::default, Amount::to_string).into(),
-            gain: gain.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+            gain: rounded_to_cent(gain).try_into().unwrap(),
             gain_error: gain_error.unwrap_or_default().into(),
             description: description.unwrap_or_default().into(),
             tx_hash: tx_hash.map(|s| s.to_owned()).unwrap_or_default().into(),
@@ -1221,6 +1233,7 @@ fn ui_set_transactions(app: &App) {
     let transactions_model_rc = app.transactions_model();
     let transactions_model = slint::Model::as_any(&transactions_model_rc).downcast_ref::<VecModel<UiTransaction>>().unwrap();
     transactions_model.set_vec(ui_transactions);
+    app.ui().global::<Facade>().set_transaction_warning_count(transaction_warning_count);
 }
 
 fn ui_set_reports(app: &App) {
@@ -1248,9 +1261,9 @@ fn ui_set_reports(app: &App) {
                 sold_time: sold.time().to_string().into(),
                 amount: gain.amount.to_string().into(),
                 // todo: something else than unwrap()?
-                cost: gain.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
-                proceeds: gain.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
-                gain_or_loss: gain.profit().round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+                cost: rounded_to_cent(gain.cost).try_into().unwrap(),
+                proceeds: rounded_to_cent(gain.proceeds).try_into().unwrap(),
+                gain_or_loss: rounded_to_cent(gain.profit()).try_into().unwrap(),
                 long_term: gain.long_term(),
             }
         }).collect();
@@ -1319,11 +1332,11 @@ fn ui_set_portfolio(app: &App) {
                 currency_cmc_id: cmc_id(&currency.currency),
                 currency: currency.currency.clone().into(),
                 quantity: currency.balance_end.normalize().to_string().into(),
-                cost: currency.cost_end.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
-                value: current_value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+                cost: rounded_to_cent(currency.cost_end).try_into().unwrap(),
+                value: rounded_to_cent(current_value).try_into().unwrap(),
                 roi: roi.map(|roi| format!("{:.2}%", roi)).unwrap_or_else(|| { "-".to_owned() }).into(),
                 is_profit: roi.map_or(false, |roi| roi > Decimal::ZERO),
-                unrealized_gain: unrealized_gain.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+                unrealized_gain: rounded_to_cent(unrealized_gain).try_into().unwrap(),
                 percentage_of_portfolio: 0.0,
             })
         }).collect();
@@ -1338,9 +1351,9 @@ fn ui_set_portfolio(app: &App) {
 
         facade.set_portfolio(UiPortfolio {
             file_name: app.state.portfolio_file.as_deref().map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
-            balance: balance.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
-            cost_base: cost_base.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
-            unrealized_gains: (balance - cost_base).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
+            balance: rounded_to_cent(balance).try_into().unwrap(),
+            cost_base: rounded_to_cent(cost_base).try_into().unwrap(),
+            unrealized_gains: rounded_to_cent(balance - cost_base).try_into().unwrap(),
             holdings: Rc::new(VecModel::from(ui_holdings)).into(),
         });
     }
@@ -1364,10 +1377,10 @@ async fn main() -> Result<()> {
     let app = Arc::new(Mutex::new(app));
     let facade = ui.global::<Facade>();
 
-    {
+    facade.on_balances_for_currency({
         let app = app.clone();
 
-        facade.on_balances_for_currency(move |currency| {
+        move |currency| {
             let app = app.lock().unwrap();
             let currency = currency.as_str();
 
@@ -1391,13 +1404,13 @@ async fn main() -> Result<()> {
                 }
             }).collect();
             Rc::new(VecModel::from(balances)).into()
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_balances_for_wallet({
         let app = app.clone();
 
-        facade.on_balances_for_wallet(move |index| {
+        move |index| {
             let app = app.lock().unwrap();
             let mut balances: Vec<UiBalanceForWallet> = Vec::new();
             if let Some(source) = app.portfolio.wallets.get(index as usize) {
@@ -1415,13 +1428,13 @@ async fn main() -> Result<()> {
             }
             // todo: would be nice to sort by fiat value
             Rc::new(VecModel::from(balances)).into()
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_new_portfolio({
         let app = app.clone();
 
-        facade.on_new_portfolio(move || {
+        move || {
             let dialog = rfd::FileDialog::new()
                 .set_title("New Portfolio")
                 .set_file_name("Portfolio.json")
@@ -1437,13 +1450,13 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_load_portfolio({
         let app = app.clone();
 
-        facade.on_load_portfolio(move || {
+        move || {
             let dialog = rfd::FileDialog::new()
                 .set_title("Load Portfolio")
                 .add_filter("Portfolio (JSON)", &["json"]);
@@ -1459,47 +1472,47 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_close_portfolio({
         let app = app.clone();
 
-        facade.on_close_portfolio(move || {
+        move || {
             let mut app = app.lock().unwrap();
             app.close_portfolio();
             app.refresh_ui();
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_add_wallet({
         let app = app.clone();
 
-        facade.on_add_wallet(move |name| {
+        move |name| {
             let mut app = app.lock().unwrap();
             let wallet = Wallet::new(name.into());
             app.portfolio.wallets.push(wallet);
             ui_set_wallets(&app);
             app.save_portfolio(None);
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_remove_wallet({
         let app = app.clone();
 
-        facade.on_remove_wallet(move |index| {
+        move |index| {
             let mut app = app.lock().unwrap();
             app.portfolio.wallets.remove(index as usize);
             app.refresh_transactions();
             app.refresh_ui();
             app.save_portfolio(None);
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_add_source({
         let app = app.clone();
 
-        facade.on_add_source(move |wallet_index| {
+        move |wallet_index| {
             let mut app = app.lock().unwrap();
             let mut dialog = rfd::FileDialog::new()
                 .set_title("Add Transaction Source")
@@ -1531,13 +1544,13 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_remove_source({
         let app = app.clone();
 
-        facade.on_remove_source(move |wallet_index, source_index| {
+        move |wallet_index, source_index| {
             let mut app = app.lock().unwrap();
             if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
                 wallet.sources.remove(source_index as usize);
@@ -1545,13 +1558,13 @@ async fn main() -> Result<()> {
                 app.refresh_ui();
                 app.save_portfolio(None);
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_set_wallet_enabled({
         let app = app.clone();
 
-        facade.on_set_wallet_enabled(move |index, enabled| {
+        move |index, enabled| {
             let mut app = app.lock().unwrap();
             if let Some(wallet) = app.portfolio.wallets.get_mut(index as usize) {
                 wallet.enabled = enabled;
@@ -1560,13 +1573,13 @@ async fn main() -> Result<()> {
                 app.refresh_ui();
                 app.save_portfolio(None);
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_set_source_enabled({
         let app = app.clone();
 
-        facade.on_set_source_enabled(move |wallet_index, source_index, enabled| {
+        move |wallet_index, source_index, enabled| {
             let mut app = app.lock().unwrap();
             if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
                 if let Some(source) = wallet.sources.get_mut(source_index as usize) {
@@ -1577,13 +1590,13 @@ async fn main() -> Result<()> {
                     app.save_portfolio(None);
                 }
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_sync_source({
         let app = app.clone();
 
-        facade.on_sync_source(move |wallet_index, source_index| {
+        move |wallet_index, source_index| {
             let app_for_future = app.clone();
             let mut app = app.lock().unwrap();
             let source = app.portfolio.wallets.get_mut(wallet_index as usize)
@@ -1634,8 +1647,8 @@ async fn main() -> Result<()> {
 
                 anyhow::Ok(())
             });
-        });
-    }
+        }
+    });
 
     fn save_csv_file(title: &str, starting_file_name: &str) -> Option<PathBuf> {
         let dialog = rfd::FileDialog::new()
@@ -1645,10 +1658,10 @@ async fn main() -> Result<()> {
         dialog.save_file()
     }
 
-    {
+    facade.on_export_summary({
         let app = app.clone();
 
-        facade.on_export_summary(move |index| {
+        move |index| {
             let app = app.lock().unwrap();
             let report = app.reports.get(index as usize).expect("report index should be valid");
             let file_name = format!("report_summary_{}.csv", report.year);
@@ -1667,13 +1680,13 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_export_capital_gains({
         let app = app.clone();
 
-        facade.on_export_capital_gains(move |index| {
+        move |index| {
             let app = app.lock().unwrap();
             let report = app.reports.get(index as usize).expect("report index should be valid");
             let file_name = format!("capital_gains_{}.csv", report.year);
@@ -1692,13 +1705,13 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_export_all({
         let app = app.clone();
 
-        facade.on_export_all(move || {
+        move || {
             let mut app = app.lock().unwrap();
             let mut dialog = rfd::FileDialog::new()
                 .set_title("Target Directory");
@@ -1723,13 +1736,13 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_export_transactions_csv({
         let app = app.clone();
 
-        facade.on_export_transactions_csv(move || {
+        move || {
             match save_csv_file("Export Transactions (CSV)", "transactions.csv") {
                 Some(path) => {
                     let app = app.lock().unwrap();
@@ -1745,13 +1758,13 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_export_transactions_json({
         let app = app.clone();
 
-        facade.on_export_transactions_json(move || {
+        move || {
             let dialog = rfd::FileDialog::new()
                 .set_title("Export Transactions (JSON)")
                 .set_file_name("transactions.json")
@@ -1772,27 +1785,34 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
-        });
-    }
+        }
+    });
 
-    {
+    facade.on_transaction_filter_changed({
         let app = app.clone();
 
-        facade.on_transaction_filter_changed(move || {
+        move || {
             let mut app = app.lock().unwrap();
             let ui = app.ui();
             let facade = ui.global::<Facade>();
-            app.transaction_filter = if facade.get_wallet_filter() >= 0 {
-                TransactionFilter::WalletIndex(facade.get_wallet_filter() as usize)
-            } else if !facade.get_currency_filter().is_empty() {
-                TransactionFilter::Currency(facade.get_currency_filter().into())
-            } else {
-                TransactionFilter::None
-            };
+
+            app.transaction_filters.clear();
+
+            if facade.get_wallet_filter() >= 0 {
+                app.transaction_filters.push(TransactionFilter::WalletIndex(facade.get_wallet_filter() as usize));
+            }
+
+            if !facade.get_currency_filter().is_empty() {
+                app.transaction_filters.push(TransactionFilter::Currency(facade.get_currency_filter().into()));
+            }
+
+            if facade.get_warnings_filter() {
+                app.transaction_filters.push(TransactionFilter::HasGainError);
+            }
 
             ui_set_transactions(&app);
-        });
-    }
+        }
+    });
 
     ui.run()?;
 

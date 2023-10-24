@@ -201,8 +201,15 @@ export component Transactions inherits VerticalLayout {
 
     spacing: 2px;
 
-
     HorizontalBox {
+        Button {
+            icon: @image-url("icons/alert-triangle.svg");
+            text: Facade.transaction-warning-count;
+            enabled: Facade.transaction-warning-count > 0;
+            opacity: self.enabled ? 1.0 : 0.3;
+            checkable: true;
+            clicked => { Facade.set-warnings-filter(self.checked); }
+        }
         if (Facade.wallet-filter != -1): HorizontalBox {
             padding: 0;
             Text {
