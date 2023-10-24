@@ -51,6 +51,10 @@ export component Portfolio inherits Rectangle {
                     text: "Close";
                     clicked => { Facade.close-portfolio(); }
                 }
+                Button {
+                    text: "Update Price History";
+                    clicked => { Facade.update-price-history(); }
+                }
                 height: self.preferred-height;
                 width: self.preferred-width;
             }
