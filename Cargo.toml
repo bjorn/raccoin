@@ -1,5 +1,5 @@
 [package]
-name = "cryptotax"
+name = "raccoin"
 version = "0.1.0"
 authors = ["Thorbjørn Lindeijer <bjorn@lindeijer.nl>"]
 edition = "2021"
@@ -11,7 +11,7 @@ anyhow = "1.0.75"
 bitcoin = "0.30.1"
 chrono = { version = "0.4.31", features = ["serde"] }
 chrono-tz = "0.8"
-cryptotax_ui = { path = "cryptotax_ui" }
+raccoin_ui = { path = "raccoin_ui" }
 csv = "1.2"
 esplora-client = { version = "0.6", default-features = false, features = ["async"] }
 ethers-core = "2.0.10"

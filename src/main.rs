@@ -21,7 +21,7 @@ mod trezor;
 use base::{Operation, Amount, Transaction, cmc_id, PriceHistory};
 use chrono_tz::Europe;
 use chrono::{Duration, Datelike, Utc};
-use cryptotax_ui::*;
+use raccoin_ui::*;
 use fifo::{FIFO, CapitalGain};
 use rust_decimal_macros::dec;
 use rust_decimal::{Decimal, RoundingStrategy};

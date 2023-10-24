@@ -1390,44 +1390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cryptotax"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitcoin",
- "chrono",
- "chrono-tz",
- "cryptotax_ui",
- "csv",
- "esplora-client",
- "ethers-core",
- "ethers-etherscan",
- "futures",
- "open",
- "pathdiff",
- "reqwest",
- "rfd",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "slice-group-by",
- "slint",
- "stellar-base",
- "stellar-horizon",
- "strum",
- "tokio",
-]
-
-[[package]]
-name = "cryptotax_ui"
-version = "0.1.0"
-dependencies = [
- "slint",
- "slint-build",
-]
-
-[[package]]
 name = "css-color-parser2"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4402,6 +4364,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5267fca4496028628a95160fc423a33e8b2e6af8a5302579e322e4b520293cae"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "raccoin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitcoin",
+ "chrono",
+ "chrono-tz",
+ "csv",
+ "esplora-client",
+ "ethers-core",
+ "ethers-etherscan",
+ "futures",
+ "open",
+ "pathdiff",
+ "raccoin_ui",
+ "reqwest",
+ "rfd",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "slice-group-by",
+ "slint",
+ "stellar-base",
+ "stellar-horizon",
+ "strum",
+ "tokio",
+]
+
+[[package]]
+name = "raccoin_ui"
+version = "0.1.0"
+dependencies = [
+ "slint",
+ "slint-build",
 ]
 
 [[package]]

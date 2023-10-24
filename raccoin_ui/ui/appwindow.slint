@@ -117,9 +117,17 @@ component MainContent inherits VerticalLayout {
 
 component WelcomePage inherits Rectangle {
     VerticalBox {
-        width: self.preferred-width;
-        height: self.preferred-height;
+        width: Math.min(self.preferred-width, root.width);
+        height: Math.min(self.preferred-height, root.height);
 
+        padding-top: 30px;
+        padding-bottom: 30px;
+
+        Image {
+            source: @image-url("icons/app-icon.svg");
+            preferred-width: 128px;
+            preferred-height: 128px;
+        }
         Text { text: "Raccoin"; horizontal-alignment: center; font-size: 50px; }
         Text { text: "Portfolio and Tax Reports"; horizontal-alignment: center; color: darkgray; }
 
@@ -140,6 +148,7 @@ component WelcomePage inherits Rectangle {
 
 export component AppWindow inherits Window {
     title: "Raccoin";
+    icon: @image-url("icons/app-icon-64.png");
 
     min-width: 512px;
     min-height: 320px;
