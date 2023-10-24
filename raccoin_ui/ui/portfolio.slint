@@ -54,6 +54,10 @@ export component Portfolio inherits Rectangle {
                         text: "Close";
                         clicked => { Facade.close-portfolio(); }
                     }
+                    Button {
+                        text: "Update Price History";
+                        clicked => { Facade.update-price-history(); }
+                    }
                 }
                 CheckBox {
                     text: "Per-wallet cost basis tracking";

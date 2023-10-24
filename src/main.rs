@@ -29,7 +29,7 @@ mod wallet_of_satoshi;
 
 use anyhow::{anyhow, Context, Result};
 use base::{cmc_id, Amount, Operation, PriceHistory, Transaction};
-use chrono::{Datelike, Duration, Local, TimeZone, Utc};
+use chrono::{Datelike, Duration, Local, NaiveDateTime, TimeZone, Utc};
 use directories::ProjectDirs;
 use fifo::{CapitalGain, CostBasisTracking, FIFO};
 use raccoin_ui::*;
@@ -213,6 +213,8 @@ struct Portfolio {
     #[serde(default)]
     wallets: Vec<Wallet>,
     #[serde(default)]
+    price_history: PriceHistory,
+    #[serde(default)]
     ignored_currencies: Vec<String>,
     #[serde(default)]
     merge_consecutive_trades: bool,
@@ -326,7 +328,6 @@ struct App {
     portfolio: Portfolio,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
-    price_history: PriceHistory,
 
     transaction_filters: Vec<TransactionFilter>,
 
@@ -339,8 +340,6 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let mut price_history = PriceHistory::new();
-
         let project_dirs = ProjectDirs::from("org", "raccoin",  "Raccoin");
         let state = project_dirs.as_ref().and_then(|dirs| {
             let config_dir = dirs.config_local_dir();
@@ -355,7 +354,6 @@ impl App {
             portfolio: Portfolio::default(),
             transactions: Vec::new(),
             reports: Vec::new(),
-            price_history,
 
             transaction_filters: Vec::default(),
 
@@ -426,7 +424,7 @@ impl App {
     }
 
     fn refresh_transactions(&mut self) {
-        self.transactions = load_transactions(&mut self.portfolio, &self.price_history).unwrap_or_default();
+        self.transactions = load_transactions(&mut self.portfolio).unwrap_or_default();
         self.reports = calculate_tax_reports(&mut self.transactions, self.portfolio.cost_basis_tracking);
     }
 
@@ -558,6 +556,7 @@ pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
             cost: rounded_to_cent(report.short_term_cost),
             gains: rounded_to_cent(report.short_term_proceeds - report.short_term_cost),
         })?;
+
         let year = if report.year == 0 { "all_time".to_owned() } else { report.year.to_string() };
         let path = output_path.join(format!("{}_report_summary.csv", year));
         save_summary_to_csv(report, &path)?;
@@ -568,7 +567,7 @@ pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) -> Result<Vec<Transaction>> {
+fn load_transactions(portfolio: &mut Portfolio) -> Result<Vec<Transaction>> {
     let (wallets, ignored_currencies) = (&mut portfolio.wallets, &portfolio.ignored_currencies);
     let mut transactions = Vec::new();
 
@@ -676,7 +675,7 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
     }
 
     match_send_receive(&mut transactions);
-    estimate_transaction_values(&mut transactions, price_history);
+    estimate_transaction_values(&mut transactions, &portfolio.price_history);
 
     Ok(transactions)
 }
@@ -955,6 +954,58 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
 
     // Estimate the value for all transactions
     transactions.iter_mut().for_each(estimate_transaction_value);
+}
+
+async fn download_price_history(transactions: Vec<Transaction>) -> Result<PriceHistory> {
+    let mut price_history = PriceHistory::empty();
+
+    async fn ensure_price_point(price_history: &mut PriceHistory, timestamp: NaiveDateTime, currency: &str) {
+        // If there is already a price point within 1 hour, we don't need to download new price points
+        if let Some((_, accuracy)) = price_history.estimate_price_with_accuracy(timestamp, currency) {
+            if accuracy <= Duration::hours(1) {
+                return;
+            }
+        }
+
+        let price_points = coinmarketcap::download_price_points(timestamp, currency).await;
+        match price_points {
+            Ok(price_points) => {
+                price_history.add_price_points(currency.into(), price_points);
+            }
+            Err(e) => {
+                println!("warning: failed to download price points for {:}: {:?}", currency, e);
+            }
+        }
+    }
+
+    for tx in transactions.iter().rev() {
+        match tx.incoming_outgoing() {
+            (Some(incoming), Some(outgoing)) => {
+                if !incoming.is_fiat() {
+                    ensure_price_point(&mut price_history, tx.timestamp, &incoming.currency).await;
+                }
+                if !outgoing.is_fiat() {
+                    ensure_price_point(&mut price_history, tx.timestamp, &outgoing.currency).await;
+                }
+            }
+            (Some(amount), None) |
+            (None, Some(amount)) => {
+                if !amount.is_fiat() {
+                    ensure_price_point(&mut price_history, tx.timestamp, &amount.currency).await;
+                }
+            }
+            (None, None) => {}
+        };
+
+        match &tx.fee {
+            Some(amount) => {
+                ensure_price_point(&mut price_history, tx.timestamp, &amount.currency).await;
+            }
+            None => {}
+        };
+    }
+
+    Ok(price_history)
 }
 
 fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasisTracking) -> Vec<TaxReport> {
@@ -1462,7 +1513,7 @@ fn ui_set_portfolio(app: &App) {
                 return None
             }
 
-            let current_price = app.price_history.estimate_price(now, &currency.currency);
+            let current_price = app.portfolio.price_history.estimate_price(now, &currency.currency);
             let current_value = current_price.map(|price| currency.balance_end * price).unwrap_or(Decimal::ZERO);
             let unrealized_gain = current_value - currency.cost_end;
             let roi = if currency.cost_end > Decimal::ZERO { Some(unrealized_gain / currency.cost_end * Decimal::ONE_HUNDRED) } else { None };
@@ -1508,6 +1559,9 @@ fn ui_set_portfolio(app: &App) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // coinmarketcap::download_price_history("ETH").await?;
+    // coinmarketcap::download_price_history("BTC").await?;
+
     let mut app = App::new();
 
     // Load portfolio from command-line or from previous application state
@@ -1899,6 +1953,34 @@ async fn main() -> Result<()> {
                         // todo: show error in UI
                         println!("Error syncing transactions: {}", e);
                     }
+                }
+            }).unwrap();
+        }
+    });
+
+    facade.on_update_price_history({
+        let app = app.clone();
+
+        move || {
+            let app = app.clone();
+
+            slint::spawn_local(async move {
+                let transactions = app.borrow().transactions.clone();
+                let price_history = tokio::task::spawn(download_price_history(transactions)).await.unwrap();
+
+                let mut app = app.borrow_mut();
+
+                match price_history {
+                    Ok(price_history) => {
+                        app.portfolio.price_history = price_history;
+                        app.refresh_transactions();
+                        app.refresh_ui();
+                        app.save_portfolio(None);
+                    }
+                    Err(e) => {
+                        // todo: show error in UI
+                        println!("Error updating price history: {}", e);
+                    },
                 }
             }).unwrap();
         }

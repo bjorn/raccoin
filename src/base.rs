@@ -527,12 +527,25 @@ static JSON: TransactionSource = TransactionSource {
     load_async: None,
 };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct PricePoint {
     pub timestamp: NaiveDateTime,
     pub price: Decimal,
 }
 
+impl PartialOrd for PricePoint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PricePoint {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.timestamp.cmp(&other.timestamp)
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub(crate) struct PriceHistory {
     prices: HashMap<String, Vec<PricePoint>>,
 }
@@ -548,8 +561,21 @@ impl PriceHistory {
         Self { prices }
     }
 
-    pub(crate) fn insert_price_points(&mut self, currency: String, price_points: Vec<PricePoint>) {
+    pub(crate) fn empty() -> Self {
+        Self {
+            prices: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn set_price_points(&mut self, currency: String, price_points: Vec<PricePoint>) {
         self.prices.insert(currency, price_points);
+    }
+
+    pub(crate) fn add_price_points(&mut self, currency: String, price_points: Vec<PricePoint>) {
+        let points = self.prices.entry(currency).or_default();
+        for price_point in price_points {
+            points.insert(points.partition_point(|&p| p < price_point), price_point);
+        }
     }
 
     // todo: would be nice to expose the accuracy in the UI
@@ -559,6 +585,17 @@ impl PriceHistory {
             _ => {
                 self.prices.get(currency).and_then(|price_points| {
                     estimate_price(timestamp, price_points).map(|(price, _)| price)
+                })
+            }
+        }
+    }
+
+    pub(crate) fn estimate_price_with_accuracy(&self, timestamp: NaiveDateTime, currency: &str) -> Option<(Decimal, Duration)> {
+        match currency {
+            "EUR" => Some((Decimal::ONE, Duration::zero())),
+            _ => {
+                self.prices.get(currency).and_then(|price_points| {
+                    estimate_price(timestamp, price_points)
                 })
             }
         }
