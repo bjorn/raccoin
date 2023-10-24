@@ -1,0 +1,7 @@
+Type,Datetime,Account,Amount,Value,Rate,Fee,Sub Type
+Deposit,"Jan. 27, 2017, 03:28 PM",Main Account,1000.00 EUR,,,,
+Market,"Jan. 27, 2017, 08:32 PM",Main Account,1.16414435 BTC,1000.00 EUR,859 EUR,,Buy
+Withdrawal,"Jan. 29, 2017, 07:56 PM",Main Account,1.16414435 BTC,,,0.00000000 BTC,
+Deposit,"Jun. 08, 2017, 07:12 PM",Main Account,0.50000000 BTC,,,,
+Market,"Jun. 08, 2017, 07:12 PM",Main Account,0.50000000 BTC,1229.00 EUR,2458 EUR,2.52000 EUR,Sell
+Withdrawal,"Jun. 09, 2017, 10:56 AM",Main Account,1225.58 EUR,,,0.90 EUR,

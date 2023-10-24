@@ -1,0 +1,38 @@
+{
+  "wallets": [
+    {
+      "name": "bitcoin.de",
+      "enabled": true,
+      "sources": [
+        {
+          "source_type": "BitcoinDeCsv",
+          "path": "bitcoin_de_btc_account_statement.csv",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "name": "Bitcoin Core",
+      "enabled": true,
+      "sources": [
+        {
+          "source_type": "BitcoinCoreCsv",
+          "path": "bitcoin_core_transactions.csv",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "name": "Bitstamp",
+      "enabled": true,
+      "sources": [
+        {
+          "source_type": "BitstampCsv",
+          "path": "bitstamp_TransactionsAll.csv",
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "ignored_currencies": []
+}
