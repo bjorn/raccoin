@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, SharedString};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, process::exit, collections::HashMap, cmp::Eq, hash::Hash, default::Default};
+use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default};
 
 #[derive(EnumIter, Serialize, Deserialize)]
 enum TransactionsSourceType {
@@ -197,7 +197,7 @@ impl Wallet {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 struct Portfolio {
     #[serde(default)]
     wallets: Vec<Wallet>,
@@ -272,7 +272,7 @@ impl TransactionFilter {
 }
 
 struct App {
-    portfolio_file: PathBuf,
+    portfolio_file: Option<PathBuf>,
     last_source_directory: Option<PathBuf>,
     portfolio: Portfolio,
     transactions: Vec<Transaction>,
@@ -292,9 +292,9 @@ impl App {
         let mut price_history = PriceHistory::new();
 
         Self {
-            portfolio_file: PathBuf::new(),
+            portfolio_file: None,
             last_source_directory: None,
-            portfolio: Portfolio { wallets: Vec::new(), ignored_currencies: Vec::new() },
+            portfolio: Portfolio::default(),
             transactions: Vec::new(),
             reports: Vec::new(),
             price_history,
@@ -309,11 +309,10 @@ impl App {
     }
 
     fn load_portfolio(&mut self, file_path: &Path) -> Result<(), Box<dyn Error>> {
-        self.portfolio_file = file_path.into();
-        let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
         // todo: report portfolio loading error in UI
-        self.portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
-        self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
+        let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
+        let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
+        portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
             match source.source_type {
                 TransactionsSourceType::BitcoinAddresses |
                 TransactionsSourceType::BitcoinXpubs |
@@ -325,35 +324,47 @@ impl App {
             }
         }));
 
+        self.portfolio_file = Some(file_path.into());
+        self.portfolio = portfolio;
+
         self.refresh_transactions();
         Ok(())
     }
 
-    fn save_portfolio(&mut self) {
+    fn save_portfolio(&mut self, portfolio_file: Option<PathBuf>) {
         fn internal_save(portfolio: &Portfolio, portfolio_file: &Path) -> Result<(), Box<dyn Error>> {
             let json = serde_json::to_string_pretty(&portfolio)?;
             std::fs::write(&portfolio_file, json)?;
             Ok(())
         }
 
-        let portfolio_path = self.portfolio_file.parent().unwrap_or(Path::new(""));
-        self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
-            match source.source_type {
-                TransactionsSourceType::BitcoinAddresses |
-                TransactionsSourceType::BitcoinXpubs |
-                TransactionsSourceType::EthereumAddress |
-                TransactionsSourceType::StellarAccount => {}
-                _ => {
-                    if let Some(relative_path) = pathdiff::diff_paths(&source.full_path, portfolio_path) {
-                        source.path = relative_path.to_str().unwrap_or_default().to_owned();
+        if let Some(path) = portfolio_file.as_ref().or(self.portfolio_file.as_ref()) {
+            let portfolio_path = path.parent().unwrap_or(Path::new(""));
+            self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
+                match source.source_type {
+                    TransactionsSourceType::BitcoinAddresses |
+                    TransactionsSourceType::BitcoinXpubs |
+                    TransactionsSourceType::EthereumAddress |
+                    TransactionsSourceType::StellarAccount => {}
+                    _ => {
+                        if let Some(relative_path) = pathdiff::diff_paths(&source.full_path, portfolio_path) {
+                            source.path = relative_path.to_str().unwrap_or_default().to_owned();
+                        }
                     }
                 }
-            }
-        }));
+            }));
 
-        match internal_save(&self.portfolio, &self.portfolio_file) {
-            Ok(_) => { println!("Saved portfolio to {}", self.portfolio_file.display()); }
-            Err(_) => { println!("Error saving portfolio to {}", self.portfolio_file.display()); }
+            match internal_save(&self.portfolio, path) {
+                Ok(_) => {
+                    println!("Saved portfolio to {}", path.display());
+                    if portfolio_file.is_some() {
+                        self.portfolio_file = portfolio_file;
+                    }
+                }
+                Err(_) => {
+                    println!("Error saving portfolio to {}", path.display());
+                }
+            }
         }
     }
 
@@ -918,6 +929,7 @@ fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
     facade.set_transactions(app.ui_transactions.clone().into());
     facade.set_report_years(app.ui_report_years.clone().into());
     facade.set_reports(app.ui_reports.clone().into());
+    facade.set_portfolio(UiPortfolio::default());
 
     facade.on_open_transaction(move |blockchain, tx_hash| {
         let _ = match blockchain.as_str() {
@@ -1196,6 +1208,7 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
         }
 
         facade.set_portfolio(UiPortfolio {
+            file_name: app.portfolio_file.as_ref().map(PathBuf::as_path).map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
             balance: balance.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
             cost_base: cost_base.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
             unrealized_gains: (balance - cost_base).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
@@ -1206,20 +1219,14 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let portfolio_file: PathBuf = match env::args().skip(1).next() {
-        Some(arg) => arg.into(),
-        None => {
-            println!("No portfolio file specified");
-            println!("Usage:");
-            println!("    {} <portfolio_file>", std::env::args().next().unwrap_or("cryptotax".to_owned()));
-            exit(1);
-        }
-    };
-
     let mut app = App::new();
-    if let Err(e) = app.load_portfolio(&portfolio_file) {
-        println!("Error loading sources from {}: {}", portfolio_file.display(), e);
-        return Ok(());
+
+    if let Some(portfolio_file) = env::args_os().skip(1).next() {
+        let portfolio_file: PathBuf = portfolio_file.into();
+        if let Err(e) = app.load_portfolio(&portfolio_file) {
+            println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
+            return Ok(());
+        }
     }
 
     let ui = initialize_ui(&app)?;
@@ -1284,13 +1291,59 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     {
         let app = app.clone();
+        let ui_weak = ui.as_weak();
+
+        facade.on_new_portfolio(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("New Portfolio")
+                .set_file_name("Portfolio.json")
+                .add_filter("Portfolio (JSON)", &["json"]);
+
+            match dialog.save_file() {
+                Some(path) => {
+                    let mut app = app.borrow_mut();
+                    app.portfolio = Portfolio::default();
+                    app.save_portfolio(Some(path));
+                    app.refresh_transactions();
+                    app.refresh_ui(&ui_weak.unwrap());
+                }
+                _ => {}
+            }
+        });
+    }
+
+    {
+        let app = app.clone();
+        let ui_weak = ui.as_weak();
+
+        facade.on_load_portfolio(move || {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Load Portfolio")
+                .add_filter("Portfolio (JSON)", &["json"]);
+
+            match dialog.pick_file() {
+                Some(path) => {
+                    let mut app = app.borrow_mut();
+                    if let Err(e) = app.load_portfolio(&path) {
+                        println!("Error loading portfolio from {}: {}", path.display(), e);
+                    } else {
+                        app.refresh_ui(&ui_weak.unwrap());
+                    }
+                }
+                _ => {}
+            }
+        });
+    }
+
+    {
+        let app = app.clone();
 
         facade.on_add_wallet(move |name| {
             let mut app = app.borrow_mut();
             let wallet = Wallet::new(name.into());
             app.portfolio.wallets.push(wallet);
             ui_set_wallets(&app);
-            app.save_portfolio();
+            app.save_portfolio(None);
         });
     }
 
@@ -1303,7 +1356,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             app.portfolio.wallets.remove(index as usize);
             app.refresh_transactions();
             app.refresh_ui(&ui_weak.unwrap());
-            app.save_portfolio();
+            app.save_portfolio(None);
         });
     }
 
@@ -1339,7 +1392,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         app.refresh_transactions();
                         app.refresh_ui(&ui_weak.unwrap());
-                        app.save_portfolio();
+                        app.save_portfolio(None);
                     }
                 }
             }
@@ -1356,7 +1409,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 wallet.sources.remove(source_index as usize);
                 app.refresh_transactions();
                 app.refresh_ui(&ui_weak.unwrap());
-                app.save_portfolio();
+                app.save_portfolio(None);
             }
         });
     }
@@ -1372,7 +1425,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 app.refresh_transactions();
                 app.refresh_ui(&ui_weak.unwrap());
-                app.save_portfolio();
+                app.save_portfolio(None);
             }
         });
     }
@@ -1389,7 +1442,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     app.refresh_transactions();
                     app.refresh_ui(&ui_weak.unwrap());
-                    app.save_portfolio();
+                    app.save_portfolio(None);
                 }
             }
         });
@@ -1430,7 +1483,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         app.refresh_transactions();
                         app.refresh_ui(&ui_weak.unwrap());
-                        app.save_portfolio();
+                        app.save_portfolio(None);
                     }
                 }
             }

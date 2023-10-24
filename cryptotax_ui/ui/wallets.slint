@@ -88,7 +88,7 @@ component HoldingsButton inherits TouchArea {
     }
 }
 
-export component Sources inherits ScrollView {
+export component Wallets inherits ScrollView {
     in property <[UiWallet]> wallets: Facade.wallets;
 
     callback wallet-transactions-clicked(int);
@@ -225,6 +225,7 @@ export component Sources inherits ScrollView {
             alignment: end;
             wallet-name := LineEdit {
                 placeholder-text: "New Wallet Name";
+                enabled: Facade.portfolio.file-name != "";
             }
             Button {
                 text: "Add Wallet";

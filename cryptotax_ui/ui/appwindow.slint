@@ -1,11 +1,11 @@
-import { HorizontalBox, CheckBox, ComboBox} from "std-widgets.slint";
-import { Portfolio } from "./portfolio.slint";
-import { Sources } from "./sources.slint";
-import { Transactions } from "./transactions.slint";
-import { Reports } from "./reports.slint";
-import { Badge } from "./common.slint";
-import { Facade } from "./global.slint";
-import { UiCapitalGain } from "./structs.slint";
+import { HorizontalBox, CheckBox, ComboBox, Button, VerticalBox} from "std-widgets.slint";
+import { Portfolio } from "portfolio.slint";
+import { Wallets } from "wallets.slint";
+import { Transactions } from "transactions.slint";
+import { Reports } from "reports.slint";
+import { Badge } from "common.slint";
+import { Facade } from "global.slint";
+import { UiCapitalGain } from "structs.slint";
 
 export { UiCapitalGain, Facade }
 
@@ -48,78 +48,104 @@ component PageButton inherits Rectangle {
     }
 }
 
-export component AppWindow inherits Window {
+component MainContent inherits VerticalLayout {
     property <Page> active-page: Page.portfolio;
 
-    title: "Crypto Tax Tool";
+    HorizontalBox {
+        alignment: center;
 
-    min-width: 512px;
-    min-height: 160px;
-    preferred-width: 1200px;
-    preferred-height: 640px;
+        PageButton {
+            text: "Portfolio";
+            active: root.active-page == Page.portfolio;
+            pressed => { root.active-page = Page.portfolio; }
+        }
+        PageButton {
+            text: "Wallets";
+            active: root.active-page == Page.sources;
+            pressed => { root.active-page = Page.sources; }
 
-    VerticalLayout {
-        HorizontalBox {
-            alignment: center;
-
-            PageButton {
-                text: "Portfolio";
-                active: root.active-page == Page.portfolio;
-                pressed => { root.active-page = Page.portfolio; }
-            }
-            PageButton {
-                text: "Wallets";
-                active: root.active-page == Page.sources;
-                pressed => { root.active-page = Page.sources; }
-
-                Badge {
-                    text: Facade.wallets.length;
-                }
-            }
-            PageButton {
-                text: "Transactions";
-                active: root.active-page == Page.transactions;
-                pressed => { root.active-page = Page.transactions; }
-
-                Badge {
-                    text: Facade.transactions.length;
-                }
-            }
-            PageButton {
-                text: "Reports";
-                active: root.active-page == Page.reports;
-                pressed => { root.active-page = Page.reports; }
-
-                Badge {
-                    text: Facade.reports.length;
-                }
+            Badge {
+                text: Facade.wallets.length;
             }
         }
+        PageButton {
+            text: "Transactions";
+            active: root.active-page == Page.transactions;
+            pressed => { root.active-page = Page.transactions; }
 
-        Rectangle {
-            portfolio-page := Portfolio {
-                visible: active-page == Page.portfolio;
-                currency-filter-clicked(currency) => {
-                    Facade.set-currency-filter(currency);
-                    root.active-page = Page.transactions;
-                }
+            Badge {
+                text: Facade.transactions.length;
             }
+        }
+        PageButton {
+            text: "Reports";
+            active: root.active-page == Page.reports;
+            pressed => { root.active-page = Page.reports; }
 
-            sources-page := Sources {
-                visible: active-page == Page.sources;
-                wallet-transactions-clicked(index) => {
-                    Facade.set-wallet-filter(index);
-                    root.active-page = Page.transactions;
-                }
-            }
-
-            transactions-page := Transactions {
-                visible: active-page == Page.transactions;
-            }
-
-            reports-page := Reports {
-                visible: active-page == Page.reports;
+            Badge {
+                text: Facade.reports.length;
             }
         }
     }
+
+    Rectangle {
+        Portfolio {
+            visible: active-page == Page.portfolio;
+            currency-filter-clicked(currency) => {
+                Facade.set-currency-filter(currency);
+                root.active-page = Page.transactions;
+            }
+        }
+
+        Wallets {
+            visible: active-page == Page.sources;
+            wallet-transactions-clicked(index) => {
+                Facade.set-wallet-filter(index);
+                root.active-page = Page.transactions;
+            }
+        }
+
+        Transactions {
+            visible: active-page == Page.transactions;
+        }
+
+        Reports {
+            visible: active-page == Page.reports;
+        }
+    }
+}
+
+component WelcomePage inherits Rectangle {
+    VerticalBox {
+        width: self.preferred-width;
+        height: self.preferred-height;
+
+        Text { text: "Raccoin"; horizontal-alignment: center; font-size: 50px; }
+        Text { text: "Portfolio and Tax Reports"; horizontal-alignment: center; color: darkgray; }
+
+        Rectangle { height: 30px; }
+
+        HorizontalBox {
+            Button {
+                text: "New Portfolio";
+                clicked => { Facade.new-portfolio(); }
+            }
+            Button {
+                text: "Load Portfolio";
+                clicked => { Facade.load-portfolio(); }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Raccoin";
+
+    min-width: 512px;
+    min-height: 320px;
+    preferred-width: 1200px;
+    preferred-height: 640px;
+
+    if (Facade.portfolio.file-name != ""): MainContent {}
+    if (Facade.portfolio.file-name == ""): WelcomePage {}
 }
