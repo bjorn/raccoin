@@ -31,3 +31,12 @@ stellar-base = { git = 'https://github.com/salessandri/stellar-base-rs', branch 
 stellar-horizon = { git = "https://github.com/salessandri/stellar-horizon-rs.git", branch = "new-master" }
 strum = { version = "0.25", features = ["derive"] }
 tokio = { version = "1.33.0", features = ["full"] }
+
+[package.metadata.packager]
+before-packaging-command = "cargo build --release"
+identifier = "org.raccoin.Raccoin"
+product-name = "Raccoin"
+description = "Crypto Portfolio and Tax Reporting Tool"
+icons = ["raccoin_ui/ui/icons/app-icon-64.png"]
+homepage = "https://raccoin.org/"
+license_file = "LICENSE"
