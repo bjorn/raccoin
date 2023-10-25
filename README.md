@@ -32,7 +32,7 @@ Raccoin can import CSV files exported from the following sources:
 
 Raccoin can also synchronize wallets from certain blockchains directly. Currently, adding these wallets requires manually editing the portfolio JSON file since the UI for adding them still needs to be written. Supported are:
 
-* [Bitcoin](https://bitcoin.org/) wallets (either plan addresses or x/y/zpub addresses)
+* [Bitcoin](https://bitcoin.org/) wallets (either plain addresses or x/y/zpub addresses)
 * [Ethereum](https://ethereum.org/) wallets
 * [Stellar](https://stellar.org/) accounts
 
@@ -46,8 +46,6 @@ This application was written in [Rust](https://www.rust-lang.org/) using the exc
 
 [Codeium](https://codeium.com) has been a major help, especially since I was still relatively new to Rust.
 
-Thanks to my wife for suggesting "Raccoin", which is a combination of "raccoon" and "coin". Raccoons are known to be smart animals, and you'd be smart to use Raccoin!
-
-The icon is an adaptation of the <a href="https://publicdomainvectors.org/en/free-clipart/Raccoon-wild-animal/87895.html">Raccoon wild animal</a> image at [publicdomainvectors.org](https://publicdomainvectors.org/).
+Thanks to my wife for suggesting "Raccoin", which is a combination of "raccoon" and "coin" and for helping me with the icon. Raccoons are known to be smart animals, and you'd be smart to use Raccoin!
 
 [![built with Codeium](https://codeium.com/badges/main)](https://codeium.com/profile)
