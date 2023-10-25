@@ -20,7 +20,7 @@ Raccoin can import CSV files exported from the following sources:
 * [Bitcoin.de](https://www.bitcoin.de/de) (exchange)
 * [Bitstamp](https://www.bitstamp.net/) (exchange)
 * [Bittrex](https://bittrex.com/) (exchange) (order and transaction history for disabled accounts)
-* [CrypTaxCalculator](https://cryptotaxcalculator.io/) custom [CSV import format](https://help.cryptotaxcalculator.io/en/articles/5777675-advanced-manual-custom-csv-import)
+* [CryptoTaxCalculator](https://cryptotaxcalculator.io/) custom [CSV import format](https://help.cryptotaxcalculator.io/en/articles/5777675-advanced-manual-custom-csv-import)
 * [Electrum](https://www.electrum.org/) (desktop wallet)
 * [Mycelium](https://wallet.mycelium.com/) (mobile wallet)
 * [Peercoin](https://www.peercoin.net/wallet) (desktop wallet)
@@ -32,10 +32,9 @@ Raccoin can import CSV files exported from the following sources:
 
 Raccoin can also synchronize wallets from certain blockchains directly. Currently, adding these wallets requires manually editing the portfolio JSON file since the UI for adding them still needs to be written. Supported are:
 
-* Bitcoin wallets based on one or more addresses
-* Bitcoin wallets based on one or more xpub, ypub and zpub addresses
-* Ethereum wallets
-* Stellar accounts
+* [Bitcoin](https://bitcoin.org/) wallets (either plan addresses or x/y/zpub addresses)
+* [Ethereum](https://ethereum.org/) wallets
+* [Stellar](https://stellar.org/) accounts
 
 ### JSON
 
