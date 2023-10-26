@@ -47,7 +47,43 @@ h1, h1.post-title {
         width: 22%;
         border-radius: 5px;
         margin: 1%;
+        transition: transform .1s ease-out, border-color .1s ease-out;
+        border: 2px solid $grey-color-light;
+        cursor: pointer;
     }
+
+    .thumbnail:hover {
+        transform: scale(1.05);
+        border: 2px solid $grey-color;
+    }
+}
+
+#fullpage {
+    display: none;
+    position: absolute;
+    z-index: 9999;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    background-color: rgba(92,92,92,0.5);
+}
+
+#fullpage-image {
+    display: block;
+    border-radius: 10px;
+    border: 2px solid $grey-color;
+}
+
+#fullpage-caption {
+    background-color: $grey-color-light;
+    border: 2px solid $grey-color;
+    border-radius: 10px;
+    padding: 8px 16px;
+    margin-top: 10px;
 }
 
 .post-content {
@@ -72,11 +108,16 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .trigger {
+    .svg-icon {
+        fill: $text-color;
+    }
+
     .page-link {
         background-color: $grey-color-light;
         padding: 10px 20px;
         border-radius: 5px;
         line-height: 1;
+        transition: background-color .1s ease-out, border-color .1s ease-out;
     }
     .page-link:hover {
         background-color: $grey-color;

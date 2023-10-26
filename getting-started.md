@@ -6,7 +6,7 @@ permalink: /getting-started/
 
 ## Create a Portfolio
 
-When launching Raccoin, we are created with the welcome screen.
+When launching Raccoin, we are greeted with the welcome screen.
 
 ![Raccoin Welcome](/screenshots/raccoin-welcome.png)
 
