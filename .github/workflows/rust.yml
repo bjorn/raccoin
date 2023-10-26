@@ -8,26 +8,49 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-ubuntu:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - uses: Swatinem/rust-cache@v2
-    - name: Build
-      run: cargo build --verbose --release
-#    - name: Run tests
-#      run: cargo test --verbose
-    - name: Install Cargo Packager
-      run: cargo install cargo-packager --locked
-    - name: Package
-      run: cargo packager --release
-    - name: Upload artifact
-      uses: actions/upload-artifact@v3
+    - run: cargo build --verbose --release
+    - run: cargo install cargo-packager --locked
+    - run: cargo packager --release
+    - uses: actions/upload-artifact@v3
       with:
         name: Raccoin.AppImage
         path: target/release/raccoin_*.AppImage
-    - name: Upload artifact
-      uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v3
       with:
         name: Raccoin.deb
         path: target/release/raccoin_*.deb
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo build --verbose --release
+    - run: cargo install cargo-packager --locked
+    - run: cargo packager --release
+    - uses: actions/upload-artifact@v3
+      with:
+        name: Raccoin-setup.exe
+        path: target/release/raccoin_*-setup.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo build --verbose --release
+    - run: cargo install cargo-packager --locked
+    - run: cargo packager --release
+    - uses: actions/upload-artifact@v3
+      with:
+        name: Raccoin.app
+        path: target/release/Raccoin.app
+    - uses: actions/upload-artifact@v3
+      with:
+        name: Raccoin.dmg
+        path: target/release/Raccoin_*.dmg
