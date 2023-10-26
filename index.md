@@ -10,9 +10,10 @@ list_title: Blog
 
 Raccoin makes it easy to see the current state and the history of your crypto
 portfolio and to generate relevant reports for declaring capital gain income
-tax. It currently works in EUR using the FIFO method, but since it is [open
-source](https://github.com/bjorn/raccoin) anyone can extend it to suit their
-needs.
+tax. It currently works in Euro using the [FIFO
+method](https://en.wikipedia.org/wiki/FIFO_and_LIFO_accounting), but since it is
+[open source](https://github.com/bjorn/raccoin) anyone can extend it to suit
+their needs.
 
 <div class="thumbnails">
 <img class="thumbnail" src="/screenshots/raccoin-welcome.png" alt="Welcome screen">
