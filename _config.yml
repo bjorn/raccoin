@@ -1,0 +1,26 @@
+title: Raccoin
+description: >-
+  Crypto Portfolio and Tax Reporting Tool.
+domain: raccoin.org
+baseurl: ""
+url: "https://raccoin.org"
+author: © Thorbjørn Lindeijer
+twitter_username: thorbjorn81
+github_username:  bjorn
+
+theme: minima
+plugins:
+  - jekyll-feed
+
+header_pages:
+  - getting-started.md
+  - reference.md
+
+exclude:
+  - CNAME
+  - Cargo.lock
+  - Cargo.toml
+  - LICENSE
+  - demo/
+  - src/
+  - target/
