@@ -2,7 +2,7 @@
 layout: home
 title: "Raccoin – Crypto Tax Tool"
 list_title: Blog
-image: /screenshots/raccoin-welcome.png
+image: /screenshots/social-share.png
 ---
 
 <img src="/raccoin_ui/ui/icons/app-icon.svg" width="150" height="150" style="margin: 10px auto; display: block;">
