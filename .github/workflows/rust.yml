@@ -46,10 +46,11 @@ jobs:
     - run: cargo build --verbose --release
     - run: cargo install cargo-packager --locked
     - run: cargo packager --release
+    - run: ditto -c -k --sequesterRsrc --keepParent target/release/Raccoin.app Raccoin.app.zip
     - uses: actions/upload-artifact@v3
       with:
         name: Raccoin.app
-        path: target/release/Raccoin.app
+        path: Raccoin.app.zip
     - uses: actions/upload-artifact@v3
       with:
         name: Raccoin.dmg
