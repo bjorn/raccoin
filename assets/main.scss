@@ -42,25 +42,28 @@ h1, h1.post-title {
 
 .thumbnails {
     clear: right;
+    display: flex;
+    justify-content: center;
+    margin-bottom: 30px;
 
     .thumbnail {
         width: 22%;
         border-radius: 5px;
         box-sizing: border-box;
         margin: 1%;
-        border: 1px solid $grey-color-light;
+        border: 1px solid $grey-color;
         cursor: pointer;
     }
 
     .thumbnail:hover {
-        border: 1px solid $grey-color;
+        border: 1px solid $grey-color-dark;
     }
 }
 
 #fullpage {
     display: none;
     padding: 10px;
-    position: absolute;
+    position: fixed;
     box-sizing: border-box;
     z-index: 9999;
     top: 0;
@@ -90,10 +93,12 @@ h1, h1.post-title {
 .post-content {
     img {
         border-radius: 10px;
-        width: 90%;
         margin: 20px auto;
         display: block;
         border: 1px solid $grey-color;
+    }
+    img:not(#fullpage-image) {
+        width: 90%;
     }
 }
 
