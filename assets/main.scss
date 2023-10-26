@@ -25,7 +25,8 @@ $grey-color-dark:  lighten($grey-color, 40%);
 
 h1, h1.post-title {
     font-size: 2em;
-    padding-bottom: 0.3em;
+    line-height: 1.4;
+    padding-bottom: 0.1em;
     border-bottom: 1px solid $grey-color;
 }
 
@@ -79,6 +80,7 @@ h1, h1.post-title {
 #fullpage-image {
     display: block;
     border-radius: 10px;
+    max-height: 85%;
     border: 1px solid $grey-color;
 }
 
