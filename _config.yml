@@ -16,6 +16,8 @@ header_pages:
   - getting-started.md
   - reference.md
 
+show_excerpts: true
+
 exclude:
   - CNAME
   - Cargo.lock
