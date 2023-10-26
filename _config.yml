@@ -7,6 +7,9 @@ url: "https://raccoin.org"
 author: © Thorbjørn Lindeijer
 twitter_username: thorbjorn81
 github_username:  bjorn
+mastodon:
+ - username: bjorn
+   instance: toot.berlin
 
 theme: minima
 plugins:
