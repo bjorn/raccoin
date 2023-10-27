@@ -5,7 +5,7 @@ list_title: Blog
 image: /screenshots/social-share.png
 ---
 
-<img src="/raccoin_ui/ui/icons/app-icon.svg" width="150" height="150" style="margin: 10px auto; display: block;">
+<img src="/assets/app-icon.svg" width="150" height="150" style="margin: 10px auto; display: block;">
 
 # Raccoin – Crypto&nbsp;Tax&nbsp;Tool
 
