@@ -7,7 +7,7 @@ image: /screenshots/social-share.png
 
 <img src="/raccoin_ui/ui/icons/app-icon.svg" width="150" height="150" style="margin: 10px auto; display: block;">
 
-# Raccoin – Crypto Tax Tool
+# Raccoin – Crypto&nbsp;Tax&nbsp;Tool
 
 Raccoin makes it easy to see the current state and the history of your crypto
 portfolio and to generate relevant reports for declaring capital gain income

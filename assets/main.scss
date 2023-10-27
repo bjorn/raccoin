@@ -1,9 +1,11 @@
 ---
 ---
 
+$base-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Cantarell, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol" !default;
+
 $text-color:       #e7e7e7;
 $background-color: #343434;
-$brand-color:      #cee3ff;
+$brand-color:      #f9e69f;
 
 $grey-color:       #828282;
 $grey-color-light: darken($grey-color, 25%);
@@ -11,11 +13,38 @@ $grey-color-dark:  lighten($grey-color, 40%);
 
 @import "minima";
 
+blockquote {
+    font-style: normal;
+}
+
+.highlighter-rouge .highlight, pre, code {
+    background-color: rgb(28, 28, 28);
+    border: none;
+}
+
+.highlight {
+    line-height: 1.4;
+    border-radius: 5px;
+
+    .s2 {
+        color: rgb(55, 183, 65);
+    }
+
+    .kc {
+        color: rgb(37, 168, 234);
+        font-weight: normal;
+    }
+}
+
 .site-header {
     border-top: none;
     border-bottom: 1px solid $grey-color;
     background-color: $grey-color-light;
     padding-top: 5px;
+}
+
+.site-title {
+    font-weight: 400;
 }
 
 .site-footer {
@@ -41,6 +70,10 @@ h1, h1.post-title {
         font-size: 1.5em;
         padding-bottom: 0.3em;
     }
+
+    h3 {
+        font-size: 1.4em;
+    }
 }
 
 .thumbnails {
@@ -59,7 +92,7 @@ h1, h1.post-title {
     }
 
     .thumbnail:hover {
-        border: 1px solid $grey-color-dark;
+        border: 1px solid $brand-color;
     }
 }
 
@@ -129,7 +162,7 @@ h1, h2, h3, h4, h5, h6 {
         line-height: 1;
     }
     .page-link:hover {
-        border-color: $grey-color-dark;
+        border-color: $brand-color;
         text-decoration: none;
     }
 
@@ -144,6 +177,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @include media-query($on-palm) {
+    .thumbnails {
+        flex-wrap: wrap;
+
+        .thumbnail {
+            width: 45%;
+        }
+    }
+
     .site-nav {
         border: 1px solid $grey-color;
         background-color: $grey-color-light;
