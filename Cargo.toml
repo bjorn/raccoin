@@ -7,6 +7,7 @@ repository = "https://github.com/bjorn/raccoin"
 license = "GPL-3.0-or-later"
 authors = ["Thorbjørn Lindeijer <bjorn@lindeijer.nl>"]
 edition = "2021"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -35,6 +36,9 @@ stellar-base = { version = "0.6", git = 'https://github.com/salessandri/stellar-
 stellar-horizon = { version = "0.7", git = "https://github.com/salessandri/stellar-horizon-rs.git", branch = "new-master" }
 strum = { version = "0.25", features = ["derive"] }
 tokio = { version = "1.33.0", features = ["full"] }
+
+[target.'cfg(target_family = "windows")'.build-dependencies]
+windows_exe_info = { version = "0.3.0", default-features = false, features = ["embed_resource", "manifest", "icon_ico"] }
 
 [package.metadata.packager]
 before-packaging-command = "cargo build --release"
