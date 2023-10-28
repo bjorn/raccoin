@@ -1,8 +1,11 @@
 /target
+/raccoin_ui/target
+
+/.vscode
 
 # Jekyll
-_site
-.sass-cache
-.jekyll-cache
-.jekyll-metadata
-vendor
+/docs/_site
+/docs/.sass-cache
+/docs/.jekyll-cache
+/docs/.jekyll-metadata
+/docs/vendor
