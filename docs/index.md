@@ -48,4 +48,4 @@ thumbnails.forEach(thumbnail => {
 * [Raccoin 0.1 for Windows (installer)](https://github.com/bjorn/raccoin/releases/download/v0.1.0/raccoin_0.1.0_x64-setup.exe)
 * [Raccoin 0.1 for Linux (AppImage)](https://github.com/bjorn/raccoin/releases/download/v0.1.0/raccoin_0.1.0_x86_64.AppImage)
 * [Raccoin 0.1 for Linux (.deb)](https://github.com/bjorn/raccoin/releases/download/v0.1.0/raccoin_0.1.0_amd64.deb)
-* <span style="color: gray">Raccoin 0.1 for macOS (coming soon)</span>
+* [Raccoin 0.1 for macOS (.dmg)](https://github.com/bjorn/raccoin/releases/download/v0.1.0/Raccoin_0.1.0_x64.dmg)
