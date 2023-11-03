@@ -38,7 +38,7 @@ strum = { version = "0.25", features = ["derive"] }
 tokio = { version = "1.33.0", features = ["full"] }
 
 [target.'cfg(target_family = "windows")'.build-dependencies]
-windows_exe_info = { version = "0.3.0", default-features = false, features = ["embed_resource", "manifest", "icon_ico"] }
+windows_exe_info = "0.4.0"
 
 [package.metadata.packager]
 before-packaging-command = "cargo build --release"
