@@ -380,8 +380,8 @@ impl Transaction {
         match (&mut self.operation, &other.operation) {
             (Operation::Trade { incoming, outgoing }, Operation::Trade { incoming: other_incoming, outgoing: other_outgoing }) => {
                 // And only when their incoming and outgoing amounts can be added
-                let merged_incoming = incoming.try_add(&other_incoming).ok_or(MergeError)?;
-                let merged_outgoing = outgoing.try_add(&other_outgoing).ok_or(MergeError)?;
+                let merged_incoming = incoming.try_add(other_incoming).ok_or(MergeError)?;
+                let merged_outgoing = outgoing.try_add(other_outgoing).ok_or(MergeError)?;
                 *incoming = merged_incoming;
                 *outgoing = merged_outgoing;
             }

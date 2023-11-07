@@ -9,9 +9,9 @@ use crate::base::{Transaction, Amount};
 // deserialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
-    match NaiveDateTime::parse_from_str(&raw, "%Y-%m-%d %H:%M") {
-        Ok(date_and_time) => return Ok(date_and_time),
-        Err(_) => Ok(NaiveDate::parse_from_str(&raw, "%Y-%m-%d").unwrap().and_time(NaiveTime::MIN)),
+    match NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M") {
+        Ok(date_and_time) => Ok(date_and_time),
+        Err(_) => Ok(NaiveDate::parse_from_str(raw, "%Y-%m-%d").unwrap().and_time(NaiveTime::MIN)),
     }
 }
 
@@ -73,7 +73,7 @@ impl TryFrom<BittrexOrder> for Transaction {
     type Error = &'static str;
 
     fn try_from(item: BittrexOrder) -> Result<Self, Self::Error> {
-        let mut split = item.market.split("/");
+        let mut split = item.market.split('/');
         match (split.next(), split.next()) {
             (Some(base_currency), Some(quote_currency)) => {
                 let base = Amount::new(item.quantity, base_currency.to_owned());
@@ -83,7 +83,7 @@ impl TryFrom<BittrexOrder> for Transaction {
                     MarketSide::Sell => Ok(Transaction::trade(item.date, quote, base)),
                 }
             }
-            _ => return Err("Invalid market value, expected: '<base_currency>/<quote_currency>'"),
+            _ => Err("Invalid market value, expected: '<base_currency>/<quote_currency>'"),
         }
     }
 }

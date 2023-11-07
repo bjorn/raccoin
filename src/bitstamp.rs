@@ -21,7 +21,7 @@ enum SubType {
 // deserialize function for reading NaiveDateTime in the format "Jan. 27, 2017, 03:28 PM"
 fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
-    Ok(NaiveDateTime::parse_from_str(&raw, "%b. %d, %Y, %I:%M %p").unwrap())
+    Ok(NaiveDateTime::parse_from_str(raw, "%b. %d, %Y, %I:%M %p").unwrap())
 }
 
 fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Amount, D::Error> {

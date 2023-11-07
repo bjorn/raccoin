@@ -196,12 +196,12 @@ async fn xpub_addresses_and_txs<C: secp256k1::Verification>(
     println!(" receive addresses:");
 
     let receive_path = DerivationPath::master().child(ChildNumber::Normal { index: 0 });
-    scan_children(client, address_transactions, &secp, &xpub_key, &receive_path, address_type).await?;
+    scan_children(client, address_transactions, secp, &xpub_key, &receive_path, address_type).await?;
 
     println!(" change addresses:");
 
     let change_path = DerivationPath::master().child(ChildNumber::Normal { index: 1 });
-    scan_children(client, address_transactions, &secp, &xpub_key, &change_path, address_type).await?;
+    scan_children(client, address_transactions, secp, &xpub_key, &change_path, address_type).await?;
 
     Ok(())
 }

@@ -290,9 +290,9 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
             fee_amount: item.fee.as_ref().map(|fee| fee.quantity),
             from: None,
             to: None,
-            blockchain: item.blockchain.as_ref().map(|s| s.as_str()),
-            id: item.tx_hash.as_ref().map(|s| s.as_str()),
-            description: item.description.as_ref().map(|s| s.as_str()),
+            blockchain: item.blockchain.as_deref(),
+            id: item.tx_hash.as_deref(),
+            description: item.description.as_deref(),
             reference_price_per_unit: None,
             reference_price_currency: None,
         }

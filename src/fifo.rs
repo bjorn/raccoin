@@ -147,7 +147,7 @@ impl FIFO {
 
             if let Some(fee) = fee {
                 if !fee.is_fiat() {
-                    match self.dispose_holdings(&mut capital_gains, transaction.timestamp, &fee, fee_value) {
+                    match self.dispose_holdings(&mut capital_gains, transaction.timestamp, fee, fee_value) {
                         Ok(gain) => {
                             match &mut transaction.gain {
                                 Some(Ok(g)) => {

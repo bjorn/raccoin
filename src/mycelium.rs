@@ -11,7 +11,7 @@ use crate::base::{Transaction, Amount};
 // serialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
-    Ok(NaiveDateTime::parse_from_str(&raw, "%Y-%m-%dT%H:%MZ").unwrap())
+    Ok(NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%MZ").unwrap())
 }
 
 #[derive(Debug, Clone, Deserialize)]

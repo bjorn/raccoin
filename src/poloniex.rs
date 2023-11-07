@@ -13,7 +13,7 @@ use crate::{
 pub(crate) fn deserialize_poloniex_timestamp<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
     match DateTime::<FixedOffset>::parse_from_rfc3339(raw) {
-        Ok(date_and_time) => return Ok(date_and_time.naive_utc()),
+        Ok(date_and_time) => Ok(date_and_time.naive_utc()),
         Err(_) => Ok(NaiveDateTime::parse_from_str(raw, "%Y/%m/%d %H:%M").unwrap()),
     }
 }
@@ -121,11 +121,11 @@ impl TryFrom<PoloniexTrade> for Transaction {
 
     fn try_from(item: PoloniexTrade) -> Result<Self, Self::Error> {
         // split record.market at the underscore or dash to obtain the base_currency and the quote_currency
-        let mut split = item.market.split("_");
+        let mut split = item.market.split('_');
         let (base_currency, quote_currency) = match (split.next(), split.next()) {
             (Some(base_currency), Some(quote_currency)) => Ok::<(&str, &str), &'static str>((base_currency, quote_currency)),
             _ => {
-                let mut split = item.market.split("-");
+                let mut split = item.market.split('-');
                 match (split.next(), split.next()) {
                     (Some(quote_currency), Some(base_currency)) => Ok((base_currency, quote_currency)),
                     _ => return Err("Invalid Poloniex market")

@@ -321,7 +321,7 @@ impl App {
                 TransactionsSourceType::EthereumAddress |
                 TransactionsSourceType::StellarAccount => {}
                 _ => {
-                    source.full_path = portfolio_path.join(&source.path).into();
+                    source.full_path = portfolio_path.join(&source.path);
                 }
             }
         }));
@@ -336,7 +336,7 @@ impl App {
     fn save_portfolio(&mut self, portfolio_file: Option<PathBuf>) {
         fn internal_save(portfolio: &Portfolio, portfolio_file: &Path) -> Result<(), Box<dyn Error>> {
             let json = serde_json::to_string_pretty(&portfolio)?;
-            std::fs::write(&portfolio_file, json)?;
+            std::fs::write(portfolio_file, json)?;
             Ok(())
         }
 
@@ -548,7 +548,7 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
     }
 
     // sort transactions
-    transactions.sort_by(|a, b| a.cmp(&b) );
+    transactions.sort_by(|a, b| a.cmp(b) );
 
     // warn about duplicates
     let mut last = transactions.first();
@@ -699,8 +699,8 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
     });
 
     for (send_index, receive_index) in matching_pairs {
-        (&mut transactions[send_index]).matching_tx = Some(receive_index);
-        (&mut transactions[receive_index]).matching_tx = Some(send_index);
+        transactions[send_index].matching_tx = Some(receive_index);
+        transactions[receive_index].matching_tx = Some(send_index);
 
         // Derive the fee based on received amount and sent amount
         let adjusted = match (&transactions[send_index].operation, &transactions[receive_index].operation) {
@@ -1210,7 +1210,7 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
         }
 
         facade.set_portfolio(UiPortfolio {
-            file_name: app.portfolio_file.as_ref().map(PathBuf::as_path).map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
+            file_name: app.portfolio_file.as_deref().map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
             balance: balance.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
             cost_base: cost_base.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
             unrealized_gains: (balance - cost_base).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
@@ -1223,7 +1223,7 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::new();
 
-    if let Some(portfolio_file) = env::args_os().skip(1).next() {
+    if let Some(portfolio_file) = env::args_os().nth(1) {
         let portfolio_file: PathBuf = portfolio_file.into();
         if let Err(e) = app.load_portfolio(&portfolio_file) {
             println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
@@ -1255,7 +1255,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }).collect();
 
             // sort descending
-            balances.sort_by(|(_, a), (_, b)| b.cmp(&a) );
+            balances.sort_by(|(_, a), (_, b)| b.cmp(a) );
 
             let balances: Vec<UiBalanceForCurrency> = balances.into_iter().map(|(source, balance)| {
                 UiBalanceForCurrency {
@@ -1480,7 +1480,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     };
 
                     if let Some(mut tx) = tx {
-                        tx.sort_by(|a, b| a.cmp(&b) );
+                        tx.sort_by(|a, b| a.cmp(b) );
                         source.transactions = tx;
 
                         app.refresh_transactions();
@@ -1603,7 +1603,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let facade = ui.global::<Facade>();
             app.transaction_filter = if facade.get_wallet_filter() >= 0 {
                 TransactionFilter::WalletIndex(facade.get_wallet_filter() as usize)
-            } else if facade.get_currency_filter().len() > 0 {
+            } else if !facade.get_currency_filter().is_empty() {
                 TransactionFilter::Currency(facade.get_currency_filter().into())
             } else {
                 TransactionFilter::None
