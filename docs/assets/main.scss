@@ -14,7 +14,9 @@ $grey-color-dark:  lighten($grey-color, 40%);
 @import "minima";
 
 blockquote {
+    font-size: $base-font-size;
     font-style: normal;
+    letter-spacing: 0;
 }
 
 .highlighter-rouge .highlight, pre, code {
@@ -39,7 +41,7 @@ blockquote {
 .site-header {
     border-top: none;
     border-bottom: 1px solid $grey-color;
-    background-color: $grey-color-light;
+    background: radial-gradient(farthest-side at top, $grey-color-light 0%, #222 100%) bottom / 100% 100% no-repeat;
     padding-top: 5px;
 }
 
@@ -49,14 +51,14 @@ blockquote {
 
 .site-footer {
     border-top: 1px solid $grey-color;
-    background-color: $grey-color-light;
+    background: radial-gradient(farthest-side at bottom, $grey-color-light 0%, #222 100%) bottom / 99% 100% no-repeat, #222;
 }
 
 h1, h1.post-title {
     font-size: 2em;
-    line-height: 1.4;
+    line-height: 1.2;
     padding-bottom: 0.1em;
-    border-bottom: 1px solid $grey-color;
+    margin-bottom: 0.1em;
 }
 
 .page-content {
@@ -64,9 +66,6 @@ h1, h1.post-title {
 
     h2 {
         border-bottom: 1px solid $grey-color;
-    }
-
-    h2 {
         font-size: 1.5em;
         padding-bottom: 0.3em;
     }
@@ -127,7 +126,25 @@ h1, h1.post-title {
     margin-top: 10px;
 }
 
+h3 {
+    font-weight: 600;
+    line-height: 1.25;
+    font-size: 1.25em;
+}
+
+h1, h2, h4, h5, h6 {
+    font-weight: 600;
+    line-height: 1.25;
+    margin-top: 24px;
+    margin-bottom: 16px;
+}
+
 .post-content {
+    h3 {
+        margin-top: 24px;
+        margin-bottom: 16px;
+    }
+
     img {
         border-radius: 10px;
         margin: 20px auto;
@@ -137,17 +154,6 @@ h1, h1.post-title {
     img:not(#fullpage-image) {
         width: 90%;
     }
-}
-
-h3 {
-    font-size: 1.25em;
-}
-
-h1, h2, h3, h4, h5, h6 {
-    margin-top: 24px;
-    margin-bottom: 16px;
-    font-weight: 600;
-    line-height: 1.25;
 }
 
 .trigger {
