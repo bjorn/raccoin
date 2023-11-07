@@ -8,6 +8,7 @@ license = "GPL-3.0-or-later"
 authors = ["Thorbjørn Lindeijer <bjorn@lindeijer.nl>"]
 edition = "2021"
 build = "build.rs"
+include = ["src/**/*", "LICENSE", "README.md", "build.rs"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
