@@ -20,9 +20,11 @@ mod poloniex;
 mod time;
 mod trezor;
 
+use anyhow::{Context, Result};
 use base::{Operation, Amount, Transaction, cmc_id, PriceHistory};
 use chrono_tz::Europe;
 use chrono::{Duration, Datelike, Utc};
+use directories::ProjectDirs;
 use raccoin_ui::*;
 use fifo::{FIFO, CapitalGain};
 use rust_decimal_macros::dec;
@@ -31,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, SharedString};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default};
+use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default, ffi::OsString};
 
 #[derive(EnumIter, Serialize, Deserialize)]
 enum TransactionsSourceType {
@@ -200,6 +202,12 @@ impl Wallet {
 }
 
 #[derive(Serialize, Deserialize, Default)]
+struct AppState {
+    portfolio_file: Option<PathBuf>,
+    last_source_directory: Option<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
 struct Portfolio {
     #[serde(default)]
     wallets: Vec<Wallet>,
@@ -274,8 +282,8 @@ impl TransactionFilter {
 }
 
 struct App {
-    portfolio_file: Option<PathBuf>,
-    last_source_directory: Option<PathBuf>,
+    project_dirs: Option<ProjectDirs>,
+    state: AppState,
     portfolio: Portfolio,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
@@ -293,9 +301,17 @@ impl App {
     fn new() -> Self {
         let mut price_history = PriceHistory::new();
 
+        let project_dirs = ProjectDirs::from("org", "raccoin",  "Raccoin");
+        let state = project_dirs.as_ref().and_then(|dirs| {
+            let config_dir = dirs.config_local_dir();
+            std::fs::create_dir_all(config_dir).map(|_| config_dir.join("state.json")).ok()
+        }).and_then(|state_file| std::fs::read_to_string(state_file).ok()).and_then(|json| {
+            serde_json::from_str::<AppState>(&json).ok()
+        }).unwrap_or_default();
+
         Self {
-            portfolio_file: None,
-            last_source_directory: None,
+            project_dirs,
+            state,
             portfolio: Portfolio::default(),
             transactions: Vec::new(),
             reports: Vec::new(),
@@ -326,7 +342,7 @@ impl App {
             }
         }));
 
-        self.portfolio_file = Some(file_path.into());
+        self.state.portfolio_file = Some(file_path.into());
         self.portfolio = portfolio;
 
         self.refresh_transactions();
@@ -340,7 +356,7 @@ impl App {
             Ok(())
         }
 
-        if let Some(path) = portfolio_file.as_ref().or(self.portfolio_file.as_ref()) {
+        if let Some(path) = portfolio_file.as_ref().or(self.state.portfolio_file.as_ref()) {
             let portfolio_path = path.parent().unwrap_or(Path::new(""));
             self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
                 match source.source_type {
@@ -360,7 +376,7 @@ impl App {
                 Ok(_) => {
                     println!("Saved portfolio to {}", path.display());
                     if portfolio_file.is_some() {
-                        self.portfolio_file = portfolio_file;
+                        self.state.portfolio_file = portfolio_file;
                     }
                 }
                 Err(_) => {
@@ -380,6 +396,15 @@ impl App {
         ui_set_transactions(self);
         ui_set_reports(self);
         ui_set_portfolio(ui, self);
+    }
+
+    fn save_state(&self) -> Result<(), Box<dyn Error>> {
+        let state_file = self.project_dirs.as_ref().map(|dirs| {
+            dirs.config_local_dir().join("state.json")
+        }).context("Missing project directories")?;
+
+        std::fs::write(state_file, serde_json::to_string_pretty(&self.state)?)?;
+        Ok(())
     }
 }
 
@@ -1210,7 +1235,7 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
         }
 
         facade.set_portfolio(UiPortfolio {
-            file_name: app.portfolio_file.as_deref().map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
+            file_name: app.state.portfolio_file.as_deref().map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
             balance: balance.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
             cost_base: cost_base.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
             unrealized_gains: (balance - cost_base).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero).try_into().unwrap(),
@@ -1223,8 +1248,8 @@ fn ui_set_portfolio(ui: &AppWindow, app: &App) {
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::new();
 
-    if let Some(portfolio_file) = env::args_os().nth(1) {
-        let portfolio_file: PathBuf = portfolio_file.into();
+    // Load portfolio from command-line or from previous application state
+    if let Some(portfolio_file) = env::args_os().nth(1).map(OsString::into).or_else(|| app.state.portfolio_file.to_owned()) {
         if let Err(e) = app.load_portfolio(&portfolio_file) {
             println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
             return Ok(());
@@ -1372,7 +1397,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .set_title("Add Transaction Source")
                 .add_filter("CSV", &["csv"]);
 
-            if let Some(last_source_directory) = &app.last_source_directory {
+            if let Some(last_source_directory) = &app.state.last_source_directory {
                 println!("Using last source directory: {}", last_source_directory.display());
                 dialog = dialog.set_directory(last_source_directory);
             }
@@ -1390,7 +1415,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             transaction_count: 0,
                             transactions: Vec::new(),
                         });
-                        app.last_source_directory = Some(source_directory);
+                        app.state.last_source_directory = Some(source_directory);
 
                         app.refresh_transactions();
                         app.refresh_ui(&ui_weak.unwrap());
@@ -1614,6 +1639,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     ui.run()?;
+
+    app.borrow().save_state()?;
 
     Ok(())
 }

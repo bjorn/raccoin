@@ -17,14 +17,15 @@ anyhow = "1.0.75"
 bitcoin = "0.30.1"
 chrono = { version = "0.4.31", features = ["serde"] }
 chrono-tz = "0.8"
-raccoin_ui = { version = "0.1", path = "raccoin_ui" }
 csv = "1.2"
+directories = "5.0.1"
 esplora-client = { version = "0.6", default-features = false, features = ["async"] }
 ethers-core = "2.0.10"
 ethers-etherscan = "2.0.10"
 futures = "0.3.28"
 open = "5.0.0"
 pathdiff = "0.2.1"
+raccoin_ui = { version = "0.1", path = "raccoin_ui" }
 reqwest = { version = "0.11.22", features = ["blocking"] }
 rfd = { version = "0.12", default-features = false, features = [ "xdg-portal" ] }
 rust_decimal = "1.32"
