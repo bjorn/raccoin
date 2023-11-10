@@ -1,4 +1,4 @@
-import { GroupBox, VerticalBox, HorizontalBox, ListView } from "std-widgets.slint";
+import { GroupBox, VerticalBox, HorizontalBox, ListView, Button } from "std-widgets.slint";
 import {
     Cell,
     CurrencyIcon,
@@ -38,6 +38,18 @@ export component Portfolio inherits Rectangle {
                     font-family: "DejaVu Sans Mono";
                     text: Facade.portfolio.unrealized-gains;
                 }
+            }
+            HorizontalBox {
+                Button {
+                    text: "Load";
+                    clicked => { Facade.load-portfolio(); }
+                }
+                Button {
+                    text: "Close";
+                    clicked => { Facade.close-portfolio(); }
+                }
+                height: self.preferred-height;
+                width: self.preferred-width;
             }
         }
 

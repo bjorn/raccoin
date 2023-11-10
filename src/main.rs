@@ -386,6 +386,12 @@ impl App {
         }
     }
 
+    fn close_portfolio(&mut self) {
+        self.portfolio = Portfolio::default();
+        self.state.portfolio_file = None;
+        self.refresh_transactions();
+    }
+
     fn refresh_transactions(&mut self) {
         self.transactions = load_transactions(&mut self.portfolio.wallets, &self.portfolio.ignored_currencies, &self.price_history).unwrap_or_default();
         self.reports = calculate_tax_reports(&mut self.transactions);
@@ -1359,6 +1365,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 _ => {}
             }
+        });
+    }
+
+    {
+        let app = app.clone();
+        let ui_weak = ui.as_weak();
+
+        facade.on_close_portfolio(move || {
+            let mut app = app.borrow_mut();
+            app.close_portfolio();
+            app.refresh_ui(&ui_weak.unwrap());
         });
     }
 
