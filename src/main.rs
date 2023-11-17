@@ -31,9 +31,9 @@ use rust_decimal_macros::dec;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
-use slint::{VecModel, StandardListViewItem, SharedString};
+use slint::{VecModel, StandardListViewItem, SharedString, ModelRc};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default, ffi::OsString};
+use std::{rc::Rc, path::{Path, PathBuf}, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default, ffi::OsString, sync::{Arc, Mutex}};
 
 #[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
 enum TransactionsSourceType {
@@ -292,10 +292,6 @@ struct App {
     transaction_filter: TransactionFilter,
 
     ui_weak: slint::Weak<AppWindow>,
-    ui_wallets: Rc<VecModel<UiWallet>>,
-    ui_transactions: Rc<VecModel<UiTransaction>>,
-    ui_report_years: Rc<VecModel<StandardListViewItem>>,
-    ui_reports: Rc<VecModel<UiTaxReport>>,
 }
 
 impl App {
@@ -321,10 +317,6 @@ impl App {
             transaction_filter: TransactionFilter::None,
 
             ui_weak: slint::Weak::default(),
-            ui_wallets: Rc::new(Default::default()),
-            ui_transactions: Rc::new(Default::default()),
-            ui_report_years: Rc::new(Default::default()),
-            ui_reports: Rc::new(Default::default()),
         }
     }
 
@@ -401,6 +393,22 @@ impl App {
 
     fn ui(&self) -> AppWindow {
         self.ui_weak.unwrap()
+    }
+
+    fn wallets_model(&self) -> ModelRc<UiWallet> {
+        self.ui().global::<Facade>().get_wallets()
+    }
+
+    fn transactions_model(&self) -> ModelRc<UiTransaction> {
+        self.ui().global::<Facade>().get_transactions()
+    }
+
+    fn report_years_model(&self) -> ModelRc<StandardListViewItem> {
+        self.ui().global::<Facade>().get_report_years()
+    }
+
+    fn reports_model(&self) -> ModelRc<UiTaxReport> {
+        self.ui().global::<Facade>().get_reports()
     }
 
     fn refresh_ui(&self) {
@@ -957,17 +965,19 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
     reports
 }
 
-fn initialize_ui(app: &App) -> Result<AppWindow, slint::PlatformError> {
+fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     let ui = AppWindow::new()?;
+    app.ui_weak = ui.as_weak();
+
     let facade = ui.global::<Facade>();
 
     let source_types: Vec<SharedString> = TransactionsSourceType::iter().map(|s| SharedString::from(s.to_string())).collect();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
-    facade.set_wallets(app.ui_wallets.clone().into());
-    facade.set_transactions(app.ui_transactions.clone().into());
-    facade.set_report_years(app.ui_report_years.clone().into());
-    facade.set_reports(app.ui_reports.clone().into());
+    facade.set_wallets(ModelRc::new(VecModel::<UiWallet>::default()));
+    facade.set_transactions(ModelRc::new(VecModel::<UiTransaction>::default()));
+    facade.set_report_years(ModelRc::new(VecModel::<StandardListViewItem>::default()));
+    facade.set_reports(ModelRc::new(VecModel::<UiTaxReport>::default()));
     facade.set_portfolio(UiPortfolio::default());
 
     facade.on_open_transaction(move |blockchain, tx_hash| {
@@ -1020,7 +1030,9 @@ fn ui_set_wallets(app: &App) {
         }
     }).collect();
 
-    app.ui_wallets.set_vec(ui_wallets);
+    let wallets_model_rc = app.wallets_model();
+    let wallets_model = slint::Model::as_any(&wallets_model_rc).downcast_ref::<VecModel<UiWallet>>().unwrap();
+    wallets_model.set_vec(ui_wallets);
 }
 
 fn ui_set_transactions(app: &App) {
@@ -1140,7 +1152,9 @@ fn ui_set_transactions(app: &App) {
         });
     }
 
-    app.ui_transactions.set_vec(ui_transactions);
+    let transactions_model_rc = app.transactions_model();
+    let transactions_model = slint::Model::as_any(&transactions_model_rc).downcast_ref::<VecModel<UiTransaction>>().unwrap();
+    transactions_model.set_vec(ui_transactions);
 }
 
 fn ui_set_reports(app: &App) {
@@ -1151,7 +1165,9 @@ fn ui_set_reports(app: &App) {
             StandardListViewItem::from(report.year.to_string().as_str())
         }
     }).collect();
-    app.ui_report_years.set_vec(report_years);
+    let report_years_model_rc = app.report_years_model();
+    let report_years_model = slint::Model::as_any(&report_years_model_rc).downcast_ref::<VecModel<StandardListViewItem>>().unwrap();
+    report_years_model.set_vec(report_years);
 
     let ui_reports: Vec<UiTaxReport> = app.reports.iter().map(|report| {
         let ui_gains: Vec<UiCapitalGain> = report.gains.iter().map(|gain| {
@@ -1202,7 +1218,9 @@ fn ui_set_reports(app: &App) {
         }
     }).collect();
 
-    app.ui_reports.set_vec(ui_reports);
+    let reports_model_rc = app.reports_model();
+    let reports_model = slint::Model::as_any(&reports_model_rc).downcast_ref::<VecModel<UiTaxReport>>().unwrap();
+    reports_model.set_vec(ui_reports);
 }
 
 fn ui_set_portfolio(app: &App) {
@@ -1269,18 +1287,17 @@ async fn main() -> Result<()> {
         }
     }
 
-    let ui = initialize_ui(&app)?;
-    app.ui_weak = ui.as_weak();
+    let ui = initialize_ui(&mut app)?;
     app.refresh_ui();
 
-    let app = Rc::new(RefCell::new(app));
+    let app = Arc::new(Mutex::new(app));
     let facade = ui.global::<Facade>();
 
     {
         let app = app.clone();
 
         facade.on_balances_for_currency(move |currency| {
-            let app = app.borrow();
+            let app = app.lock().unwrap();
             let currency = currency.as_str();
 
             // collect the balances for the given currency from each source
@@ -1310,7 +1327,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_balances_for_wallet(move |index| {
-            let app = app.borrow();
+            let app = app.lock().unwrap();
             let mut balances: Vec<UiBalanceForWallet> = Vec::new();
             if let Some(source) = app.portfolio.wallets.get(index as usize) {
                 balances.extend(source.balances.iter().filter_map(|(currency, quantity)| {
@@ -1341,7 +1358,7 @@ async fn main() -> Result<()> {
 
             match dialog.save_file() {
                 Some(path) => {
-                    let mut app = app.borrow_mut();
+                    let mut app = app.lock().unwrap();
                     app.portfolio = Portfolio::default();
                     app.save_portfolio(Some(path));
                     app.refresh_transactions();
@@ -1362,7 +1379,7 @@ async fn main() -> Result<()> {
 
             match dialog.pick_file() {
                 Some(path) => {
-                    let mut app = app.borrow_mut();
+                    let mut app = app.lock().unwrap();
                     if let Err(e) = app.load_portfolio(&path) {
                         println!("Error loading portfolio from {}: {}", path.display(), e);
                     } else {
@@ -1378,7 +1395,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_close_portfolio(move || {
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             app.close_portfolio();
             app.refresh_ui();
         });
@@ -1388,7 +1405,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_add_wallet(move |name| {
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             let wallet = Wallet::new(name.into());
             app.portfolio.wallets.push(wallet);
             ui_set_wallets(&app);
@@ -1400,7 +1417,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_remove_wallet(move |index| {
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             app.portfolio.wallets.remove(index as usize);
             app.refresh_transactions();
             app.refresh_ui();
@@ -1412,7 +1429,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_add_source(move |wallet_index| {
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             let mut dialog = rfd::FileDialog::new()
                 .set_title("Add Transaction Source")
                 .add_filter("CSV", &["csv"]);
@@ -1450,7 +1467,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_remove_source(move |wallet_index, source_index| {
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
                 wallet.sources.remove(source_index as usize);
                 app.refresh_transactions();
@@ -1464,7 +1481,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_set_wallet_enabled(move |index, enabled| {
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             if let Some(wallet) = app.portfolio.wallets.get_mut(index as usize) {
                 wallet.enabled = enabled;
 
@@ -1479,7 +1496,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_set_source_enabled(move |wallet_index, source_index, enabled| {
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
                 if let Some(source) = wallet.sources.get_mut(source_index as usize) {
                     source.enabled = enabled;
@@ -1497,7 +1514,7 @@ async fn main() -> Result<()> {
 
         facade.on_sync_source(move |wallet_index, source_index| {
             let app_for_future = app.clone();
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             let source = app.portfolio.wallets.get_mut(wallet_index as usize)
                 .and_then(|wallet| wallet.sources.get_mut(source_index as usize));
 
@@ -1509,7 +1526,7 @@ async fn main() -> Result<()> {
             let source_type = source.source_type;
             let source_path = source.path.clone();
 
-            slint::spawn_local(async move {
+            tokio::task::spawn(async move {
                 let esplora_client = esplora::async_esplora_client().unwrap();
                 let mut transactions = match source_type {
                     TransactionsSourceType::BitcoinAddresses => {
@@ -1531,18 +1548,21 @@ async fn main() -> Result<()> {
 
                 transactions.sort_by(|a, b| a.cmp(b) );
 
-                let mut app = app_for_future.borrow_mut();
-                if let Some(source) = app.portfolio.wallets.get_mut(wallet_index as usize)
-                        .and_then(|wallet| wallet.sources.get_mut(source_index as usize)) {
-                    source.transactions = transactions;
+                slint::invoke_from_event_loop(move || {
+                    let mut app = app_for_future.lock().unwrap();
 
-                    app.refresh_transactions();
-                    app.refresh_ui();
-                    app.save_portfolio(None);
-                }
+                    if let Some(source) = app.portfolio.wallets.get_mut(wallet_index as usize)
+                            .and_then(|wallet| wallet.sources.get_mut(source_index as usize)) {
+                        source.transactions = transactions;
+
+                        app.refresh_transactions();
+                        app.refresh_ui();
+                        app.save_portfolio(None);
+                    }
+                }).unwrap();
 
                 anyhow::Ok(())
-            }).unwrap();
+            });
         });
     }
 
@@ -1556,7 +1576,7 @@ async fn main() -> Result<()> {
 
     let app_for_export_summary = app.clone();
     facade.on_export_summary(move |index| {
-        let app = app_for_export_summary.borrow();
+        let app = app_for_export_summary.lock().unwrap();
         let report = app.reports.get(index as usize).expect("report index should be valid");
         let file_name = format!("report_summary_{}.csv", report.year);
 
@@ -1578,7 +1598,7 @@ async fn main() -> Result<()> {
 
     let app_for_export_capital_gains = app.clone();
     facade.on_export_capital_gains(move |index| {
-        let app = app_for_export_capital_gains.borrow();
+        let app = app_for_export_capital_gains.lock().unwrap();
         let report = app.reports.get(index as usize).expect("report index should be valid");
         let file_name = format!("capital_gains_{}.csv", report.year);
 
@@ -1604,7 +1624,7 @@ async fn main() -> Result<()> {
         facade.on_export_transactions_csv(move || {
             match save_csv_file("Export Transactions (CSV)", "transactions.csv") {
                 Some(path) => {
-                    let app = app.borrow();
+                    let app = app.lock().unwrap();
                     // todo: provide this feedback in the UI
                     match ctc::save_transactions_to_ctc_csv(&app.transactions, &path) {
                         Ok(_) => {
@@ -1631,7 +1651,7 @@ async fn main() -> Result<()> {
 
             match dialog.save_file() {
                 Some(path) => {
-                    let app = app.borrow();
+                    let app = app.lock().unwrap();
                     // todo: provide this feedback in the UI
                     match base::save_transactions_to_json(&app.transactions, &path) {
                         Ok(_) => {
@@ -1651,7 +1671,7 @@ async fn main() -> Result<()> {
         let app = app.clone();
 
         facade.on_transaction_filter_changed(move || {
-            let mut app = app.borrow_mut();
+            let mut app = app.lock().unwrap();
             let ui = app.ui();
             let facade = ui.global::<Facade>();
             app.transaction_filter = if facade.get_wallet_filter() >= 0 {
@@ -1668,7 +1688,7 @@ async fn main() -> Result<()> {
 
     ui.run()?;
 
-    app.borrow().save_state()?;
+    app.lock().unwrap().save_state()?;
 
     Ok(())
 }
