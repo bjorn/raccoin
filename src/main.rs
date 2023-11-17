@@ -35,7 +35,7 @@ use slint::{VecModel, StandardListViewItem, SharedString};
 use strum::{EnumIter, IntoEnumIterator};
 use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default, ffi::OsString};
 
-#[derive(EnumIter, Serialize, Deserialize)]
+#[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
 enum TransactionsSourceType {
     BitcoinAddresses,
     BitcoinXpubs,
@@ -291,6 +291,7 @@ struct App {
 
     transaction_filter: TransactionFilter,
 
+    ui_weak: slint::Weak<AppWindow>,
     ui_wallets: Rc<VecModel<UiWallet>>,
     ui_transactions: Rc<VecModel<UiTransaction>>,
     ui_report_years: Rc<VecModel<StandardListViewItem>>,
@@ -319,6 +320,7 @@ impl App {
 
             transaction_filter: TransactionFilter::None,
 
+            ui_weak: slint::Weak::default(),
             ui_wallets: Rc::new(Default::default()),
             ui_transactions: Rc::new(Default::default()),
             ui_report_years: Rc::new(Default::default()),
@@ -397,11 +399,15 @@ impl App {
         self.reports = calculate_tax_reports(&mut self.transactions);
     }
 
-    fn refresh_ui(&self, ui: &AppWindow) {
+    fn ui(&self) -> AppWindow {
+        self.ui_weak.unwrap()
+    }
+
+    fn refresh_ui(&self) {
         ui_set_wallets(self);
         ui_set_transactions(self);
         ui_set_reports(self);
-        ui_set_portfolio(ui, self);
+        ui_set_portfolio(self);
     }
 
     fn save_state(&self) -> Result<(), Box<dyn Error>> {
@@ -1199,7 +1205,8 @@ fn ui_set_reports(app: &App) {
     app.ui_reports.set_vec(ui_reports);
 }
 
-fn ui_set_portfolio(ui: &AppWindow, app: &App) {
+fn ui_set_portfolio(app: &App) {
+    let ui = app.ui();
     let facade = ui.global::<Facade>();
     if let Some(report) = app.reports.last() {
         let now = Utc::now().naive_utc();
@@ -1263,7 +1270,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let ui = initialize_ui(&app)?;
-    app.refresh_ui(&ui);
+    app.ui_weak = ui.as_weak();
+    app.refresh_ui();
 
     let app = Rc::new(RefCell::new(app));
     let facade = ui.global::<Facade>();
@@ -1324,7 +1332,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     {
         let app = app.clone();
-        let ui_weak = ui.as_weak();
 
         facade.on_new_portfolio(move || {
             let dialog = rfd::FileDialog::new()
@@ -1338,7 +1345,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     app.portfolio = Portfolio::default();
                     app.save_portfolio(Some(path));
                     app.refresh_transactions();
-                    app.refresh_ui(&ui_weak.unwrap());
+                    app.refresh_ui();
                 }
                 _ => {}
             }
@@ -1347,7 +1354,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     {
         let app = app.clone();
-        let ui_weak = ui.as_weak();
 
         facade.on_load_portfolio(move || {
             let dialog = rfd::FileDialog::new()
@@ -1360,7 +1366,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if let Err(e) = app.load_portfolio(&path) {
                         println!("Error loading portfolio from {}: {}", path.display(), e);
                     } else {
-                        app.refresh_ui(&ui_weak.unwrap());
+                        app.refresh_ui();
                     }
                 }
                 _ => {}
@@ -1370,12 +1376,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     {
         let app = app.clone();
-        let ui_weak = ui.as_weak();
 
         facade.on_close_portfolio(move || {
             let mut app = app.borrow_mut();
             app.close_portfolio();
-            app.refresh_ui(&ui_weak.unwrap());
+            app.refresh_ui();
         });
     }
 
@@ -1393,20 +1398,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     {
         let app = app.clone();
-        let ui_weak = ui.as_weak();
 
         facade.on_remove_wallet(move |index| {
             let mut app = app.borrow_mut();
             app.portfolio.wallets.remove(index as usize);
             app.refresh_transactions();
-            app.refresh_ui(&ui_weak.unwrap());
+            app.refresh_ui();
             app.save_portfolio(None);
         });
     }
 
     {
         let app = app.clone();
-        let ui_weak = ui.as_weak();
 
         facade.on_add_source(move |wallet_index| {
             let mut app = app.borrow_mut();
@@ -1435,7 +1438,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         app.state.last_source_directory = Some(source_directory);
 
                         app.refresh_transactions();
-                        app.refresh_ui(&ui_weak.unwrap());
+                        app.refresh_ui();
                         app.save_portfolio(None);
                     }
                 }
@@ -1445,21 +1448,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     {
         let app = app.clone();
-        let ui_weak = ui.as_weak();
 
         facade.on_remove_source(move |wallet_index, source_index| {
             let mut app = app.borrow_mut();
             if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
                 wallet.sources.remove(source_index as usize);
                 app.refresh_transactions();
-                app.refresh_ui(&ui_weak.unwrap());
+                app.refresh_ui();
                 app.save_portfolio(None);
             }
         });
     }
 
     {
-        let ui_weak = ui.as_weak();
         let app = app.clone();
 
         facade.on_set_wallet_enabled(move |index, enabled| {
@@ -1468,14 +1469,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 wallet.enabled = enabled;
 
                 app.refresh_transactions();
-                app.refresh_ui(&ui_weak.unwrap());
+                app.refresh_ui();
                 app.save_portfolio(None);
             }
         });
     }
 
     {
-        let ui_weak = ui.as_weak();
         let app = app.clone();
 
         facade.on_set_source_enabled(move |wallet_index, source_index, enabled| {
@@ -1485,7 +1485,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     source.enabled = enabled;
 
                     app.refresh_transactions();
-                    app.refresh_ui(&ui_weak.unwrap());
+                    app.refresh_ui();
                     app.save_portfolio(None);
                 }
             }
@@ -1493,44 +1493,56 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     {
-        let ui_weak = ui.as_weak();
         let app = app.clone();
 
         facade.on_sync_source(move |wallet_index, source_index| {
+            let app_for_future = app.clone();
             let mut app = app.borrow_mut();
+            let source = app.portfolio.wallets.get_mut(wallet_index as usize)
+                .and_then(|wallet| wallet.sources.get_mut(source_index as usize));
 
-            if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
-                if let Some(source) = wallet.sources.get_mut(source_index as usize) {
-                    let esplora_client = esplora::async_esplora_client().unwrap();
-                    let tx = match source.source_type {
-                        TransactionsSourceType::BitcoinAddresses => {
-                            futures::executor::block_on(esplora::address_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()
-                        }
-                        TransactionsSourceType::BitcoinXpubs => {
-                            futures::executor::block_on(esplora::xpub_addresses_transactions(&esplora_client, &source.path.split_ascii_whitespace().map(|s| s.to_owned()).collect())).ok()
-                        }
-                        TransactionsSourceType::EthereumAddress => {
-                            futures::executor::block_on(etherscan::address_transactions(&source.path)).ok()
-                        }
-                        TransactionsSourceType::StellarAccount => {
-                            futures::executor::block_on(horizon::address_transactions(&source.path)).ok()
-                        }
-                        _ => {
-                            println!("Sync not supported for this source type");
-                            None
-                        }
-                    };
+            if source.is_none() {
+                return
+            }
+            let source = source.unwrap();
 
-                    if let Some(mut tx) = tx {
-                        tx.sort_by(|a, b| a.cmp(b) );
-                        source.transactions = tx;
+            let source_type = source.source_type;
+            let source_path = source.path.clone();
+
+            slint::spawn_local(async move {
+                let esplora_client = esplora::async_esplora_client().unwrap();
+                let transactions = match source_type {
+                    TransactionsSourceType::BitcoinAddresses => {
+                        esplora::address_transactions(&esplora_client, &source_path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).await
+                    }
+                    TransactionsSourceType::BitcoinXpubs => {
+                        esplora::xpub_addresses_transactions(&esplora_client, &source_path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).await
+                    }
+                    TransactionsSourceType::EthereumAddress => {
+                        etherscan::address_transactions(&source_path).await
+                    }
+                    TransactionsSourceType::StellarAccount => {
+                        horizon::address_transactions(&source_path).await
+                    }
+                    _ => {
+                        Err("Sync not supported for this source type".into())
+                    }
+                };
+
+                if let Ok(mut transactions) = transactions {
+                    transactions.sort_by(|a, b| a.cmp(b) );
+
+                    let mut app = app_for_future.borrow_mut();
+                    if let Some(source) = app.portfolio.wallets.get_mut(wallet_index as usize)
+                            .and_then(|wallet| wallet.sources.get_mut(source_index as usize)) {
+                        source.transactions = transactions;
 
                         app.refresh_transactions();
-                        app.refresh_ui(&ui_weak.unwrap());
+                        app.refresh_ui();
                         app.save_portfolio(None);
                     }
                 }
-            }
+            }).unwrap();
         });
     }
 
@@ -1636,12 +1648,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     {
-        let ui_weak = ui.as_weak();
         let app = app.clone();
 
         facade.on_transaction_filter_changed(move || {
             let mut app = app.borrow_mut();
-            let ui = ui_weak.unwrap();
+            let ui = app.ui();
             let facade = ui.global::<Facade>();
             app.transaction_filter = if facade.get_wallet_filter() >= 0 {
                 TransactionFilter::WalletIndex(facade.get_wallet_filter() as usize)
