@@ -1,5 +1,4 @@
-use std::error::Error;
-
+use anyhow::Result;
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -219,7 +218,7 @@ fn convert_ctc_to_coinpanda<'a>(ctc: &'a CtcTx) -> CoinpandaTx<'a> {
     tx
 }
 
-pub(crate) fn convert_ctc_csv_to_coinpanda_csv(input_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
+pub(crate) fn convert_ctc_csv_to_coinpanda_csv(input_path: &str, output_path: &str) -> Result<()> {
     println!("Converting {} to {}", input_path, output_path);
     let mut rdr = csv::ReaderBuilder::new()
         .from_path(input_path)?;

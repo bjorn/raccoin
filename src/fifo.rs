@@ -1,5 +1,6 @@
-use std::{collections::{VecDeque, HashMap}, error::Error, path::Path};
+use std::{collections::{VecDeque, HashMap}, path::Path};
 
+use anyhow::Result;
 use chrono::NaiveDateTime;
 use chrono_tz::Europe;
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -291,7 +292,7 @@ fn total_holdings(holdings: &VecDeque<Entry>) -> Decimal {
     holdings.iter().map(|e| e.remaining).sum()
 }
 
-pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) -> Result<(), Box<dyn Error>> {
+pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) -> Result<()> {
     let mut wtr = csv::Writer::from_path(output_path)?;
 
     #[derive(Serialize)]

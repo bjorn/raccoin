@@ -1,4 +1,5 @@
-use std::{error::Error, str::FromStr, collections::{HashMap, HashSet, hash_map::Entry}};
+use anyhow::Result;
+use std::{str::FromStr, collections::{HashMap, HashSet, hash_map::Entry}};
 use bitcoin::{Address, Network, bip32::{ExtendedPubKey, DerivationPath, ChildNumber}, secp256k1::{Secp256k1, self}, base58, ScriptBuf};
 use chrono::NaiveDateTime;
 use esplora_client::{Builder, AsyncClient, Tx};
@@ -13,9 +14,9 @@ pub(crate) fn async_esplora_client() -> Result<AsyncClient, esplora_client::Erro
 pub(crate) async fn address_transactions(
     client: &AsyncClient,
     addresses: &Vec<String>,
-) -> Result<Vec<Transaction>, Box<dyn Error>> {
+) -> Result<Vec<Transaction>> {
     let mut pub_keys = HashSet::new();
-    let mut address_transactions: HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>> = HashMap::new();
+    let mut address_transactions: HashMap<Address, Result<Vec<Tx>>> = HashMap::new();
 
     for address in addresses {
         let address = Address::from_str(address)?.require_network(Network::Bitcoin)?;
@@ -96,7 +97,7 @@ fn tx_to_transaction(
 async fn address_txs(
     client: &AsyncClient,
     address: &Address,
-) -> Result<Vec<Tx>, Box<dyn Error>> {
+) -> Result<Vec<Tx>> {
     let script_pubkey = address.script_pubkey();
     let script = script_pubkey.as_script();
 
@@ -129,12 +130,12 @@ enum AddressType {
 
 async fn scan_children<C: secp256k1::Verification>(
     client: &AsyncClient,
-    address_transactions: &mut HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>>,
+    address_transactions: &mut HashMap<Address, Result<Vec<Tx>>>,
     secp: &Secp256k1<C>,
     xpub_key: &ExtendedPubKey,
     derivation_path: &DerivationPath,
     address_type: AddressType
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let mut iter = derivation_path.normal_children();
     let mut empty_addresses = 0;
 
@@ -175,8 +176,8 @@ async fn xpub_addresses_and_txs<C: secp256k1::Verification>(
     client: &AsyncClient,
     secp: &Secp256k1<C>,
     xpub: &str,
-    address_transactions: &mut HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>>,
-) -> Result<(), Box<dyn Error>> {
+    address_transactions: &mut HashMap<Address, Result<Vec<Tx>>>,
+) -> Result<()> {
     let mut xpub_data = base58::decode_check(xpub)?;
 
     // replace the version bytes with 0488b21e, this way we can support ypub and zpub
@@ -209,11 +210,11 @@ async fn xpub_addresses_and_txs<C: secp256k1::Verification>(
 pub(crate) async fn xpub_addresses_transactions(
     client: &AsyncClient,
     xpubs: &Vec<String>,
-) -> Result<Vec<Transaction>, Box<dyn Error>> {
+) -> Result<Vec<Transaction>> {
     let secp = Secp256k1::new();
 
     // Collect all relevant transactions in a map from Address -> Vec<Tx>
-    let mut address_transactions: HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>> = HashMap::new();
+    let mut address_transactions: HashMap<Address, Result<Vec<Tx>>> = HashMap::new();
 
     // todo: do in parallel
     for xpub in xpubs {
@@ -234,7 +235,7 @@ pub(crate) async fn xpub_addresses_transactions(
 }
 
 // Converts the transactions, using a set of tx_hash to skip duplicates
-fn process_transactions(address_transactions: HashMap<Address, Result<Vec<Tx>, Box<dyn Error>>>, pub_keys: HashSet<ScriptBuf>) -> Vec<Transaction> {
+fn process_transactions(address_transactions: HashMap<Address, Result<Vec<Tx>>>, pub_keys: HashSet<ScriptBuf>) -> Vec<Transaction> {
     let mut processed_txs = HashSet::new();
     let mut transactions = Vec::new();
 

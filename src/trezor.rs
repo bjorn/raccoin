@@ -1,5 +1,6 @@
-use std::{error::Error, path::Path};
+use std::path::Path;
 
+use anyhow::Result;
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
@@ -89,7 +90,7 @@ impl<'a> From<TrezorTransaction<'a>> for Transaction {
 }
 
 // loads a TREZOR Suite CSV file into a list of unified transactions
-pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()

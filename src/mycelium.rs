@@ -1,5 +1,6 @@
-use std::{error::Error, path::Path};
+use std::path::Path;
 
+use anyhow::Result;
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use csv::Trim;
@@ -59,7 +60,7 @@ impl From<MyceliumTransaction> for Transaction {
 }
 
 // loads a Mycelium CSV file into a list of unified transactions
-pub(crate) fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()

@@ -20,7 +20,7 @@ mod poloniex;
 mod time;
 mod trezor;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use base::{Operation, Amount, Transaction, cmc_id, PriceHistory};
 use chrono_tz::Europe;
 use chrono::{Duration, Datelike, Utc};
@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, SharedString};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{error::Error, rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default, ffi::OsString};
+use std::{rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default, ffi::OsString};
 
 #[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
 enum TransactionsSourceType {
@@ -328,7 +328,7 @@ impl App {
         }
     }
 
-    fn load_portfolio(&mut self, file_path: &Path) -> Result<(), Box<dyn Error>> {
+    fn load_portfolio(&mut self, file_path: &Path) -> Result<()> {
         // todo: report portfolio loading error in UI
         let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
         let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
@@ -352,7 +352,7 @@ impl App {
     }
 
     fn save_portfolio(&mut self, portfolio_file: Option<PathBuf>) {
-        fn internal_save(portfolio: &Portfolio, portfolio_file: &Path) -> Result<(), Box<dyn Error>> {
+        fn internal_save(portfolio: &Portfolio, portfolio_file: &Path) -> Result<()> {
             let json = serde_json::to_string_pretty(&portfolio)?;
             std::fs::write(portfolio_file, json)?;
             Ok(())
@@ -410,7 +410,7 @@ impl App {
         ui_set_portfolio(self);
     }
 
-    fn save_state(&self) -> Result<(), Box<dyn Error>> {
+    fn save_state(&self) -> Result<()> {
         let state_file = self.project_dirs.as_ref().map(|dirs| {
             dirs.config_local_dir().join("state.json")
         }).context("Missing project directories")?;
@@ -420,7 +420,7 @@ impl App {
     }
 }
 
-pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path: &Path) -> Result<(), Box<dyn Error>> {
+pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path: &Path) -> Result<()> {
     let mut wtr = csv::Writer::from_path(output_path)?;
 
     #[derive(Serialize)]
@@ -468,7 +468,7 @@ pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path
     Ok(())
 }
 
-fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>, price_history: &PriceHistory) -> Result<Vec<Transaction>, Box<dyn Error>> {
+fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>, price_history: &PriceHistory) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     for (wallet_index, wallet) in wallets.iter_mut().enumerate() {
@@ -485,7 +485,7 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
                 TransactionsSourceType::BitcoinXpubs |
                 TransactionsSourceType::EthereumAddress |
                 TransactionsSourceType::StellarAccount => {
-                    Ok(source.transactions.clone())
+                    anyhow::Ok(source.transactions.clone())
                 }
                 TransactionsSourceType::BitcoinCoreCsv => {
                     bitcoin_core::load_bitcoin_core_csv(&source.full_path)
@@ -1258,7 +1258,7 @@ fn ui_set_portfolio(app: &App) {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<()> {
     let mut app = App::new();
 
     // Load portfolio from command-line or from previous application state
@@ -1511,7 +1511,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             slint::spawn_local(async move {
                 let esplora_client = esplora::async_esplora_client().unwrap();
-                let transactions = match source_type {
+                let mut transactions = match source_type {
                     TransactionsSourceType::BitcoinAddresses => {
                         esplora::address_transactions(&esplora_client, &source_path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).await
                     }
@@ -1525,23 +1525,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         horizon::address_transactions(&source_path).await
                     }
                     _ => {
-                        Err("Sync not supported for this source type".into())
+                        Err(anyhow!("Sync not supported for this source type"))
                     }
-                };
+                }?;
 
-                if let Ok(mut transactions) = transactions {
-                    transactions.sort_by(|a, b| a.cmp(b) );
+                transactions.sort_by(|a, b| a.cmp(b) );
 
-                    let mut app = app_for_future.borrow_mut();
-                    if let Some(source) = app.portfolio.wallets.get_mut(wallet_index as usize)
-                            .and_then(|wallet| wallet.sources.get_mut(source_index as usize)) {
-                        source.transactions = transactions;
+                let mut app = app_for_future.borrow_mut();
+                if let Some(source) = app.portfolio.wallets.get_mut(wallet_index as usize)
+                        .and_then(|wallet| wallet.sources.get_mut(source_index as usize)) {
+                    source.transactions = transactions;
 
-                        app.refresh_transactions();
-                        app.refresh_ui();
-                        app.save_portfolio(None);
-                    }
+                    app.refresh_transactions();
+                    app.refresh_ui();
+                    app.save_portfolio(None);
                 }
+
+                anyhow::Ok(())
             }).unwrap();
         });
     }

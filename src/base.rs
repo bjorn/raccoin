@@ -1,5 +1,6 @@
-use std::{error::Error, path::Path, fmt, cmp::Ordering, collections::HashMap};
+use std::{path::Path, fmt, cmp::Ordering, collections::HashMap};
 
+use anyhow::Result;
 use chrono::{NaiveDateTime, Duration};
 use serde::{Serialize, Deserialize};
 use rust_decimal::prelude::*;
@@ -406,7 +407,7 @@ impl Transaction {
     }
 }
 
-pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_path: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_path: impl AsRef<Path>) -> Result<()> {
     println!("Saving {}", output_path.as_ref().display());
 
     let json = serde_json::to_string_pretty(&transactions)?;
@@ -415,7 +416,7 @@ pub(crate) fn save_transactions_to_json(transactions: &Vec<Transaction>, output_
     Ok(())
 }
 
-pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Transaction>> {
     let json = std::fs::read_to_string(input_path)?;
     let transactions: Vec<Transaction> = serde_json::from_str(&json)?;
     Ok(transactions)
@@ -464,7 +465,7 @@ impl PriceHistory {
 }
 
 #[allow(dead_code)]
-pub(crate) fn save_price_history_data(prices: &Vec<PricePoint>, path: &Path) -> Result<(), Box<dyn Error>> {
+pub(crate) fn save_price_history_data(prices: &Vec<PricePoint>, path: &Path) -> Result<()> {
     let mut wtr = csv::Writer::from_path(path)?;
     for price in prices {
         wtr.serialize(price)?;
@@ -473,7 +474,7 @@ pub(crate) fn save_price_history_data(prices: &Vec<PricePoint>, path: &Path) -> 
     Ok(())
 }
 
-pub(crate) fn load_price_history_data(path: &Path) -> Result<Vec<PricePoint>, Box<dyn Error>> {
+pub(crate) fn load_price_history_data(path: &Path) -> Result<Vec<PricePoint>> {
     let mut rdr = csv::ReaderBuilder::new()
         .from_path(path)?;
 
@@ -486,7 +487,7 @@ pub(crate) fn load_price_history_data(path: &Path) -> Result<Vec<PricePoint>, Bo
     Ok(prices)
 }
 
-pub(crate) fn load_btc_price_history_data() -> Result<Vec<PricePoint>, Box<dyn Error>> {
+pub(crate) fn load_btc_price_history_data() -> Result<Vec<PricePoint>> {
     // The following file was saved using the above function with data loaded
     // from the CoinMarketCap API.
     let btc_price_history_eur = include_bytes!("data/btc-price-history-eur.csv");

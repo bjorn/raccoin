@@ -1,5 +1,6 @@
-use std::{error::Error, path::Path};
+use std::path::Path;
 
+use anyhow::Result;
 use chrono::{NaiveDateTime, FixedOffset, DateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
@@ -159,7 +160,7 @@ impl TryFrom<PoloniexTrade> for Transaction {
 }
 
 // loads a Poloniex Deposits CSV file into a list of unified transactions
-pub(crate) fn load_poloniex_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_poloniex_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -172,7 +173,7 @@ pub(crate) fn load_poloniex_deposits_csv(input_path: &Path) -> Result<Vec<Transa
 }
 
 // loads a Poloniex Withdrawals CSV file into a list of unified transactions
-pub(crate) fn load_poloniex_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_poloniex_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -185,7 +186,7 @@ pub(crate) fn load_poloniex_withdrawals_csv(input_path: &Path) -> Result<Vec<Tra
 }
 
 // loads a Poloniex Trades CSV file into a list of unified transactions
-pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 

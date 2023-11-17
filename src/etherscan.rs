@@ -1,5 +1,4 @@
-use std::error::Error;
-
+use anyhow::{anyhow, Result, Context};
 use chrono::NaiveDateTime;
 use ethers_core::types::{Chain, U256, H256, Address};
 use ethers_etherscan::{Client, account::*};
@@ -7,11 +6,11 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 use crate::base::{Transaction, Amount, Operation};
 
-fn u256_to_decimal(value: U256) -> Result<Decimal, Box<dyn Error>> {
-    Decimal::from_u128(value.as_u128()).ok_or("value cannot be represented".into())
+fn u256_to_decimal(value: U256) -> Result<Decimal> {
+    Decimal::from_u128(value.as_u128()).context("value cannot be represented")
 }
 
-fn u256_to_eth(value: U256) -> Result<Decimal, Box<dyn Error>> {
+fn u256_to_eth(value: U256) -> Result<Decimal> {
     let mut value = u256_to_decimal(value)?;
     value.set_scale(18)?; // convert Wei to ETH
     Ok(value)
@@ -19,16 +18,16 @@ fn u256_to_eth(value: U256) -> Result<Decimal, Box<dyn Error>> {
 
 // Generic interface to the many different transaction types in the Etherscan API
 trait EthereumTransaction {
-    fn timestamp(&self) -> Result<NaiveDateTime, Box<dyn Error>> {
+    fn timestamp(&self) -> Result<NaiveDateTime> {
         let timestamp: i64 = self.timestamp_str().parse()?;
-        NaiveDateTime::from_timestamp_opt(timestamp, 0).ok_or("invalid timestamp".into())
+        NaiveDateTime::from_timestamp_opt(timestamp, 0).context("invalid timestamp")
     }
-    fn value(&self) -> Result<Amount, Box<dyn Error>>;
+    fn value(&self) -> Result<Amount>;
     fn hash(&self) -> Option<String> {
         self.hash_opt().map(|hash| serde_json::to_string(hash).unwrap().trim_matches('"').to_owned())
     }
 
-    fn fee(&self) -> Result<Option<Amount>, Box<dyn Error>> {
+    fn fee(&self) -> Result<Option<Amount>> {
         Ok(match self.gas_price() {
             Some(gas_price) => {
                 let gas_used = u256_to_decimal(self.gas_used())?;
@@ -39,7 +38,7 @@ trait EthereumTransaction {
         })
     }
 
-    fn to_transaction(&self, own_address: &Address) -> Result<Transaction, Box<dyn Error>> {
+    fn to_transaction(&self, own_address: &Address) -> Result<Transaction> {
         let timestamp = self.timestamp()?;
         let mut fee: Option<Amount> = None;
         let operation = if self.to().is_some_and(|from_address| from_address == own_address) {
@@ -48,18 +47,16 @@ trait EthereumTransaction {
             fee = self.fee()?;
             Ok(Operation::Send(self.value()?))
         } else {
-            Err("unrecognized transaction".into())
-        };
+            Err(anyhow!("unrecognized transaction"))
+        }?;
         let description = self.token_name().map(String::to_owned);
 
-        operation.map(|operation| {
-            let mut tx = Transaction::new(timestamp, operation);
-            tx.tx_hash = self.hash();
-            tx.blockchain = Some("ETH".to_owned());
-            tx.fee = fee;
-            tx.description = description;
-            tx
-        })
+        let mut tx = Transaction::new(timestamp, operation);
+        tx.tx_hash = self.hash();
+        tx.blockchain = Some("ETH".to_owned());
+        tx.fee = fee;
+        tx.description = description;
+        Ok(tx)
     }
 
     fn token_name(&self) -> Option<&String> { None }
@@ -72,7 +69,7 @@ trait EthereumTransaction {
 }
 
 impl EthereumTransaction for NormalTransaction {
-    fn value(&self) -> Result<Amount, Box<dyn Error>> {
+    fn value(&self) -> Result<Amount> {
         u256_to_eth(self.value).map(|v| Amount::new(v, "ETH".to_owned()))
     }
 
@@ -85,7 +82,7 @@ impl EthereumTransaction for NormalTransaction {
 }
 
 impl EthereumTransaction for InternalTransaction {
-    fn value(&self) -> Result<Amount, Box<dyn Error>> {
+    fn value(&self) -> Result<Amount> {
         u256_to_eth(self.value).map(|v| Amount::new(v, "ETH".to_owned()))
     }
 
@@ -98,7 +95,7 @@ impl EthereumTransaction for InternalTransaction {
 }
 
 impl EthereumTransaction for ERC20TokenTransferEvent {
-    fn value(&self) -> Result<Amount, Box<dyn Error>> {
+    fn value(&self) -> Result<Amount> {
         let scale: u32 = self.token_decimal.parse()?;
         let mut value = u256_to_decimal(self.value)?;
         value.set_scale(scale)?;
@@ -115,7 +112,7 @@ impl EthereumTransaction for ERC20TokenTransferEvent {
 }
 
 impl EthereumTransaction for ERC721TokenTransferEvent {
-    fn value(&self) -> Result<Amount, Box<dyn Error>> {
+    fn value(&self) -> Result<Amount> {
         Ok(Amount::new_token(self.token_id.clone(), self.token_symbol.clone()))
     }
 
@@ -129,7 +126,7 @@ impl EthereumTransaction for ERC721TokenTransferEvent {
 }
 
 impl EthereumTransaction for ERC1155TokenTransferEvent {
-    fn value(&self) -> Result<Amount, Box<dyn Error>> {
+    fn value(&self) -> Result<Amount> {
         Ok(Amount::new_token(self.token_id.clone(), self.token_symbol.clone()))
     }
 
@@ -144,7 +141,7 @@ impl EthereumTransaction for ERC1155TokenTransferEvent {
 
 pub(crate) async fn address_transactions(
     address: &str,
-) -> Result<Vec<Transaction>, Box<dyn Error>> {
+) -> Result<Vec<Transaction>> {
     let client = Client::new(Chain::Mainnet, "YU7CJTKTFHYUKSK9KUGCAJ448QW1U26NUN")?;
     let address = address.parse()?;
 

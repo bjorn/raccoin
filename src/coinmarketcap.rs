@@ -1,5 +1,4 @@
-use std::error::Error;
-
+use anyhow::Result;
 use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -57,7 +56,7 @@ struct Quote {
 }
 
 #[allow(dead_code)]
-pub(crate) fn download_price_history(currency: &str) -> Result<(), Box<dyn Error>> {
+pub(crate) fn download_price_history(currency: &str) -> Result<()> {
     let id = cmc_id(currency);
     if id == -1 {
         println!("Unsupported currency (cmc id not known): {}", currency);

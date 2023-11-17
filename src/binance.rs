@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use anyhow::Result;
 use chrono::{NaiveDateTime, NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
@@ -263,7 +264,7 @@ impl From<BinanceBnbConvert> for Transaction {
     }
 }
 
-pub(crate) fn load_binance_transaction_records_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn std::error::Error>> {
+pub(crate) fn load_binance_transaction_records_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -310,7 +311,7 @@ pub(crate) fn load_binance_transaction_records_csv(input_path: &Path) -> Result<
     Ok(transactions)
 }
 
-pub(crate) fn load_binance_spot_trades_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn std::error::Error>> {
+pub(crate) fn load_binance_spot_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -324,7 +325,7 @@ pub(crate) fn load_binance_spot_trades_csv(input_path: &Path) -> Result<Vec<Tran
     Ok(transactions)
 }
 
-pub(crate) fn load_binance_bnb_convert_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn std::error::Error>> {
+pub(crate) fn load_binance_bnb_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()

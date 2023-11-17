@@ -1,5 +1,6 @@
-use std::{path::Path, error::Error};
+use std::path::Path;
 
+use anyhow::Result;
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::{Serialize, Deserialize};
@@ -372,7 +373,7 @@ impl<'a> From<CtcTx<'a>> for Transaction {
     }
 }
 
-pub(crate) fn save_transactions_to_ctc_csv(transactions: &Vec<Transaction>, output_path: &Path) -> Result<(), Box<dyn Error>> {
+pub(crate) fn save_transactions_to_ctc_csv(transactions: &Vec<Transaction>, output_path: &Path) -> Result<()> {
     println!("Saving {}", output_path.display());
 
     let mut wtr = csv::Writer::from_path(output_path)?;
@@ -386,7 +387,7 @@ pub(crate) fn save_transactions_to_ctc_csv(transactions: &Vec<Transaction>, outp
 }
 
 // loads a CSV file that was prepared in CryptoTaxCalculator import format
-pub(crate) fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn std::error::Error>> {
+pub(crate) fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()

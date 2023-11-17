@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::error::Error;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
@@ -32,7 +31,7 @@ fn asset_to_string(asset: &Asset) -> String {
     }
 }
 
-async fn address_fees(client: &HorizonHttpClient, address: &str) -> Result<HashMap<String, (NaiveDateTime, Amount)>, Box<dyn Error>> {
+async fn address_fees(client: &HorizonHttpClient, address: &str) -> Result<HashMap<String, (NaiveDateTime, Amount)>> {
     println!("Loading transactions for {}...", address);
 
     let account = PublicKey::from_account_id(address)?;
@@ -70,7 +69,7 @@ async fn address_fees(client: &HorizonHttpClient, address: &str) -> Result<HashM
     Ok(transactions)
 }
 
-async fn address_payments(client: &HorizonHttpClient, address: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+async fn address_payments(client: &HorizonHttpClient, address: &str) -> Result<Vec<Transaction>> {
     println!("Loading operations for {}...", address);
 
     let account = PublicKey::from_account_id(address)?;
@@ -175,7 +174,7 @@ async fn address_payments(client: &HorizonHttpClient, address: &str) -> Result<V
     Ok(transactions)
 }
 
-async fn address_trades(client: &HorizonHttpClient, address: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+async fn address_trades(client: &HorizonHttpClient, address: &str) -> Result<Vec<Transaction>> {
     println!("Loading trades for {}...", address);
 
     let account = PublicKey::from_account_id(address)?;
@@ -223,7 +222,7 @@ async fn address_trades(client: &HorizonHttpClient, address: &str) -> Result<Vec
 
 pub(crate) async fn address_transactions(
     address: &str,
-) -> Result<Vec<Transaction>, Box<dyn Error>> {
+) -> Result<Vec<Transaction>> {
     let client = HorizonHttpClient::new_from_str("https://horizon.stellar.org")?;
     let (mut payments, trades, mut fees) = try_join!(
         address_payments(&client, address),

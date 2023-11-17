@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use anyhow::Result;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Deserializer};
 
@@ -93,7 +94,7 @@ impl TryFrom<BitstampTransaction> for Transaction {
 }
 
 // loads a Bitstamp CSV file into a list of unified transactions
-pub(crate) fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn std::error::Error>> {
+pub(crate) fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()

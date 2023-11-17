@@ -1,5 +1,6 @@
-use std::{error::Error, path::Path};
+use std::path::Path;
 
+use anyhow::Result;
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
@@ -57,7 +58,7 @@ impl<'a> BitcoinCoreAction<'a> {
 }
 
 // loads a Bitcoin Core CSV file into a list of unified transactions
-fn load_transactions(input_path: &Path, currency: &str) -> Result<Vec<Transaction>, Box<dyn Error>> {
+fn load_transactions(input_path: &Path, currency: &str) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -74,16 +75,16 @@ fn load_transactions(input_path: &Path, currency: &str) -> Result<Vec<Transactio
 }
 
 // loads a Bitcoin Core CSV file into a list of unified transactions
-pub(crate) fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "BTC")
 }
 
 // loads a Peercoin CSV file into a list of unified transactions
-pub(crate) fn load_peercoin_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_peercoin_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "PPC")
 }
 
 // loads a Reddcoin Core CSV file into a list of unified transactions
-pub(crate) fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "RDD")
 }

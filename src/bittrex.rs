@@ -1,5 +1,6 @@
-use std::{error::Error, path::Path};
+use std::path::Path;
 
+use anyhow::{Result, bail};
 use chrono::{NaiveDateTime, NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
@@ -70,7 +71,7 @@ struct BittrexTransaction {
 }
 
 impl TryFrom<BittrexOrder> for Transaction {
-    type Error = &'static str;
+    type Error = anyhow::Error;
 
     fn try_from(item: BittrexOrder) -> Result<Self, Self::Error> {
         let mut split = item.market.split('/');
@@ -83,7 +84,7 @@ impl TryFrom<BittrexOrder> for Transaction {
                     MarketSide::Sell => Ok(Transaction::trade(item.date, quote, base)),
                 }
             }
-            _ => Err("Invalid market value, expected: '<base_currency>/<quote_currency>'"),
+            _ => bail!("Invalid market value, expected: '<base_currency>/<quote_currency>'"),
         }
     }
 }
@@ -102,7 +103,7 @@ impl From<BittrexTransaction> for Transaction {
 }
 
 // loads a Bittrex Order History CSV file into a list of unified transactions
-pub(crate) fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -116,7 +117,7 @@ pub(crate) fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Tr
 }
 
 // loads a Bittrex Transaction History CSV file into a list of unified transactions
-pub(crate) fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transaction>, Box<dyn Error>> {
+pub(crate) fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
