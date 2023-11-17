@@ -155,6 +155,8 @@ export component AppWindow inherits Window {
     preferred-width: 1200px;
     preferred-height: 640px;
 
-    if (Facade.portfolio.file-name != ""): MainContent {}
+    MainContent {
+        visible: Facade.portfolio.file-name != "";
+    }
     if (Facade.portfolio.file-name == ""): WelcomePage {}
 }
