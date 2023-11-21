@@ -24,11 +24,21 @@ export component Reports inherits Rectangle {
     HorizontalBox {
         padding: 0;
 
-        year-list := StandardListView {
-            model: root.report-years;
-            current-item: 0;
-            min-width: 80px;
-            max-width: 150px;
+        VerticalBox {
+            padding: 0;
+            year-list := StandardListView {
+                model: root.report-years;
+                current-item: 0;
+                min-width: 80px;
+                max-width: 150px;
+            }
+            HorizontalBox {
+                horizontal-stretch: 1;
+                Button {
+                    text: "Export All";
+                    clicked => { Facade.export-all(); }
+                }
+            }
         }
 
         VerticalBox {

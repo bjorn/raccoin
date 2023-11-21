@@ -33,7 +33,8 @@ use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, SharedString, ModelRc};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{rc::Rc, path::{Path, PathBuf}, env, collections::HashMap, cmp::Eq, hash::Hash, default::Default, ffi::OsString, sync::{Arc, Mutex}};
+use std::{rc::Rc, path::{Path, PathBuf}, env, collections::HashMap, cmp::{Eq, Ordering}, hash::Hash, default::Default, ffi::OsString, sync::{Arc, Mutex}};
+use std::io::Write;
 
 #[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
 enum TransactionsSourceType {
@@ -205,6 +206,7 @@ impl Wallet {
 struct AppState {
     portfolio_file: Option<PathBuf>,
     last_source_directory: Option<PathBuf>,
+    last_export_directory: Option<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -237,6 +239,13 @@ impl CurrencySummary {
         Self {
             currency: currency.to_owned(),
             ..Default::default()
+        }
+    }
+
+    fn cmp(&self, other: &Self) -> Ordering {
+        match other.cost.cmp(&self.cost) {
+            Ordering::Equal => self.currency.cmp(&other.currency),
+            cost_ordering => cost_ordering,
         }
     }
 }
@@ -445,8 +454,27 @@ impl App {
     }
 }
 
-pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path: &Path) -> Result<()> {
-    let mut wtr = csv::Writer::from_path(output_path)?;
+pub(crate) fn save_summary_to_csv(report: &TaxReport, output_path: &Path) -> Result<()> {
+    let mut wtr = csv::WriterBuilder::new()
+        .flexible(true)
+        .from_path(output_path)?;
+
+    wtr.write_record(&[format!("Exported by {} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))])?;
+    wtr.write_record::<&[_; 0], &&str>(&[])?;   // empty line (actually becomes line with "")
+    wtr.write_record(&["", "Short Term", "Long Term", "Total"])?;
+    wtr.write_record(&["Capital Gains",
+        report.short_term_capital_gains.to_string().as_str(),
+        report.long_term_capital_gains.to_string().as_str(),
+        report.total_capital_gains().to_string().as_str()])?;
+    wtr.write_record(&["Capital Losses",
+        report.short_term_capital_losses.to_string().as_str(),
+        report.long_term_capital_losses.to_string().as_str(),
+        report.total_capital_losses().to_string().as_str()])?;
+    wtr.write_record(&["Net Capital Gains",
+        report.short_term_net_capital_gains().to_string().as_str(),
+        report.long_term_net_capital_gains().to_string().as_str(),
+        report.total_net_capital_gains().to_string().as_str()])?;
+    wtr.write_record::<&[_; 0], &&str>(&[])?;   // empty line (actually becomes line with "")
 
     #[derive(Serialize)]
     struct CsvSummary<'a> {
@@ -474,7 +502,7 @@ pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path
         closing_balance: Decimal,
     }
 
-    for currency in currencies {
+    for currency in &report.currencies {
         wtr.serialize(CsvSummary {
             currency: &currency.currency,
             proceeds: currency.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
@@ -490,6 +518,19 @@ pub(crate) fn save_summary_to_csv(currencies: &Vec<CurrencySummary>, output_path
         })?;
     }
 
+    Ok(())
+}
+
+/// Exports the tax reports for each year
+pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
+    for report in &app.reports {
+        let year = if report.year == 0 { "all_time".to_owned() } else { report.year.to_string() };
+        let path = output_path.join(format!("{}_report_summary.csv", year));
+        save_summary_to_csv(report, &path)?;
+
+        let path = output_path.join(format!("{}_capital_gains_report.csv", year));
+        fifo::save_gains_to_csv(&report.gains, &path)?;
+    }
     Ok(())
 }
 
@@ -941,7 +982,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
             summary.total_profit_loss = summary.capital_profit_loss + summary.income;
         });
 
-        currencies.sort_by(|a, b| b.cost.cmp(&a.cost));
+        currencies.sort_unstable_by(CurrencySummary::cmp);
 
         TaxReport {
             year,
@@ -984,7 +1025,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
         }
         all_time.gains.extend_from_slice(&report.gains);
     }
-    all_time.currencies.sort_by(|a, b| b.cost.cmp(&a.cost));
+    all_time.currencies.sort_unstable_by(CurrencySummary::cmp);
     reports.push(all_time);
 
     reports
@@ -1604,49 +1645,86 @@ async fn main() -> Result<()> {
         dialog.save_file()
     }
 
-    let app_for_export_summary = app.clone();
-    facade.on_export_summary(move |index| {
-        let app = app_for_export_summary.lock().unwrap();
-        let report = app.reports.get(index as usize).expect("report index should be valid");
-        let file_name = format!("report_summary_{}.csv", report.year);
+    {
+        let app = app.clone();
 
-        match save_csv_file("Export Report Summary (CSV)", &file_name) {
-            Some(path) => {
-                // todo: provide this feedback in the UI
-                match save_summary_to_csv(&report.currencies, &path) {
-                    Ok(_) => {
-                        println!("Saved summary to {}", path.display());
-                    }
-                    Err(e) => {
-                        println!("Error saving summary to {}: {}", path.display(), e);
+        facade.on_export_summary(move |index| {
+            let app = app.lock().unwrap();
+            let report = app.reports.get(index as usize).expect("report index should be valid");
+            let file_name = format!("report_summary_{}.csv", report.year);
+
+            match save_csv_file("Export Report Summary (CSV)", &file_name) {
+                Some(path) => {
+                    // todo: provide this feedback in the UI
+                    match save_summary_to_csv(report, &path) {
+                        Ok(_) => {
+                            println!("Saved summary to {}", path.display());
+                        }
+                        Err(e) => {
+                            println!("Error saving summary to {}: {}", path.display(), e);
+                        }
                     }
                 }
+                _ => {}
             }
-            _ => {}
-        }
-    });
+        });
+    }
 
-    let app_for_export_capital_gains = app.clone();
-    facade.on_export_capital_gains(move |index| {
-        let app = app_for_export_capital_gains.lock().unwrap();
-        let report = app.reports.get(index as usize).expect("report index should be valid");
-        let file_name = format!("capital_gains_{}.csv", report.year);
+    {
+        let app = app.clone();
 
-        match save_csv_file("Export Capital Gains (CSV)", &file_name) {
-            Some(path) => {
-                // todo: provide this feedback in the UI
-                match fifo::save_gains_to_csv(&report.gains, &path) {
-                    Ok(_) => {
-                        println!("Saved gains to {}", path.display());
-                    }
-                    Err(e) => {
-                        println!("Error saving gains to {}: {}", path.display(), e);
+        facade.on_export_capital_gains(move |index| {
+            let app = app.lock().unwrap();
+            let report = app.reports.get(index as usize).expect("report index should be valid");
+            let file_name = format!("capital_gains_{}.csv", report.year);
+
+            match save_csv_file("Export Capital Gains (CSV)", &file_name) {
+                Some(path) => {
+                    // todo: provide this feedback in the UI
+                    match fifo::save_gains_to_csv(&report.gains, &path) {
+                        Ok(_) => {
+                            println!("Saved gains to {}", path.display());
+                        }
+                        Err(e) => {
+                            println!("Error saving gains to {}: {}", path.display(), e);
+                        }
                     }
                 }
+                _ => {}
             }
-            _ => {}
-        }
-    });
+        });
+    }
+
+    {
+        let app = app.clone();
+
+        facade.on_export_all(move || {
+            let mut app = app.lock().unwrap();
+            let mut dialog = rfd::FileDialog::new()
+                .set_title("Target Directory");
+
+            if let Some(last_export_directory) = &app.state.last_export_directory {
+                println!("Using last export directory: {}", last_export_directory.display());
+                dialog = dialog.set_directory(last_export_directory);
+            }
+
+            match dialog.pick_folder() {
+                Some(path) => {
+                    // todo: provide this feedback in the UI
+                    match export_all_to(&app, &path) {
+                        Ok(_) => {
+                            println!("Exported to {}", path.display());
+                        }
+                        Err(e) => {
+                            println!("Error exporting to {}: {}", path.display(), e);
+                        }
+                    }
+                    app.state.last_export_directory = Some(path);
+                }
+                _ => {}
+            }
+        });
+    }
 
     {
         let app = app.clone();
