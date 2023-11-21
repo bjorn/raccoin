@@ -93,10 +93,15 @@ export struct UiCapitalGain {
 
 export struct UiTaxReport {
     year: int,
-    net_capital_gains: string,
     short_term_capital_gains: string,
+    short_term_capital_losses: string,
+    short_term_net_capital_gains: string,
     long_term_capital_gains: string,
+    long_term_capital_losses: string,
+    long_term_net_capital_gains: string,
+    total_capital_gains: string,
     total_capital_losses: string,
+    total_net_capital_gains: string,
     // ordinary_income: string,
     // derivative_trading_income: string,
     // expenses: string,

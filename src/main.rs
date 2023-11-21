@@ -243,16 +243,33 @@ impl CurrencySummary {
 
 struct TaxReport {
     year: i32,
-    long_term_capital_gains: Decimal,
     short_term_capital_gains: Decimal,
-    total_capital_losses: Decimal,
+    short_term_capital_losses: Decimal,
+    long_term_capital_gains: Decimal,
+    long_term_capital_losses: Decimal,
     currencies: Vec<CurrencySummary>,
     gains: Vec<CapitalGain>,
 }
 
 impl TaxReport {
-    fn net_capital_gains(&self) -> Decimal {
-        self.long_term_capital_gains + self.short_term_capital_gains - self.total_capital_losses
+    fn short_term_net_capital_gains(&self) -> Decimal {
+        self.short_term_capital_gains - self.short_term_capital_losses
+    }
+
+    fn long_term_net_capital_gains(&self) -> Decimal {
+        self.long_term_capital_gains - self.long_term_capital_losses
+    }
+
+    fn total_capital_gains(&self) -> Decimal {
+        self.short_term_capital_gains + self.long_term_capital_gains
+    }
+
+    fn total_capital_losses(&self) -> Decimal {
+        self.short_term_capital_losses + self.long_term_capital_losses
+    }
+
+    fn total_net_capital_gains(&self) -> Decimal {
+        self.total_capital_gains() - self.total_capital_losses()
     }
 }
 
@@ -879,9 +896,10 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
         let year = txs.first().unwrap().timestamp.year();
         let gains = fifo.process(txs);
 
-        let mut long_term_capital_gains = Decimal::ZERO;
         let mut short_term_capital_gains = Decimal::ZERO;
-        let mut total_capital_losses = Decimal::ZERO;
+        let mut short_term_capital_losses = Decimal::ZERO;
+        let mut long_term_capital_gains = Decimal::ZERO;
+        let mut long_term_capital_losses = Decimal::ZERO;
 
         for gain in &gains {
             let gain_or_loss = gain.profit();
@@ -893,7 +911,11 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
                     short_term_capital_gains += gain_or_loss;
                 }
             } else {
-                total_capital_losses -= gain_or_loss;
+                if gain.long_term() {
+                    long_term_capital_losses -= gain_or_loss;
+                } else {
+                    short_term_capital_losses -= gain_or_loss;
+                }
             }
 
             let summary = summary_for(&mut currencies, &gain.amount.currency);
@@ -923,9 +945,10 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
 
         TaxReport {
             year,
-            long_term_capital_gains,
             short_term_capital_gains,
-            total_capital_losses,
+            short_term_capital_losses,
+            long_term_capital_gains,
+            long_term_capital_losses,
             currencies: currencies.clone(),
             gains,
         }
@@ -934,16 +957,18 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
     // add an "all time" report
     let mut all_time = TaxReport {
         year: 0,
-        long_term_capital_gains: Decimal::ZERO,
         short_term_capital_gains: Decimal::ZERO,
-        total_capital_losses: Decimal::ZERO,
+        short_term_capital_losses: Decimal::ZERO,
+        long_term_capital_gains: Decimal::ZERO,
+        long_term_capital_losses: Decimal::ZERO,
         currencies: Vec::new(),
         gains: Vec::new(),
     };
     for report in &reports {
-        all_time.long_term_capital_gains += report.long_term_capital_gains;
         all_time.short_term_capital_gains += report.short_term_capital_gains;
-        all_time.total_capital_losses += report.total_capital_losses;
+        all_time.short_term_capital_losses += report.short_term_capital_losses;
+        all_time.long_term_capital_gains += report.long_term_capital_gains;
+        all_time.long_term_capital_losses += report.long_term_capital_losses;
         for currency_summary in &report.currencies {
             let summary = summary_for(&mut all_time.currencies, &currency_summary.currency);
             summary.balance_end = currency_summary.balance_end;
@@ -1210,10 +1235,15 @@ fn ui_set_reports(app: &App) {
         UiTaxReport {
             currencies: ui_currencies.into(),
             gains: ui_gains.into(),
-            long_term_capital_gains: format!("{:.2}", report.long_term_capital_gains).into(),
             short_term_capital_gains: format!("{:.2}", report.short_term_capital_gains).into(),
-            net_capital_gains: format!("{:.2}", report.net_capital_gains()).into(),
-            total_capital_losses: format!("{:.2}", report.total_capital_losses).into(),
+            short_term_capital_losses: format!("{:.2}", report.short_term_capital_losses).into(),
+            short_term_net_capital_gains: format!("{:.2}", report.short_term_net_capital_gains()).into(),
+            long_term_capital_gains: format!("{:.2}", report.long_term_capital_gains).into(),
+            long_term_capital_losses: format!("{:.2}", report.long_term_capital_losses).into(),
+            long_term_net_capital_gains: format!("{:.2}", report.long_term_net_capital_gains()).into(),
+            total_capital_gains: format!("{:.2}", report.total_capital_gains()).into(),
+            total_capital_losses: format!("{:.2}", report.total_capital_losses()).into(),
+            total_net_capital_gains: format!("{:.2}", report.total_net_capital_gains()).into(),
             year: report.year,
         }
     }).collect();

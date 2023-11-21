@@ -1,4 +1,4 @@
-import { ComboBox, HorizontalBox, ListView, VerticalBox, StandardListView, Button } from "std-widgets.slint";
+import { ComboBox, HorizontalBox, ListView, VerticalBox, StandardListView, Button, GridBox } from "std-widgets.slint";
 import { CapitalGains } from "./capital-gains.slint";
 import {
     Cell,
@@ -36,53 +36,90 @@ export component Reports inherits Rectangle {
             padding: 0;
 
             HorizontalLayout {
-                VerticalLayout {
+                GridBox {
                     width: 50%;
-                    HorizontalBox {
-                        padding: 3px;
+                    padding: 3px;
+                    Row {
                         Text {
-                            text: "Net Capital Gains";
-                            font-size: 15px;
-                            font-weight: 600;
-                        }
-                        MonoText {
-                            text: report.net-capital-gains;
+                            col: 1;
+                            text: "Short Term";
+                            opacity: 0.8;
                             horizontal-alignment: right;
-                            font-size: 15px;
+                        }
+                        Text {
+                            text: "Long Term";
+                            opacity: 0.8;
+                            horizontal-alignment: right;
+                        }
+                        Text {
+                            text: "Total";
+                            opacity: 0.8;
+                            horizontal-alignment: right;
                             font-weight: 600;
                         }
                     }
-                    HorizontalBox {
-                        padding: 3px;
+                    Row {
                         Text {
-                            text: "Short Term Capital Gains";
+                            text: "Capital Gains";
                             opacity: 0.8;
                         }
                         MonoText {
                             text: report.short-term-capital-gains;
                             horizontal-alignment: right;
                         }
-                    }
-                    HorizontalBox {
-                        padding: 3px;
-                        Text {
-                            text: "Long Term Capital Gains";
-                            opacity: 0.8;
-                        }
                         MonoText {
                             text: report.long-term-capital-gains;
                             horizontal-alignment: right;
                         }
+                        MonoText {
+                            text: report.total-capital-gains;
+                            horizontal-alignment: right;
+                            font-weight: 600;
+                        }
                     }
-                    HorizontalBox {
-                        padding: 3px;
+                    Row {
                         Text {
-                            text: "Total Capital Losses";
+                            text: "Capital Losses";
                             opacity: 0.8;
+                        }
+                        MonoText {
+                            text: report.short-term-capital-losses;
+                            horizontal-alignment: right;
+                        }
+                        MonoText {
+                            text: report.long-term-capital-losses;
+                            horizontal-alignment: right;
                         }
                         MonoText {
                             text: report.total-capital-losses;
                             horizontal-alignment: right;
+                            font-weight: 600;
+                        }
+                    }
+                    Row {
+                        Text {
+                            text: "Net Capital Gains";
+                            opacity: 0.8;
+                            font-size: 15px;
+                            font-weight: 600;
+                        }
+                        MonoText {
+                            text: report.short-term-net-capital-gains;
+                            horizontal-alignment: right;
+                            font-size: 15px;
+                            font-weight: 600;
+                        }
+                        MonoText {
+                            text: report.long-term-net-capital-gains;
+                            horizontal-alignment: right;
+                            font-size: 15px;
+                            font-weight: 600;
+                        }
+                        MonoText {
+                            text: report.total-net-capital-gains;
+                            horizontal-alignment: right;
+                            font-size: 15px;
+                            font-weight: 600;
                         }
                     }
                 }
