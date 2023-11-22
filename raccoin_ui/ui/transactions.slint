@@ -202,6 +202,10 @@ export component Transactions inherits VerticalLayout {
     spacing: 2px;
 
     HorizontalBox {
+        Image {
+            source: @image-url("icons/filter.svg");
+            opacity: 0.5;
+        }
         Button {
             icon: @image-url("icons/alert-triangle.svg");
             text: Facade.transaction-warning-count;
@@ -217,7 +221,7 @@ export component Transactions inherits VerticalLayout {
                 vertical-alignment: center;
             }
             Button {
-                text: "Clear";
+                icon: @image-url("icons/delete.svg");
                 clicked => {
                     Facade.set-wallet-filter(-1);
                 }
