@@ -621,8 +621,8 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
                     merge_consecutive_trades(&mut source_transactions);
 
                     // remove transactions with ignored currencies
-                    source_transactions.retain(|tx| {
-                        match tx.incoming_outgoing() {
+                    source_transactions.retain_mut(|tx| {
+                        let retain_tx = match tx.incoming_outgoing() {
                             (None, None) => true,
                             (None, Some(amount)) |
                             (Some(amount), None) => !ignored_currencies.contains(&amount.currency),
@@ -630,7 +630,19 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
                                 // Trades can only be ignored, if both the incoming and outgoing currencies are ignored
                                 !(ignored_currencies.contains(&incoming.currency) && ignored_currencies.contains(&outgoing.currency))
                             }
-                        }
+                        };
+
+                        retain_tx || tx.fee.take().is_some_and(|fee| {
+                            if !ignored_currencies.contains(&fee.currency) {
+                                // We can't ignore the fee, so keep the transaction just for the fee
+                                tx.operation = Operation::Fee(fee);
+                                tx.value = tx.fee_value.take();
+
+                                true
+                            } else {
+                                false
+                            }
+                        })
                     });
 
                     source.transaction_count = source_transactions.len();
