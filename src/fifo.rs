@@ -1,8 +1,7 @@
 use std::{collections::{VecDeque, HashMap}, path::Path};
 
 use anyhow::Result;
-use chrono::NaiveDateTime;
-use chrono_tz::Europe;
+use chrono::{NaiveDateTime, TimeZone, Local};
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Serialize;
 
@@ -318,8 +317,8 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) ->
     for gain in gains {
         wtr.serialize(CsvGain {
             currency: &gain.amount.currency,
-            bought: gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local(),
-            sold: gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local(),
+            bought: Local.from_utc_datetime(&gain.bought).naive_local(),
+            sold: Local.from_utc_datetime(&gain.sold).naive_local(),
             quantity: gain.amount.quantity,
             cost: gain.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             proceeds: gain.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),

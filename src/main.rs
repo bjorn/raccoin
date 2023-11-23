@@ -22,8 +22,7 @@ mod trezor;
 
 use anyhow::{Context, Result, anyhow};
 use base::{Operation, Amount, Transaction, cmc_id, PriceHistory};
-use chrono_tz::Europe;
-use chrono::{Duration, Datelike, Utc};
+use chrono::{Duration, Datelike, Utc, TimeZone, Local};
 use directories::ProjectDirs;
 use raccoin_ui::*;
 use fifo::{FIFO, CapitalGain};
@@ -1210,11 +1209,13 @@ fn ui_set_transactions(app: &App) {
             transaction_warning_count += 1;
         }
 
+        let timestamp = Local.from_utc_datetime(&transaction.timestamp).naive_local();
+
         ui_transactions.push(UiTransaction {
             from: from.unwrap_or_default(),
             to: to.unwrap_or_default(),
-            date: transaction.timestamp.date().to_string().into(),
-            time: transaction.timestamp.time().to_string().into(),
+            date: timestamp.date().to_string().into(),
+            time: timestamp.time().to_string().into(),
             tx_type,
             received_cmc_id: received.map(Amount::cmc_id).unwrap_or(-1),
             received: received.map_or_else(String::default, Amount::to_string).into(),
@@ -1250,8 +1251,8 @@ fn ui_set_reports(app: &App) {
 
     let ui_reports: Vec<UiTaxReport> = app.reports.iter().map(|report| {
         let ui_gains: Vec<UiCapitalGain> = report.gains.iter().map(|gain| {
-            let bought = gain.bought.and_utc().with_timezone(&Europe::Berlin).naive_local();
-            let sold = gain.sold.and_utc().with_timezone(&Europe::Berlin).naive_local();
+            let bought = Local.from_utc_datetime(&gain.bought).naive_local();
+            let sold = Local.from_utc_datetime(&gain.sold).naive_local();
 
             UiCapitalGain {
                 currency_cmc_id: gain.amount.cmc_id(),
