@@ -72,8 +72,8 @@ component TransactionsHeader inherits TableHeader {
     HeaderCell { text: "Fee"; horizontal-alignment: right; }
     HeaderCell { text: "Value (€)"; horizontal-alignment: right; }
     HeaderCell { text: "Gain (€)"; horizontal-alignment: right; }
+    Rectangle { horizontal-stretch: 0.1; }
     HorizontalLayout {
-        padding-left: parent.width * 0.015;
         height: 0;
         visible: false; // only used for alignment purposes
         spacing: 3px;
@@ -174,8 +174,8 @@ component TransactionDisplay inherits Rectangle {
             color: tx.gain < 0 || tx.gain-error != "" ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
             horizontal-alignment: right;
         }
+        Rectangle { horizontal-stretch: 0.1; }
         HorizontalLayout {
-            padding-left: parent.width * 0.015;
             spacing: 3px;
 
             tx-btn := SmallButton {
