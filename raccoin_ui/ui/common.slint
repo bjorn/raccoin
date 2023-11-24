@@ -38,7 +38,6 @@ export component Badge inherits VerticalLayout {
 
 export component CurrencyIcon inherits Image {
     in property <int> cmc-id;
-
     width: 14px;
     source: cmc-id == 1 ? @image-url("icons/coins/1.png") :
             cmc-id == 2 ? @image-url("icons/coins/2.png") :
@@ -70,6 +69,7 @@ export component CurrencyIcon inherits Image {
             cmc-id == 4687 ? @image-url("icons/coins/4687.png") :
             cmc-id == 7950 ? @image-url("icons/coins/7950.png") :
             cmc-id == 12186 ? @image-url("icons/coins/12186.png") :
+            cmc-id == 14112 ? @image-url("icons/coins/14112.png") :
             cmc-id == 20314 ? @image-url("icons/coins/20314.png") :
             @image-url("");
 }

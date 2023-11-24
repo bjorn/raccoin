@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::NaiveDateTime;
 use futures::try_join;
 use rust_decimal::Decimal;
@@ -24,9 +24,16 @@ impl From<&Stroops> for Amount {
     }
 }
 
+fn normalize_asset(code: &str, issuer: &str) -> String {
+    match (code, issuer) {
+        ("AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA") => "AQUA".to_owned(),
+        _ => format!("{}:{}", code, issuer),
+    }
+}
+
 fn asset_to_string(asset: &Asset) -> String {
     match (&asset.asset_code, &asset.asset_issuer) {
-        (Some(code), Some(issuer)) => format!("{}:{}", code, issuer),
+        (Some(code), Some(issuer)) => normalize_asset(code.as_str(), issuer.as_str()),
         _ => "XLM".to_owned(),
     }
 }
@@ -123,13 +130,22 @@ async fn address_payments(client: &HorizonHttpClient, address: &str) -> Result<V
                     let amount = response.records.into_iter().find_map(|effect| {
                         match effect {
                             Effect::ClaimableBalanceClaimed(effect) => {
-                                let quantity = Decimal::from_str(&effect.amount);
+                                let quantity = Decimal::from_str(&effect.amount).map_err(anyhow::Error::from);
                                 let currency = if effect.asset == "native" {
-                                    "XLM".to_owned()
+                                    Ok("XLM".to_owned())
                                 } else {
-                                    effect.asset
+                                    let mut split = effect.asset.split(':');
+                                    match (split.next(), split.next()) {
+                                        (Some(code), Some(issuer)) => {
+                                            Ok(normalize_asset(code, issuer))
+                                        }
+                                        _ => Err(anyhow!("Invalid asset value, expected: 'NAME:ISSUER'")),
+                                    }
                                 };
-                                Some(quantity.map(|quantity| Amount::new(quantity, currency)))
+                                Some(match (quantity, currency) {
+                                    (Ok(quantity), Ok(currency)) => Ok(Amount::new(quantity, currency)),
+                                    (Err(e), _) | (_, Err(e)) => Err(e)
+                                })
                             },
                             _ => None
                         }

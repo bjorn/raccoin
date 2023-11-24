@@ -9,6 +9,7 @@ use rust_decimal::prelude::*;
 /// todo: support more currencies and load from file
 pub(crate) fn cmc_id(currency: &str) -> i32 {
     const CMC_ID_MAP: &[(&str, i32)] = &[
+        ("AQUA", 14112),
         ("BCH", 1831),
         ("BCN", 372),
         ("BCX", 2281),
