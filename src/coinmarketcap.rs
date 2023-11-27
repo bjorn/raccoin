@@ -56,7 +56,7 @@ struct Quote {
 }
 
 #[allow(dead_code)]
-pub(crate) fn download_price_history(currency: &str) -> Result<()> {
+pub(crate) async fn download_price_history(currency: &str) -> Result<()> {
     let id = cmc_id(currency);
     if id == -1 {
         println!("Unsupported currency (cmc id not known): {}", currency);
@@ -72,11 +72,10 @@ pub(crate) fn download_price_history(currency: &str) -> Result<()> {
         let time_end = DateTime::parse_from_rfc3339(&format!("{}-12-31T23:59:59+00:00", year)).unwrap().timestamp();
         let url = format!("https://api.coinmarketcap.com/data-api/v3.1/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval=1d", id, convert_id, time_start, time_end);
 
-        let response = reqwest::blocking::Client::builder()
+        let response: CmcHistoricalDataResponse = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0")
-            .build()?.get(url.clone()).send()?.text()?;
+            .build()?.get(url.clone()).send().await?.json().await?;
 
-        let response: CmcHistoricalDataResponse = serde_json::from_str(&response)?;
         let price_point_count = response.data.quotes.len();
 
         for quote in response.data.quotes {
