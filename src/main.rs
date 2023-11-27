@@ -1641,24 +1641,32 @@ async fn main() -> Result<()> {
                     _ => {
                         Err(anyhow!("Sync not supported for this source type"))
                     }
-                }?;
+                };
 
-                transactions.sort_by(|a, b| a.cmp(b) );
+                let _ = transactions.as_mut().map(|transactions| {
+                    transactions.sort_by(|a, b| a.cmp(b) );
+                });
 
                 slint::invoke_from_event_loop(move || {
                     let mut app = app_for_future.lock().unwrap();
 
-                    if let Some(source) = app.portfolio.wallets.get_mut(wallet_index as usize)
-                            .and_then(|wallet| wallet.sources.get_mut(source_index as usize)) {
-                        source.transactions = transactions;
+                    match transactions {
+                        Ok(transactions) => {
+                            if let Some(source) = app.portfolio.wallets.get_mut(wallet_index as usize)
+                                .and_then(|wallet| wallet.sources.get_mut(source_index as usize)) {
+                                source.transactions = transactions;
 
-                        app.refresh_transactions();
-                        app.refresh_ui();
-                        app.save_portfolio(None);
+                                app.refresh_transactions();
+                                app.refresh_ui();
+                                app.save_portfolio(None);
+                            }
+                        }
+                        Err(e) => {
+                            // todo: show error in UI
+                            println!("Error syncing transactions: {}", e);
+                        },
                     }
                 }).unwrap();
-
-                anyhow::Ok(())
             });
         }
     });
