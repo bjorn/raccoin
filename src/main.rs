@@ -55,9 +55,11 @@ enum TransactionsSourceType {
     MyceliumCsv,
     PeercoinCsv,
     PoloniexDepositsCsv,
+    PoloniexDepositsSupportCsv,
     PoloniexTradesCsv,
     PoloniexTradesSupportCsv,
     PoloniexWithdrawalsCsv,
+    PoloniexWithdrawalsSupportCsv,
     StellarAccount,
     BinanceBnbConvertCsv,  // todo: document custom format
     BinanceSpotTradeHistoryCsv,
@@ -116,9 +118,11 @@ impl TransactionsSourceType {
             TransactionsSourceType::ElectrumCsv => &["transaction_hash", "label", "confirmations", "value", "fiat_value", "fee", "fiat_fee", "timestamp"],
             TransactionsSourceType::MyceliumCsv => &["Account", "Transaction ID", "Destination Address", "Timestamp", "Value", "Currency", "Transaction Label"],
             TransactionsSourceType::PoloniexDepositsCsv => &["Currency", "Amount", "Address", "Date", "Status"],
+            TransactionsSourceType::PoloniexDepositsSupportCsv => &["", "timestamp", "currency", "amount", "address", "status"],
             TransactionsSourceType::PoloniexTradesCsv => &["Date", "Market", "Type", "Side", "Price", "Amount", "Total", "Fee", "Order Number", "Fee Currency", "Fee Total"],
             TransactionsSourceType::PoloniexTradesSupportCsv => &["", "timestamp", "trade_id", "market", "wallet", "side", "price", "amount", "fee", "fee_currency", "fee_total"],
             TransactionsSourceType::PoloniexWithdrawalsCsv => &["Fee Deducted", "Date", "Currency", "Amount", "Amount-Fee", "Address", "Status"],
+            TransactionsSourceType::PoloniexWithdrawalsSupportCsv => &["", "timestamp", "currency", "amount", "fee_deducted", "status"],
             TransactionsSourceType::BinanceBnbConvertCsv => &["Date", "Coin", "Amount", "Fee (BNB)", "Converted BNB"],
             TransactionsSourceType::BinanceSpotTradeHistoryCsv => &["Date(UTC)", "Pair", "Side", "Price", "Executed", "Amount", "Fee"],
             TransactionsSourceType::BinanceTransactionHistoryCsv => &["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change", "Remark"],
@@ -144,9 +148,11 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::MyceliumCsv => "Mycelium (CSV)".to_owned(),
             TransactionsSourceType::PeercoinCsv => "Peercoin Qt (CSV)".to_owned(),
             TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
+            TransactionsSourceType::PoloniexDepositsSupportCsv => "Poloniex Deposits from Support (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesSupportCsv => "Poloniex Trades from Support (CSV)".to_owned(),
             TransactionsSourceType::PoloniexWithdrawalsCsv => "Poloniex Withdrawals (CSV)".to_owned(),
+            TransactionsSourceType::PoloniexWithdrawalsSupportCsv => "Poloniex Withdrawals from Support (CSV)".to_owned(),
             TransactionsSourceType::StellarAccount => "Stellar Account".to_owned(),
             TransactionsSourceType::BinanceBnbConvertCsv => "Binance BNB Convert (CSV)".to_owned(),
             TransactionsSourceType::BinanceSpotTradeHistoryCsv => "Binance Spot Trade History (CSV)".to_owned(),
@@ -588,14 +594,16 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
                 TransactionsSourceType::PeercoinCsv => {
                     bitcoin_core::load_peercoin_csv(&source.full_path)
                 }
-                TransactionsSourceType::PoloniexDepositsCsv => {
+                TransactionsSourceType::PoloniexDepositsCsv |
+                TransactionsSourceType::PoloniexDepositsSupportCsv => {
                     poloniex::load_poloniex_deposits_csv(&source.full_path)
                 }
                 TransactionsSourceType::PoloniexTradesCsv |
                 TransactionsSourceType::PoloniexTradesSupportCsv => {
                     poloniex::load_poloniex_trades_csv(&source.full_path)
                 }
-                TransactionsSourceType::PoloniexWithdrawalsCsv => {
+                TransactionsSourceType::PoloniexWithdrawalsCsv |
+                TransactionsSourceType::PoloniexWithdrawalsSupportCsv => {
                     poloniex::load_poloniex_withdrawals_csv(&source.full_path)
                 }
                 TransactionsSourceType::BinanceBnbConvertCsv => {
