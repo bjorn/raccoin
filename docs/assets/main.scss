@@ -165,21 +165,22 @@ h1, h2, h4, h5, h6 {
         background-color: $grey-color-light;
         padding: 10px 20px;
         border-radius: 5px;
+        border: 1px solid $grey-color;
         line-height: 1;
     }
     .page-link:hover {
         border-color: $brand-color;
         text-decoration: none;
     }
-
-    .page-link {
-        border: 1px solid $grey-color;
-    }
 }
 
+.svg-icon {
+    fill: $text-color;
+    padding-top: 4px;
+}
 
 .site-nav .page-link:not(:last-child) {
-    margin-right: 10px;
+    margin-right: 7px;
 }
 
 @include media-query($on-palm) {
