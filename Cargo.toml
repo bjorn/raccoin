@@ -26,6 +26,7 @@ futures = "0.3.28"
 open = "5.0.0"
 pathdiff = "0.2.1"
 raccoin_ui = { version = "0.1", path = "raccoin_ui" }
+regex = "1.10.2"
 reqwest = { version = "0.11.22", features = ["json"] }
 rfd = { version = "0.12", default-features = false, features = [ "xdg-portal" ] }
 rust_decimal = { version = "1.33", features = ["serde-arbitrary-precision"] }

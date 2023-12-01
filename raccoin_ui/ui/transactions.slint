@@ -1,4 +1,4 @@
-import { Button, ListView, HorizontalBox } from "std-widgets.slint";
+import { Button, ListView, HorizontalBox, LineEdit } from "std-widgets.slint";
 import {
     Cell,
     CurrencyIcon,
@@ -205,6 +205,12 @@ export component Transactions inherits VerticalLayout {
         Image {
             source: @image-url("icons/filter.svg");
             opacity: 0.5;
+        }
+        LineEdit {
+            placeholder-text: "Filter";
+            edited => {
+                Facade.set-text-filter(self.text);
+            }
         }
         Button {
             icon: @image-url("icons/alert-triangle.svg");

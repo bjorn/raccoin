@@ -24,6 +24,7 @@ export global Facade {
 
     out property <int> wallet-filter: -1;
     out property <string> currency-filter: "";
+    out property <string> text-filter: "";
     out property <bool> warnings-filter: false;
 
     // ACTIONS
@@ -81,6 +82,13 @@ export global Facade {
         if (currency-filter != currency || wallet-filter != -1) {
             currency-filter = currency;
             wallet-filter = -1;
+            transaction-filter-changed();
+        }
+    }
+
+    public function set-text-filter(text: string) {
+        if (text-filter != text) {
+            text-filter = text;
             transaction-filter-changed();
         }
     }

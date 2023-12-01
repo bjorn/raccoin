@@ -4183,6 +4183,7 @@ dependencies = [
  "open",
  "pathdiff",
  "raccoin_ui",
+ "regex",
  "reqwest",
  "rfd",
  "rust_decimal",

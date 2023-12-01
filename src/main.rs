@@ -26,6 +26,7 @@ use chrono::{Duration, Datelike, Utc, TimeZone, Local};
 use directories::ProjectDirs;
 use raccoin_ui::*;
 use fifo::{FIFO, CapitalGain};
+use regex::{Regex, RegexBuilder};
 use rust_decimal_macros::dec;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
@@ -293,6 +294,7 @@ impl TaxReport {
 enum TransactionFilter {
     WalletIndex(usize),
     Currency(String),
+    Text(Regex),
     HasGainError,
 }
 
@@ -307,6 +309,9 @@ impl TransactionFilter {
                 (Some(incoming), Some(outgoing)) => {
                     &incoming.currency == currency || &outgoing.currency == currency
                 }
+            }
+            TransactionFilter::Text(text) => {
+                tx.description.as_deref().is_some_and(|description| text.is_match(description))
             }
             TransactionFilter::HasGainError => {
                 tx.gain.as_ref().is_some_and(|gain| gain.is_err())
@@ -1833,6 +1838,13 @@ async fn main() -> Result<()> {
 
             if !facade.get_currency_filter().is_empty() {
                 app.transaction_filters.push(TransactionFilter::Currency(facade.get_currency_filter().into()));
+            }
+
+            if facade.get_text_filter().len() > 0 {
+                let re = RegexBuilder::new(&regex::escape(facade.get_text_filter().as_str()))
+                    .case_insensitive(true)
+                    .build().unwrap();
+                app.transaction_filters.push(TransactionFilter::Text(re));
             }
 
             if facade.get_warnings_filter() {
