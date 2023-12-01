@@ -19,6 +19,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
+    - run: sudo apt update && sudo apt install libfontconfig-dev
     - run: cargo build --verbose --release
     - run: cargo install cargo-packager --locked
     - run: cargo packager --release
