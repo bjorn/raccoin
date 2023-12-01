@@ -94,6 +94,9 @@ export component Wallets inherits ScrollView {
     callback wallet-transactions-clicked(int);
 
     VerticalBox {
+        padding-left: 17px;
+        padding-right: 17px;
+
         for wallet[wallet-index] in wallets: wallet-item := Rectangle {
             property <bool> is-expanded: false;
 

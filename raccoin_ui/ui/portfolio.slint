@@ -15,8 +15,9 @@ export component Portfolio inherits Rectangle {
     callback currency-filter-clicked(string);
 
     VerticalBox {
+        padding: 0;
+
         HorizontalBox {
-            padding: 0;
             vertical-stretch: 0;
             GroupBox {
                 title: "Balance";
@@ -53,136 +54,138 @@ export component Portfolio inherits Rectangle {
             }
         }
 
-        GroupBox {
-            title: "Holdings";
+        HorizontalBox {
+            Text {
+                text: "Holdings";
+                font-weight: 600;
+                font-size: 13px;
+            }
+        }
 
-            VerticalLayout {
-                spacing: 2px;
+        VerticalLayout {
+            spacing: 2px;
 
-                TableHeader {
-                    horizontal-padding-left: 0;
+            TableHeader {
+                HeaderCell { text: "Currency"; }
+                HeaderCell { text: "Quantity"; }
+                HeaderCell { text: "Cost"; horizontal-alignment: right; }
+                HeaderCell { text: "Value"; horizontal-alignment: right; }
+                HeaderCell { text: "ROI"; horizontal-alignment: right; }
+                HeaderCell { text: "Unrealized Gain"; horizontal-alignment: right; }
+            }
 
-                    HeaderCell { text: "Currency"; }
-                    HeaderCell { text: "Quantity"; }
-                    HeaderCell { text: "Cost"; horizontal-alignment: right; }
-                    HeaderCell { text: "Value"; horizontal-alignment: right; }
-                    HeaderCell { text: "ROI"; horizontal-alignment: right; }
-                    HeaderCell { text: "Unrealized Gain"; horizontal-alignment: right; }
-                }
+            summary-view := ListView {
+                for holding[index] in Facade.portfolio.holdings: Rectangle {
+                    property <bool> even: mod(index, 2) == 0;
 
-                summary-view := ListView {
-                    for holding[index] in Facade.portfolio.holdings: Rectangle {
-                        property <bool> even: mod(index, 2) == 0;
+                    background: touch.has-hover || quantity-touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
+                    border-radius: self.height / 4;
 
-                        background: touch.has-hover || quantity-touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
-                        border-radius: self.height / 4;
+                    touch := TouchArea {}
 
-                        touch := TouchArea {}
+                    HorizontalLayout {
+                        padding-left: 5px;
+                        padding-right: 17px;
+                        spacing: 2px;
 
-                        HorizontalLayout {
-                            padding-left: 0px;
-                            padding-right: 2px;
-                            spacing: 2px;
+                        Cell {
+                            spacing: 0;
 
-                            Cell {
-                                spacing: 0;
+                            Rectangle {
+                                background: currency-touch.has-hover ? #456 : transparent;
+                                border-radius: self.height / 4;
 
-                                Rectangle {
-                                    background: currency-touch.has-hover ? #456 : transparent;
-                                    border-radius: self.height / 4;
-
-                                    HorizontalLayout {
-                                        padding-left: 4px;
-                                        padding-right: 4px;
-                                        padding-top: 2px;
-                                        padding-bottom: 2px;
-                                        spacing: 5px;
-
-                                        CurrencyIcon {
-                                            cmc-id: holding.currency-cmc-id;
-                                        }
-                                        ElidingText {
-                                            font-family: "DejaVu Sans Mono";
-                                            max-width: self.preferred-width;
-                                            text: holding.currency;
-                                        }
-                                    }
-
-                                    currency-touch := TouchArea {
-                                        clicked => { root.currency-filter-clicked(holding.currency) }
-                                        mouse-cursor: pointer;
-                                    }
-                                }
-                                Rectangle {}
-                            }
-                            quantity-touch := TouchCell {
-                                pointer-event(event) => {
-                                    if (event.kind == PointerEventKind.down) {
-                                        popup.show();
-                                    }
-                                }
-                                VerticalLayout {
+                                HorizontalLayout {
+                                    padding-left: 4px;
+                                    padding-right: 4px;
                                     padding-top: 2px;
                                     padding-bottom: 2px;
+                                    spacing: 5px;
 
-                                    quantity-background := Rectangle {
-                                        border-radius: self.height / 4;
-                                        border-color: #3e3e3e;
-                                        border-width: 1px;
+                                    CurrencyIcon {
+                                        cmc-id: holding.currency-cmc-id;
+                                    }
+                                    ElidingText {
+                                        font-family: "DejaVu Sans Mono";
+                                        max-width: self.preferred-width;
+                                        text: holding.currency;
+                                    }
+                                }
 
-                                        states [
-                                            hovered when quantity-touch.has-hover: {
-                                                quantity-background.background: #1e1e1e;
-                                                quantity-background.border-color: #6e6e6e;
-                                            }
-                                        ]
+                                currency-touch := TouchArea {
+                                    clicked => { root.currency-filter-clicked(holding.currency) }
+                                    mouse-cursor: pointer;
+                                }
+                            }
+                            Rectangle {}
+                        }
+                        quantity-touch := TouchCell {
+                            pointer-event(event) => {
+                                if (event.kind == PointerEventKind.down) {
+                                    popup.show();
+                                }
+                            }
+                            VerticalLayout {
+                                padding-top: 2px;
+                                padding-bottom: 2px;
 
-                                        HorizontalLayout {
-                                            padding: 4px;
-                                            padding-left: 8px;
-                                            padding-right: 8px;
-                                            ElidingText {
-                                                text: holding.quantity;
-                                                font-family: "DejaVu Sans Mono";
-                                            }
+                                quantity-background := Rectangle {
+                                    border-radius: self.height / 4;
+                                    border-color: #3e3e3e;
+                                    border-width: 1px;
+
+                                    states [
+                                        hovered when quantity-touch.has-hover: {
+                                            quantity-background.background: #1e1e1e;
+                                            quantity-background.border-color: #6e6e6e;
                                         }
+                                    ]
 
-                                        popup := PopupWindow {
-                                            width: 300px;
-                                            height: balances-list.preferred-height;
-                                            x: parent.width + 5px;
-                                            y: 0;
-                                            Rectangle {
-                                                z: 100;
-                                                background: #000000;
-                                                border-radius: 5px;
-                                                border-color: #3e3e3e;
-                                                border-width: 1px;
+                                    HorizontalLayout {
+                                        padding: 4px;
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        ElidingText {
+                                            text: holding.quantity;
+                                            font-family: "DejaVu Sans Mono";
+                                        }
+                                    }
 
-                                                balances-list := VerticalLayout {
-                                                    padding-top: 5px;
-                                                    padding-bottom: 5px;
-                                                    padding-left: 1px;
-                                                    padding-right: 1px;
-                                                    spacing: 5px;
+                                    popup := PopupWindow {
+                                        width: 300px;
+                                        height: balances-list.preferred-height;
+                                        x: parent.width + 5px;
+                                        y: 0;
+                                        Rectangle {
+                                            z: 100;
+                                            background: #000000;
+                                            border-radius: 5px;
+                                            border-color: #3e3e3e;
+                                            border-width: 1px;
 
-                                                    TableHeader {
-                                                        separator: false;
-                                                        horizontal-padding-left: 7px;
-                                                        horizontal-padding-right: 7px;
-                                                        HeaderCell { text: "Wallet"; }
-                                                        HeaderCell { text: "Quantity"; }
-                                                    }
+                                            balances-list := VerticalLayout {
+                                                padding-top: 5px;
+                                                padding-bottom: 5px;
+                                                padding-left: 1px;
+                                                padding-right: 1px;
+                                                spacing: 5px;
 
-                                                    for balance[index] in Facade.balances-for-currency(holding.currency): Rectangle {
-                                                        HorizontalLayout {
-                                                            padding-left: 9px;
-                                                            padding-right: 9px;
-                                                            spacing: 2px;
+                                                TableHeader {
+                                                    separator: false;
+                                                    horizontal-padding-left: 7px;
+                                                    horizontal-padding-right: 7px;
+                                                    HeaderCell { text: "Wallet"; }
+                                                    HeaderCell { text: "Quantity"; }
+                                                }
 
-                                                            TextCell { text: balance.source; }
-                                                            MonoTextCell { text: balance.balance; horizontal-alignment: left; }
-                                                        }
+                                                for balance[index] in Facade.balances-for-currency(holding.currency): Rectangle {
+                                                    HorizontalLayout {
+                                                        padding-left: 9px;
+                                                        padding-right: 9px;
+                                                        spacing: 2px;
+
+                                                        TextCell { text: balance.source; }
+                                                        MonoTextCell { text: balance.balance; horizontal-alignment: left; }
                                                     }
                                                 }
                                             }
@@ -190,22 +193,22 @@ export component Portfolio inherits Rectangle {
                                     }
                                 }
                             }
-                            cost-text := MonoTextCell { text: holding.cost; }
-                            MonoTextCell { text: holding.value; }
-                            MonoTextCell {
-                                text: holding.roi;
-                                color: {
-                                    if (holding.roi == "-") {
-                                        cost-text.color
-                                    } else if (holding.is-profit) {
-                                        #00ff00
-                                    } else {
-                                        #ff0000
-                                    }
+                        }
+                        cost-text := MonoTextCell { text: holding.cost; }
+                        MonoTextCell { text: holding.value; }
+                        MonoTextCell {
+                            text: holding.roi;
+                            color: {
+                                if (holding.roi == "-") {
+                                    cost-text.color
+                                } else if (holding.is-profit) {
+                                    #00ff00
+                                } else {
+                                    #ff0000
                                 }
                             }
-                            MonoTextCell { text: holding.unrealized-gain; }
                         }
+                        MonoTextCell { text: holding.unrealized-gain; }
                     }
                 }
             }

@@ -38,7 +38,7 @@ component SmallButton inherits Rectangle {
 
     Rectangle {
         background: #000000;
-        border-radius: 2px;
+        border-radius: self.height / 4;
         opacity: root.has-hover ? 1.0 : 0;
         width: i-tooltip.preferred-width + 8px;
         height: i-tooltip.preferred-height + 4px;
@@ -95,10 +95,10 @@ component TransactionDisplay inherits Rectangle {
     touch := TouchArea {}
 
     HorizontalLayout {
-        padding-left: 5px;
-        padding-right: 2px;
-        padding-top: 2px;
-        padding-bottom: 2px;
+        padding-left: 7px;
+        padding-right: 17px;
+        padding-top: 3px;
+        padding-bottom: 3px;
         spacing: 2px;
 
         DateTimeCell {
@@ -176,7 +176,7 @@ component TransactionDisplay inherits Rectangle {
         }
         Rectangle { horizontal-stretch: 0.1; }
         HorizontalLayout {
-            spacing: 3px;
+            spacing: 4px;
 
             tx-btn := SmallButton {
                 visible: tx.tx-hash != "";
@@ -234,7 +234,7 @@ export component Transactions inherits VerticalLayout {
                 vertical-alignment: center;
             }
             Button {
-                text: "Clear";
+                icon: @image-url("icons/delete.svg");
                 clicked => {
                     Facade.set-currency-filter("");
                 }

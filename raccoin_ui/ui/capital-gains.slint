@@ -17,9 +17,6 @@ export component CapitalGains inherits VerticalLayout {
     spacing: 2px;
 
     TableHeader {
-        spacing: 2px;
-        // width: list-view.visible-width;   // what we want, but causes binding loop
-
         Rectangle {
             height: bought-text.preferred-height;
 
@@ -57,10 +54,10 @@ export component CapitalGains inherits VerticalLayout {
             touch := TouchArea {}
 
             HorizontalLayout {
-                padding-left: 5px;
-                padding-right: 2px;
-                padding-top: 2px;
-                padding-bottom: 2px;
+                padding-left: 7px;
+                padding-right: 17px;
+                padding-top: 3px;
+                padding-bottom: 3px;
                 spacing: 2px;
 
                 DateTimeCell {
