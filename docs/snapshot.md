@@ -21,10 +21,11 @@ Below is a summary of the changes since the current release.
 * Added an "Export All" button to export all available reports to a directory.
 * Added the summary displayed on the "Reports" page to the "Report Summary" CSV export.
 * Added a filter to show only transactions with warnings.
+* Added a text filer for transaction descriptions.
 * Added some icons to the UI.
 * Added AQUA currency.
 * Added support for more variations of Poloniex CSV export.
-* Updated to Slint 1.3.1.
+* Updated to Slint 1.3.2.
 * Separated the long-term and short-term capital losses on the "Reports" page.
 * Disabled UI accessibility feature, due to severe performance issues.
 * Fixed switching to "Portfolio" page each time a change is made.
