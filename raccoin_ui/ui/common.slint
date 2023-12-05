@@ -103,6 +103,42 @@ export component MonoTextCell inherits TextCell {
     horizontal-alignment: right;
 }
 
+export component CurrencyCell inherits Cell {
+    in property <string> currency;
+    in property <int> cmc-id;
+
+    callback clicked <=> currency-touch.clicked;
+
+    spacing: 0;
+
+    Rectangle {
+        background: currency-touch.has-hover ? #456 : transparent;
+        border-radius: self.height / 4;
+
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+            spacing: 5px;
+
+            CurrencyIcon {
+                cmc-id: root.cmc-id;
+            }
+            ElidingText {
+                font-family: "DejaVu Sans Mono";
+                max-width: self.preferred-width;
+                text: root.currency;
+            }
+        }
+
+        currency-touch := TouchArea {
+            mouse-cursor: pointer;
+        }
+    }
+    Rectangle {}
+}
+
 export component TableHeader inherits VerticalLayout {
     spacing: 2px;
     vertical-stretch: 0;

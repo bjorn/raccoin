@@ -111,6 +111,10 @@ component MainContent inherits VerticalLayout {
 
         Reports {
             visible: active-page == Page.reports;
+            currency-filter-clicked(currency) => {
+                Facade.set-currency-filter(currency);
+                root.active-page = Page.transactions;
+            }
         }
     }
 }

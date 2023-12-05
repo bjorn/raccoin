@@ -1,6 +1,7 @@
 import { GroupBox, VerticalBox, HorizontalBox, ListView, Button } from "std-widgets.slint";
 import {
     Cell,
+    CurrencyCell,
     CurrencyIcon,
     ElidingText,
     HeaderCell,
@@ -66,7 +67,11 @@ export component Portfolio inherits Rectangle {
             spacing: 2px;
 
             TableHeader {
-                HeaderCell { text: "Currency"; }
+                horizontal-padding-left: 1px;
+                Cell {
+                    padding-left: 4px;
+                    HeaderCell { text: "Currency"; }
+                }
                 HeaderCell { text: "Quantity"; }
                 HeaderCell { text: "Cost"; horizontal-alignment: right; }
                 HeaderCell { text: "Value"; horizontal-alignment: right; }
@@ -84,40 +89,14 @@ export component Portfolio inherits Rectangle {
                     touch := TouchArea {}
 
                     HorizontalLayout {
-                        padding-left: 5px;
+                        padding-left: 1px;
                         padding-right: 17px;
                         spacing: 2px;
 
-                        Cell {
-                            spacing: 0;
-
-                            Rectangle {
-                                background: currency-touch.has-hover ? #456 : transparent;
-                                border-radius: self.height / 4;
-
-                                HorizontalLayout {
-                                    padding-left: 4px;
-                                    padding-right: 4px;
-                                    padding-top: 2px;
-                                    padding-bottom: 2px;
-                                    spacing: 5px;
-
-                                    CurrencyIcon {
-                                        cmc-id: holding.currency-cmc-id;
-                                    }
-                                    ElidingText {
-                                        font-family: "DejaVu Sans Mono";
-                                        max-width: self.preferred-width;
-                                        text: holding.currency;
-                                    }
-                                }
-
-                                currency-touch := TouchArea {
-                                    clicked => { root.currency-filter-clicked(holding.currency) }
-                                    mouse-cursor: pointer;
-                                }
-                            }
-                            Rectangle {}
+                        CurrencyCell {
+                            cmc-id: holding.currency-cmc-id;
+                            currency: holding.currency;
+                            clicked => { root.currency-filter-clicked(holding.currency) }
                         }
                         quantity-touch := TouchCell {
                             pointer-event(event) => {

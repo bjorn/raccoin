@@ -2,6 +2,7 @@ import { ComboBox, HorizontalBox, ListView, VerticalBox, StandardListView, Butto
 import { CapitalGains } from "./capital-gains.slint";
 import {
     Cell,
+    CurrencyCell,
     CurrencyIcon,
     ElidingText,
     HeaderCell,
@@ -16,6 +17,8 @@ component MonoText inherits Text {
 }
 
 export component Reports inherits Rectangle {
+    callback currency-filter-clicked(string);
+
     in property <[StandardListViewItem]> report-years: Facade.report-years;
     in property <[UiTaxReport]> reports: Facade.reports;
 
@@ -171,7 +174,11 @@ export component Reports inherits Rectangle {
                     visible: report-combo.current-index == 0;
 
                     TableHeader {
-                        HeaderCell { text: "Currency"; }
+                        horizontal-padding-left: -2px;
+                        Cell {
+                            padding-left: 7px;
+                            HeaderCell { text: "Currency"; }
+                        }
                         HeaderCell { text: "Starting Balance"; horizontal-alignment: right; }
                         HeaderCell { text: "Ending Balance"; horizontal-alignment: right; }
                         HeaderCell { text: "Quantity Disposed"; horizontal-alignment: right; }
@@ -193,19 +200,13 @@ export component Reports inherits Rectangle {
                             touch := TouchArea {}
 
                             HorizontalLayout {
-                                padding-left: 7px;
                                 padding-right: 17px;
-                                padding-top: 3px;
-                                padding-bottom: 3px;
                                 spacing: 2px;
 
-                                Cell {
-                                    CurrencyIcon {
-                                        cmc-id: currency.currency-cmc-id;
-                                    }
-                                    ElidingText {
-                                        text: currency.currency;
-                                    }
+                                CurrencyCell {
+                                    cmc-id: currency.currency-cmc-id;
+                                    currency: currency.currency;
+                                    clicked => { root.currency-filter-clicked(currency.currency) }
                                 }
                                 MonoTextCell { text: currency.balance_start; }
                                 MonoTextCell { text: currency.balance_end; }
