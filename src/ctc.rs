@@ -8,7 +8,6 @@ use serde::{Serialize, Deserialize};
 use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation, Amount}};
 
 #[derive(Debug, Serialize, Deserialize)]
-#[allow(dead_code)] // we want to represent all possible values, not just used ones
 pub(crate) enum CtcTxType {
     /// Purchase of cryptocurrency, which increases the balance remaining and effects cost basis.
     #[serde(rename = "buy")]

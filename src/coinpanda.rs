@@ -218,6 +218,7 @@ fn convert_ctc_to_coinpanda<'a>(ctc: &'a CtcTx) -> CoinpandaTx<'a> {
     tx
 }
 
+#[allow(dead_code)] // todo: change to load into list of base::Transaction
 pub(crate) fn convert_ctc_csv_to_coinpanda_csv(input_path: &str, output_path: &str) -> Result<()> {
     println!("Converting {} to {}", input_path, output_path);
     let mut rdr = csv::ReaderBuilder::new()
