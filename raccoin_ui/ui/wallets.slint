@@ -231,6 +231,12 @@ export component Wallets inherits ScrollView {
             wallet-name := LineEdit {
                 placeholder-text: "New Wallet Name";
                 enabled: Facade.portfolio.file-name != "";
+                accepted => {
+                    if (wallet-name.text != "") {
+                        Facade.add-wallet(wallet-name.text);
+                        wallet-name.text = "";
+                    }
+                }
             }
             Button {
                 text: "Add Wallet";
