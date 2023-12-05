@@ -22,11 +22,16 @@ Below is a summary of the changes since the current release.
 * Added the summary displayed on the "Reports" page to the "Report Summary" CSV export.
 * Added a filter to show only transactions with warnings.
 * Added a text filer for transaction descriptions.
+* Added importing of Liquid exchange CSV export.
+* Added importing of FTX exchange CSV export.
 * Added some icons to the UI.
 * Added AQUA currency.
+* Added block explorer link for Monero transactions.
 * Added support for more variations of Poloniex CSV export.
 * Updated to Slint 1.3.2.
+* Adding a new wallet can now be triggered with Enter key in the name field.
 * Separated the long-term and short-term capital losses on the "Reports" page.
+* Currency in "Report Summary" is now clickable to filter transactions.
 * Disabled UI accessibility feature, due to severe performance issues.
 * Fixed switching to "Portfolio" page each time a change is made.
 * Fixed UI getting blocked while synchronizing wallets.
