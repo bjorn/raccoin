@@ -15,6 +15,7 @@ mod esplora;
 mod etherscan;
 mod fifo;
 mod horizon;
+mod liquid;
 mod mycelium;
 mod poloniex;
 mod time;
@@ -33,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{VecModel, StandardListViewItem, SharedString, ModelRc};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{rc::Rc, path::{Path, PathBuf}, env, collections::HashMap, cmp::{Eq, Ordering}, hash::Hash, default::Default, ffi::OsString, sync::{Arc, Mutex}};
+use std::{rc::Rc, path::{Path, PathBuf}, env, collections::HashMap, cmp::{Eq, Ordering}, hash::Hash, default::Default, ffi::OsString, sync::{Arc, Mutex}, fs::File, io::BufReader};
 
 fn rounded_to_cent(amount: Decimal) -> Decimal {
     amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
@@ -55,6 +56,9 @@ enum TransactionsSourceType {
     Json,
     MyceliumCsv,
     PeercoinCsv,
+    LiquidDepositsCsv,
+    LiquidTradesCsv,
+    LiquidWithdrawalsCsv,
     PoloniexDepositsCsv,
     PoloniexDepositsSupportCsv,
     PoloniexTradesCsv,
@@ -69,15 +73,29 @@ enum TransactionsSourceType {
     TrezorCsv,
 }
 
+fn csv_file_has_headers(path: &Path, delimiter: u8, skip_lines: usize, headers: &[&str]) -> Result<bool> {
+    let file = File::open(path)?;
+    let mut buf_reader = BufReader::new(file);
+
+    use std::io::BufRead;
+
+    let mut line = String::new();
+    for _ in 0..skip_lines {
+        buf_reader.read_line(&mut line)?;
+    }
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(delimiter)
+        .from_reader(buf_reader);
+
+    Ok(rdr.headers().map_or(false, |s| s == headers))
+}
+
 impl TransactionsSourceType {
     fn detect_from_file(path: &Path) -> Option<Self> {
         Self::iter().find(|source_type| {
-            source_type.delimiter().and_then(|delimiter| {
-                csv::ReaderBuilder::new()
-                    .delimiter(delimiter)
-                    .from_path(path).ok()
-            }).is_some_and(|mut rdr| {
-                rdr.headers().map_or(false, |s| s == source_type.headers())
+            source_type.delimiter().is_some_and(|delimiter| {
+                csv_file_has_headers(path, delimiter, source_type.skip_lines(), source_type.headers()).is_ok_and(|x| x)
             })
         })
     }
@@ -94,6 +112,13 @@ impl TransactionsSourceType {
             TransactionsSourceType::TrezorCsv => Some(b';'),
 
             _ => Some(b','),
+        }
+    }
+
+    fn skip_lines(&self) -> usize {
+        match self {
+            TransactionsSourceType::LiquidTradesCsv => 2,
+            _ => 0,
         }
     }
 
@@ -118,6 +143,9 @@ impl TransactionsSourceType {
             TransactionsSourceType::CtcImportCsv => &["Timestamp (UTC)", "Type", "Base Currency", "Base Amount", "Quote Currency (Optional)", "Quote Amount (Optional)", "Fee Currency (Optional)", "Fee Amount (Optional)", "From (Optional)", "To (Optional)", "Blockchain (Optional)", "ID (Optional)", "Description (Optional)", "Reference Price Per Unit (Optional)", "Reference Price Currency (Optional)"],
             TransactionsSourceType::ElectrumCsv => &["transaction_hash", "label", "confirmations", "value", "fiat_value", "fee", "fiat_fee", "timestamp"],
             TransactionsSourceType::MyceliumCsv => &["Account", "Transaction ID", "Destination Address", "Timestamp", "Value", "Currency", "Transaction Label"],
+            TransactionsSourceType::LiquidDepositsCsv => &["ID", "Type", "Amount", "Status", "Created (YY/MM/DD)", "Hash"],
+            TransactionsSourceType::LiquidTradesCsv => &["Quoted currency", "Base currency", "Qex/liquid", "Execution", "Type", "Date", "Open qty", "Price", "Fee", "Fee currency", "Amount", "Trade side"],
+            TransactionsSourceType::LiquidWithdrawalsCsv => &["ID", "Wallet label", "Amount", "Created On", "Transfer network", "Status", "Address", "Liquid Fee", "Network Fee", "Broadcasted At", "Hash"],
             TransactionsSourceType::PoloniexDepositsCsv => &["Currency", "Amount", "Address", "Date", "Status"],
             TransactionsSourceType::PoloniexDepositsSupportCsv => &["", "timestamp", "currency", "amount", "address", "status"],
             TransactionsSourceType::PoloniexTradesCsv => &["Date", "Market", "Type", "Side", "Price", "Amount", "Total", "Fee", "Order Number", "Fee Currency", "Fee Total"],
@@ -148,6 +176,9 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::CtcImportCsv => "CryptoTaxCalculator import (CSV)".to_owned(),
             TransactionsSourceType::MyceliumCsv => "Mycelium (CSV)".to_owned(),
             TransactionsSourceType::PeercoinCsv => "Peercoin Qt (CSV)".to_owned(),
+            TransactionsSourceType::LiquidDepositsCsv => "Liquid Deposits (CSV)".to_owned(),
+            TransactionsSourceType::LiquidTradesCsv => "Liquid Trades (CSV)".to_owned(),
+            TransactionsSourceType::LiquidWithdrawalsCsv => "Liquid Withdrawals (CSV)".to_owned(),
             TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
             TransactionsSourceType::PoloniexDepositsSupportCsv => "Poloniex Deposits from Support (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
@@ -598,6 +629,15 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
                 }
                 TransactionsSourceType::PeercoinCsv => {
                     bitcoin_core::load_peercoin_csv(&source.full_path)
+                }
+                TransactionsSourceType::LiquidDepositsCsv => {
+                    liquid::load_liquid_deposits_csv(&source.full_path)
+                }
+                TransactionsSourceType::LiquidTradesCsv => {
+                    liquid::load_liquid_trades_csv(&source.full_path)
+                }
+                TransactionsSourceType::LiquidWithdrawalsCsv => {
+                    liquid::load_liquid_withdrawals_csv(&source.full_path)
                 }
                 TransactionsSourceType::PoloniexDepositsCsv |
                 TransactionsSourceType::PoloniexDepositsSupportCsv => {

@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount};
+use crate::base::{Transaction, Amount, deserialize_amount};
 
 #[derive(Debug, Deserialize)]
 enum BitstampTransactionType {
@@ -23,11 +23,6 @@ enum SubType {
 fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
     Ok(NaiveDateTime::parse_from_str(raw, "%b. %d, %Y, %I:%M %p").unwrap())
-}
-
-fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Amount, D::Error> {
-    let raw: &str = Deserialize::deserialize(d)?;
-    Ok(Amount::try_from(raw).unwrap())
 }
 
 fn deserialize_amount_opt<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Option<Amount>, D::Error> {

@@ -3,15 +3,9 @@ use std::path::Path;
 use anyhow::Result;
 use chrono::{NaiveDateTime, NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Amount, Transaction, self}};
-
-// todo: share with bitstamp.rs
-fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Amount, D::Error> {
-    let raw: &str = Deserialize::deserialize(d)?;
-    Ok(Amount::try_from(raw).unwrap())
-}
+use crate::{time::deserialize_date_time, base::{Amount, Transaction, self, deserialize_amount}};
 
 // #[derive(Debug, Deserialize)]
 // enum Account {

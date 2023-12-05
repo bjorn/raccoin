@@ -2,7 +2,7 @@ use std::{path::Path, fmt, cmp::Ordering, collections::HashMap};
 
 use anyhow::Result;
 use chrono::{NaiveDateTime, Duration};
-use serde::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize, Deserializer};
 use rust_decimal::prelude::*;
 
 /// Maps currencies to their CMC ID
@@ -161,6 +161,11 @@ impl fmt::Display for Amount {
             _ => write!(f, "{} {}", self.quantity.normalize(), self.currency),
         }
     }
+}
+
+pub (crate) fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Amount, D::Error> {
+    let raw: &str = Deserialize::deserialize(d)?;
+    Ok(Amount::try_from(raw).unwrap())
 }
 
 /// Unified transaction type for all exchanges and wallets
