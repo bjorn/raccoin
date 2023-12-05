@@ -14,6 +14,7 @@ mod electrum;
 mod esplora;
 mod etherscan;
 mod fifo;
+mod ftx;
 mod horizon;
 mod liquid;
 mod mycelium;
@@ -56,6 +57,9 @@ enum TransactionsSourceType {
     Json,
     MyceliumCsv,
     PeercoinCsv,
+    FtxDepositsCsv,
+    FtxWithdrawalsCsv,
+    FtxTradesCsv,
     LiquidDepositsCsv,
     LiquidTradesCsv,
     LiquidWithdrawalsCsv,
@@ -143,6 +147,9 @@ impl TransactionsSourceType {
             TransactionsSourceType::CtcImportCsv => &["Timestamp (UTC)", "Type", "Base Currency", "Base Amount", "Quote Currency (Optional)", "Quote Amount (Optional)", "Fee Currency (Optional)", "Fee Amount (Optional)", "From (Optional)", "To (Optional)", "Blockchain (Optional)", "ID (Optional)", "Description (Optional)", "Reference Price Per Unit (Optional)", "Reference Price Currency (Optional)"],
             TransactionsSourceType::ElectrumCsv => &["transaction_hash", "label", "confirmations", "value", "fiat_value", "fee", "fiat_fee", "timestamp"],
             TransactionsSourceType::MyceliumCsv => &["Account", "Transaction ID", "Destination Address", "Timestamp", "Value", "Currency", "Transaction Label"],
+            TransactionsSourceType::FtxDepositsCsv => &[" ", "Time", "Coin", "Amount", "Status", "Additional info", "Transaction ID"],
+            TransactionsSourceType::FtxWithdrawalsCsv => &[" ", "Time", "Coin", "Amount", "Destination", "Status", "Transaction ID", "fee"],
+            TransactionsSourceType::FtxTradesCsv => &["ID", "Time", "Market", "Side", "Order Type", "Size", "Price", "Total", "Fee", "Fee Currency", "TWAP"],
             TransactionsSourceType::LiquidDepositsCsv => &["ID", "Type", "Amount", "Status", "Created (YY/MM/DD)", "Hash"],
             TransactionsSourceType::LiquidTradesCsv => &["Quoted currency", "Base currency", "Qex/liquid", "Execution", "Type", "Date", "Open qty", "Price", "Fee", "Fee currency", "Amount", "Trade side"],
             TransactionsSourceType::LiquidWithdrawalsCsv => &["ID", "Wallet label", "Amount", "Created On", "Transfer network", "Status", "Address", "Liquid Fee", "Network Fee", "Broadcasted At", "Hash"],
@@ -176,6 +183,9 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::CtcImportCsv => "CryptoTaxCalculator import (CSV)".to_owned(),
             TransactionsSourceType::MyceliumCsv => "Mycelium (CSV)".to_owned(),
             TransactionsSourceType::PeercoinCsv => "Peercoin Qt (CSV)".to_owned(),
+            TransactionsSourceType::FtxDepositsCsv => "FTX Deposits (CSV)".to_owned(),
+            TransactionsSourceType::FtxWithdrawalsCsv => "FTX Withdrawal (CSV)".to_owned(),
+            TransactionsSourceType::FtxTradesCsv => "FTX Trades (CSV)".to_owned(),
             TransactionsSourceType::LiquidDepositsCsv => "Liquid Deposits (CSV)".to_owned(),
             TransactionsSourceType::LiquidTradesCsv => "Liquid Trades (CSV)".to_owned(),
             TransactionsSourceType::LiquidWithdrawalsCsv => "Liquid Withdrawals (CSV)".to_owned(),
@@ -629,6 +639,15 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
                 }
                 TransactionsSourceType::PeercoinCsv => {
                     bitcoin_core::load_peercoin_csv(&source.full_path)
+                }
+                TransactionsSourceType::FtxDepositsCsv => {
+                    ftx::load_ftx_deposits_csv(&source.full_path)
+                }
+                TransactionsSourceType::FtxWithdrawalsCsv => {
+                    ftx::load_ftx_withdrawals_csv(&source.full_path)
+                }
+                TransactionsSourceType::FtxTradesCsv => {
+                    ftx::load_ftx_trades_csv(&source.full_path)
                 }
                 TransactionsSourceType::LiquidDepositsCsv => {
                     liquid::load_liquid_deposits_csv(&source.full_path)
@@ -1281,7 +1300,7 @@ fn ui_set_transactions(app: &App) {
             from: from.unwrap_or_default(),
             to: to.unwrap_or_default(),
             date: timestamp.date().to_string().into(),
-            time: timestamp.time().to_string().into(),
+            time: timestamp.time().format("%H:%M:%S").to_string().into(),
             tx_type,
             received_cmc_id: received.map(Amount::cmc_id).unwrap_or(-1),
             received: received.map_or_else(String::default, Amount::to_string).into(),
@@ -1323,9 +1342,9 @@ fn ui_set_reports(app: &App) {
             UiCapitalGain {
                 currency_cmc_id: gain.amount.cmc_id(),
                 bought_date: bought.date().to_string().into(),
-                bought_time: bought.time().to_string().into(),
+                bought_time: bought.time().format("%H:%M:%S").to_string().into(),
                 sold_date: sold.date().to_string().into(),
-                sold_time: sold.time().to_string().into(),
+                sold_time: sold.time().format("%H:%M:%S").to_string().into(),
                 amount: gain.amount.to_string().into(),
                 // todo: something else than unwrap()?
                 cost: rounded_to_cent(gain.cost).try_into().unwrap(),
