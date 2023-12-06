@@ -271,6 +271,9 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
             Operation::Send(amount) => (CtcTxType::Send, amount, None),
             Operation::ChainSplit(amount) => (CtcTxType::ChainSplit, amount, None),
             Operation::Expense(amount) => (CtcTxType::Expense, amount, None),
+            Operation::Stolen(amount) => (CtcTxType::Stolen, amount, None),
+            Operation::Lost(amount) => (CtcTxType::Lost, amount, None),
+            Operation::Burn(amount) => (CtcTxType::Burn, amount, None),
             Operation::Income(amount) => (CtcTxType::Income, amount, None),
             Operation::Airdrop(amount) => (CtcTxType::Airdrop, amount, None),
             Operation::Staking(amount) => (CtcTxType::Staking, amount, None),
@@ -308,67 +311,63 @@ impl<'a> From<CtcTx<'a>> for Transaction {
             None
         };
 
-        Self {
-            timestamp: item.timestamp,
-            operation: match item.operation {
-                CtcTxType::Buy => Operation::Trade { incoming: base_amount, outgoing: quote_amount.expect("Buy or Sell should have quote") },
-                CtcTxType::Sell => Operation::Trade { incoming: quote_amount.expect("Buy or Sell should have quote"), outgoing: base_amount },
-                CtcTxType::FiatDeposit => Operation::FiatDeposit(base_amount),
-                CtcTxType::FiatWithdrawal => Operation::FiatWithdrawal(base_amount),
-                CtcTxType::Fee => Operation::Fee(base_amount),
-                CtcTxType::Approval => todo!(),
-                CtcTxType::Receive => Operation::Receive(base_amount),
-                CtcTxType::Send => Operation::Send(base_amount),
-                CtcTxType::ChainSplit => Operation::ChainSplit(base_amount),
-                CtcTxType::Expense => Operation::Expense(base_amount),
-                CtcTxType::Stolen => todo!(),
-                CtcTxType::Lost => todo!(),
-                CtcTxType::Burn => todo!(),
-                CtcTxType::Income => Operation::Income(base_amount),
-                CtcTxType::Interest => todo!(),
-                CtcTxType::Mining => todo!(),
-                CtcTxType::Airdrop => Operation::Airdrop(base_amount),
-                CtcTxType::Staking => todo!(),
-                CtcTxType::StakingDeposit => todo!(),
-                CtcTxType::StakingWithdrawal => todo!(),
-                CtcTxType::Cashback => todo!(),
-                CtcTxType::Royalties => todo!(),
-                CtcTxType::PersonalUse => todo!(),
-                CtcTxType::IncomingGift => Operation::IncomingGift(base_amount),
-                CtcTxType::OutgoingGift => Operation::OutgoingGift(base_amount),
-                CtcTxType::Borrow => todo!(),
-                CtcTxType::LoanRepayment => todo!(),
-                CtcTxType::Liquidate => todo!(),
-                CtcTxType::RealizedProfit => todo!(),
-                CtcTxType::RealizedLoss => todo!(),
-                CtcTxType::MarginFee => todo!(),
-                CtcTxType::BridgeIn => todo!(),
-                CtcTxType::BridgeOut => todo!(),
-                CtcTxType::Mint => todo!(),
-                CtcTxType::CollateralWithdrawal => todo!(),
-                CtcTxType::CollateralDeposit => todo!(),
-                CtcTxType::AddLiquidity => todo!(),
-                CtcTxType::ReceiveLpToken => todo!(),
-                CtcTxType::RemoveLiquidity => todo!(),
-                CtcTxType::ReturnLpToken => todo!(),
-                CtcTxType::FailedIn => todo!(),
-                CtcTxType::FailedOut => todo!(),
-                CtcTxType::Spam => Operation::Spam(base_amount),
-            },
-            description: item.description.map(|s| s.to_owned()),
-            tx_hash: item.id.map(|s| s.to_owned()),
-            blockchain: item.blockchain.map(|s| s.to_owned()),
-            fee: if let (Some(fee_amount), Some(fee_currency)) = (item.fee_amount, item.fee_currency) {
-                Some(Amount::new(fee_amount, fee_currency.to_owned()))
-            } else {
-                None
-            },
-            fee_value: None,
-            gain: None,
-            wallet_index: 0,
-            value: item.reference_price_per_unit.map(|price| Amount::new(price * item.base_amount, item.reference_price_currency.unwrap_or("EUR").to_owned())),
-            matching_tx: None,
-        }
+        let operation = match item.operation {
+            CtcTxType::Buy => Operation::Trade { incoming: base_amount, outgoing: quote_amount.expect("Buy or Sell should have quote") },
+            CtcTxType::Sell => Operation::Trade { incoming: quote_amount.expect("Buy or Sell should have quote"), outgoing: base_amount },
+            CtcTxType::FiatDeposit => Operation::FiatDeposit(base_amount),
+            CtcTxType::FiatWithdrawal => Operation::FiatWithdrawal(base_amount),
+            CtcTxType::Fee => Operation::Fee(base_amount),
+            CtcTxType::Approval => todo!(),
+            CtcTxType::Receive => Operation::Receive(base_amount),
+            CtcTxType::Send => Operation::Send(base_amount),
+            CtcTxType::ChainSplit => Operation::ChainSplit(base_amount),
+            CtcTxType::Expense => Operation::Expense(base_amount),
+            CtcTxType::Stolen => Operation::Stolen(base_amount),
+            CtcTxType::Lost => Operation::Lost(base_amount),
+            CtcTxType::Burn => Operation::Burn(base_amount),
+            CtcTxType::Income => Operation::Income(base_amount),
+            CtcTxType::Interest => todo!(),
+            CtcTxType::Mining => todo!(),
+            CtcTxType::Airdrop => Operation::Airdrop(base_amount),
+            CtcTxType::Staking => todo!(),
+            CtcTxType::StakingDeposit => todo!(),
+            CtcTxType::StakingWithdrawal => todo!(),
+            CtcTxType::Cashback => todo!(),
+            CtcTxType::Royalties => todo!(),
+            CtcTxType::PersonalUse => todo!(),
+            CtcTxType::IncomingGift => Operation::IncomingGift(base_amount),
+            CtcTxType::OutgoingGift => Operation::OutgoingGift(base_amount),
+            CtcTxType::Borrow => todo!(),
+            CtcTxType::LoanRepayment => todo!(),
+            CtcTxType::Liquidate => todo!(),
+            CtcTxType::RealizedProfit => todo!(),
+            CtcTxType::RealizedLoss => todo!(),
+            CtcTxType::MarginFee => todo!(),
+            CtcTxType::BridgeIn => todo!(),
+            CtcTxType::BridgeOut => todo!(),
+            CtcTxType::Mint => todo!(),
+            CtcTxType::CollateralWithdrawal => todo!(),
+            CtcTxType::CollateralDeposit => todo!(),
+            CtcTxType::AddLiquidity => todo!(),
+            CtcTxType::ReceiveLpToken => todo!(),
+            CtcTxType::RemoveLiquidity => todo!(),
+            CtcTxType::ReturnLpToken => todo!(),
+            CtcTxType::FailedIn => todo!(),
+            CtcTxType::FailedOut => todo!(),
+            CtcTxType::Spam => Operation::Spam(base_amount),
+        };
+
+        let mut tx = Transaction::new(item.timestamp, operation);
+        tx.description = item.description.map(|s| s.to_owned());
+        tx.tx_hash = item.id.map(|s| s.to_owned());
+        tx.blockchain = item.blockchain.map(|s| s.to_owned());
+        tx.fee = if let (Some(fee_amount), Some(fee_currency)) = (item.fee_amount, item.fee_currency) {
+            Some(Amount::new(fee_amount, fee_currency.to_owned()))
+        } else {
+            None
+        };
+        tx.value = item.reference_price_per_unit.map(|price| Amount::new(price * item.base_amount, item.reference_price_currency.unwrap_or("EUR").to_owned()));
+        tx
     }
 }
 

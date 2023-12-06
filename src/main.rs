@@ -966,6 +966,9 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                 Operation::Send(amount) |
                 Operation::ChainSplit(amount) |
                 Operation::Expense(amount) |
+                Operation::Stolen(amount) |
+                Operation::Lost(amount) |
+                Operation::Burn(amount) |
                 Operation::Income(amount) |
                 Operation::Airdrop(amount) |
                 Operation::Staking(amount) |
@@ -1262,6 +1265,15 @@ fn ui_set_transactions(app: &App) {
             }
             Operation::Expense(amount) => {
                 (UiTransactionType::Expense, Some(amount), None, wallet_name, None)
+            }
+            Operation::Stolen(amount) => {
+                (UiTransactionType::Stolen, Some(amount), None, wallet_name, None)
+            }
+            Operation::Lost(amount) => {
+                (UiTransactionType::Lost, Some(amount), None, wallet_name, None)
+            }
+            Operation::Burn(amount) => {
+                (UiTransactionType::Burn, Some(amount), None, wallet_name, None)
             }
             Operation::Income(amount) => {
                 (UiTransactionType::Income, None, Some(amount), None, wallet_name)

@@ -22,6 +22,7 @@ Below is a summary of the changes since the current release.
 * Added the summary displayed on the "Reports" page to the "Report Summary" CSV export.
 * Added a filter to show only transactions with warnings.
 * Added a text filer for transaction descriptions.
+* Added support for lost, stolen and burn transactions.
 * Added importing of Liquid exchange CSV export.
 * Added importing of FTX exchange CSV export.
 * Added some icons to the UI.

@@ -134,6 +134,15 @@ impl FIFO {
                         transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, &amount, value.as_ref()));
                     }
                 }
+                // Lost/stolen/burned funds are handled as if they were sold for nothing
+                Operation::Stolen(amount) |
+                Operation::Lost(amount) |
+                Operation::Burn(amount) => {
+                    if !amount.is_fiat() {
+                        let (amount, _) = try_include_fee(amount, &transaction.value);
+                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, &amount, Some(Amount::from_fiat(Decimal::ZERO)).as_ref()));
+                    }
+                }
                 Operation::FiatDeposit(_) |
                 Operation::FiatWithdrawal(_) => {
                     // We're not tracking fiat at the moment (it's not relevant for tax purposes)

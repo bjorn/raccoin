@@ -94,6 +94,10 @@ impl Amount {
         }
     }
 
+    pub(crate) fn from_fiat(quantity: Decimal) -> Self {
+        Self::new(quantity, "EUR".to_owned())
+    }
+
     pub(crate) fn from_satoshis(quantity: u64) -> Self {
         Self {
             quantity: Decimal::new(quantity as i64, 8),
@@ -186,9 +190,9 @@ pub(crate) enum Operation {
     Send(Amount),
     ChainSplit(Amount),
     Expense(Amount),
-    // Stolen(Amount),
-    // Lost(Amount),
-    // Burn(Amount),
+    Stolen(Amount),
+    Lost(Amount),
+    Burn(Amount),
     Income(Amount),
     // Interest(Amount),
     // Mining(Amount),
@@ -326,6 +330,9 @@ impl Transaction {
             Operation::Fee(amount) |
             Operation::Send(amount) |
             Operation::Expense(amount) |
+            Operation::Stolen(amount) |
+            Operation::Lost(amount) |
+            Operation::Burn(amount) |
             Operation::OutgoingGift(amount) => {
                 (None, Some(amount))
             }
