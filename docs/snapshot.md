@@ -29,9 +29,9 @@ Below is a summary of the changes since the current release.
 * Added AQUA currency.
 * Added block explorer link for Monero transactions.
 * Added support for more variations of Poloniex CSV export.
-* Updated to Slint 1.3.2.
 * Adding a new wallet can now be triggered with Enter key in the name field.
 * Separated the long-term and short-term capital losses on the "Reports" page.
+* Timestamps of capital gain events are now clickable to jump to the relevant transaction.
 * Currency in "Report Summary" is now clickable to filter transactions.
 * Disabled UI accessibility feature, due to severe performance issues.
 * Fixed switching to "Portfolio" page each time a change is made.
@@ -39,3 +39,4 @@ Below is a summary of the changes since the current release.
 * Fixed 100% CPU usage or freezing while synchronizing wallets.
 * Fixed timestamps to use local timezone in UI and CSV export, rather than UTC and Europe/Berlin respectively.
 * Fixed handling of fee on transactions ignored by currency.
+* Updated to Slint 1.3.2.

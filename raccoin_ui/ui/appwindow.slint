@@ -105,7 +105,7 @@ component MainContent inherits VerticalLayout {
             }
         }
 
-        Transactions {
+        transactions := Transactions {
             visible: active-page == Page.transactions;
         }
 
@@ -113,6 +113,10 @@ component MainContent inherits VerticalLayout {
             visible: active-page == Page.reports;
             currency-filter-clicked(currency) => {
                 Facade.set-currency-filter(currency);
+                root.active-page = Page.transactions;
+            }
+            select-transaction(id) => {
+                transactions.select-transaction(id);
                 root.active-page = Page.transactions;
             }
         }

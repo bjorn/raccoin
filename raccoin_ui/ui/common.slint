@@ -146,13 +146,14 @@ export component TableHeader inherits VerticalLayout {
     in property <length> horizontal-padding-left: 5px;
     in property <length> horizontal-padding-right: 15px;    // additional padding for overlay scrollbar
     in property <bool> separator: true;
+    out property <length> item-spacing <=> layout.spacing;
 
-    HorizontalLayout {
+    layout := HorizontalLayout {
         padding-left: 2px + root.horizontal-padding-left;
         padding-right: 2px + root.horizontal-padding-right;
         padding-top: 2px;
         padding-bottom: 2px;
-        spacing: 2px;
+        spacing: 6px;
 
         @children
     }
@@ -178,7 +179,8 @@ export component DateTimeCell inherits HorizontalLayout {
 
     alignment: start;
     spacing: 6px;
-    padding-right: 15px;
+    padding-left: 6px;
+    padding-right: 6px;
 
     date-text := ElidingText {
         min-width: self.preferred-width;

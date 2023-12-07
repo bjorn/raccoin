@@ -58,6 +58,7 @@ component TransactionsHeader inherits TableHeader {
         height: date-text.preferred-height;
 
         DateTimeCell {
+            padding-left: 0;
             visible: false; // only used for alignment purposes
         }
 
@@ -72,7 +73,7 @@ component TransactionsHeader inherits TableHeader {
     HeaderCell { text: "Fee"; horizontal-alignment: right; }
     HeaderCell { text: "Value (€)"; horizontal-alignment: right; }
     HeaderCell { text: "Gain (€)"; horizontal-alignment: right; }
-    Rectangle { horizontal-stretch: 0.1; }
+    Rectangle { horizontal-stretch: 0.05; }
     HorizontalLayout {
         height: 0;
         visible: false; // only used for alignment purposes
@@ -86,22 +87,34 @@ component TransactionsHeader inherits TableHeader {
 component TransactionDisplay inherits Rectangle {
     in property <UiTransaction> tx: Facade.transactions[0];
     in property <bool> even;
+    in property <bool> selected;
 
     property <bool> is-hovered: touch.has-hover || tx-btn.has-hover || desc-btn.has-hover;
 
-    background: is-hovered ? #4564 : even ? #ffffff06 : transparent;
-    border-radius: self.height / 4;
+    callback pressed;
 
-    touch := TouchArea {}
+    background: selected ? #4568 : is-hovered ? #4564 : even ? #ffffff06 : transparent;
+    border-radius: self.height / 4;
+    border-width: self.selected ? 1px : 0px;
+    border-color: #456;
+
+    touch := TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                root.pressed();
+            }
+        }
+    }
 
     HorizontalLayout {
         padding-left: 7px;
         padding-right: 17px;
         padding-top: 3px;
         padding-bottom: 3px;
-        spacing: 2px;
+        spacing: 6px;
 
         DateTimeCell {
+            padding-left: 0;
             date: tx.date;
             time: tx.time;
         }
@@ -177,7 +190,7 @@ component TransactionDisplay inherits Rectangle {
             color: tx.gain < 0 || tx.gain-error != "" ? #ff0000 : tx.gain > 0 ? #00ff00 : transparent;
             horizontal-alignment: right;
         }
-        Rectangle { horizontal-stretch: 0.1; }
+        Rectangle { horizontal-stretch: 0.05; }
         HorizontalLayout {
             spacing: 4px;
 
@@ -202,7 +215,25 @@ component TransactionDisplay inherits Rectangle {
 export component Transactions inherits VerticalLayout {
     in property <[UiTransaction]> transactions: Facade.transactions;
 
+    property <int> selected-id: -1;
+    property <int> current-index: Facade.ui-index-for-transaction(self.selected-id);
+    property <length> item-height: transactions-view.viewport-height / transactions.length;
+    property <length> current-item-y: current-index * item-height;
+
+    public function select-transaction(id: int) {
+        self.selected-id = id;
+
+        // make sure the selected transaction is visible
+        if (self.current-index != -1) {
+            transactions-view.viewport-y = clamp(
+                transactions-view.viewport-y,
+                -self.current-item-y,
+                transactions-view.visible-height - self.current-item-y - self.item-height);
+        }
+    }
+
     spacing: 2px;
+    forward-focus: transactions-focus;
 
     HorizontalBox {
         Image {
@@ -262,10 +293,43 @@ export component Transactions inherits VerticalLayout {
 
     TransactionsHeader {}
 
-    ListView {
-        for tx[index] in transactions: TransactionDisplay {
-            even: mod(index, 2) == 0;
-            tx: tx;
+    transactions-focus := FocusScope {
+        transactions-view := ListView {
+            for tx[index] in transactions: TransactionDisplay {
+                tx: tx;
+                even: mod(index, 2) == 0;
+                selected: tx.id == root.selected-id;
+
+                pressed => {
+                    root.select-transaction(tx.id);
+                    transactions-focus.focus();
+                }
+            }
+        }
+
+        function move-selection(delta: int) {
+            if (root.current-index == -1) {
+                return;
+            }
+            root.select-transaction(root.transactions[clamp(root.current-index + delta, 0, root.transactions.length - 1)].id);
+        }
+
+        key-pressed(event) => {
+            if (event.text == Key.UpArrow) {
+                move-selection(-1);
+                accept
+            } else if (event.text == Key.DownArrow) {
+                move-selection(1);
+                accept
+            } else if (event.text == Key.PageUp) {
+                move-selection(-transactions-view.visible-height / root.item-height);
+                accept
+            } else if (event.text == Key.PageDown) {
+                move-selection(transactions-view.visible-height / root.item-height);
+                accept
+            } else {
+                reject
+            }
         }
     }
 }

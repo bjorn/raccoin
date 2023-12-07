@@ -38,6 +38,7 @@ export enum UiTransactionType {
 }
 
 export struct UiTransaction {
+    id: int,
     from: string,
     to: string,
     date: string,
@@ -85,8 +86,10 @@ export struct UiCapitalGain {
     currency-cmc-id: int,
     bought_date: string,
     bought_time: string,
+    bought_tx_id: int,
     sold_date: string,
     sold_time: string,
+    sold_tx_id: int,
     amount: string,
     cost: float,
     proceeds: float,

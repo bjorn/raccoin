@@ -66,7 +66,7 @@ export component Portfolio inherits Rectangle {
         VerticalLayout {
             spacing: 2px;
 
-            TableHeader {
+            summary-header := TableHeader {
                 horizontal-padding-left: 1px;
                 Cell {
                     padding-left: 4px;
@@ -91,7 +91,7 @@ export component Portfolio inherits Rectangle {
                     HorizontalLayout {
                         padding-left: 1px;
                         padding-right: 17px;
-                        spacing: 2px;
+                        spacing: summary-header.item-spacing;
 
                         CurrencyCell {
                             cmc-id: holding.currency-cmc-id;
@@ -149,7 +149,7 @@ export component Portfolio inherits Rectangle {
                                                 padding-right: 1px;
                                                 spacing: 5px;
 
-                                                TableHeader {
+                                                balances-header := TableHeader {
                                                     separator: false;
                                                     horizontal-padding-left: 7px;
                                                     horizontal-padding-right: 7px;
@@ -161,7 +161,7 @@ export component Portfolio inherits Rectangle {
                                                     HorizontalLayout {
                                                         padding-left: 9px;
                                                         padding-right: 9px;
-                                                        spacing: 2px;
+                                                        spacing: balances-header.item-spacing;
 
                                                         TextCell { text: balance.source; }
                                                         MonoTextCell { text: balance.balance; horizontal-alignment: left; }

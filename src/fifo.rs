@@ -11,6 +11,7 @@ use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_d
 #[derive(Debug)]
 pub(crate) struct Entry {
     timestamp: NaiveDateTime,
+    tx_index: usize,
     unit_price: Result<Decimal, GainError>,
     remaining: Decimal,
 }
@@ -27,7 +28,9 @@ impl Entry {
 #[derive(Debug, Clone)]
 pub(crate) struct CapitalGain {
     pub bought: NaiveDateTime,
+    pub bought_tx_index: usize,
     pub sold: NaiveDateTime,
+    pub sold_tx_index: usize,
     pub amount: Amount,
     pub cost: Decimal,
     pub proceeds: Decimal,
@@ -115,7 +118,7 @@ impl FIFO {
                     // handled as if we sold one crypto for fiat and then used
                     // fiat to buy another crypto.
                     if !outgoing.is_fiat() {
-                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, outgoing, transaction.value.as_ref()));
+                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction, outgoing, transaction.value.as_ref()));
                     }
 
                     if !incoming.is_fiat() {
@@ -131,7 +134,7 @@ impl FIFO {
                 Operation::OutgoingGift(amount) => {
                     if !amount.is_fiat() {
                         let (amount, value) = try_include_fee(amount, &transaction.value);
-                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, &amount, value.as_ref()));
+                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction, &amount, value.as_ref()));
                     }
                 }
                 // Lost/stolen/burned funds are handled as if they were sold for nothing
@@ -140,7 +143,7 @@ impl FIFO {
                 Operation::Burn(amount) => {
                     if !amount.is_fiat() {
                         let (amount, _) = try_include_fee(amount, &transaction.value);
-                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction.timestamp, &amount, Some(Amount::from_fiat(Decimal::ZERO)).as_ref()));
+                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction, &amount, Some(Amount::from_fiat(Decimal::ZERO)).as_ref()));
                     }
                 }
                 Operation::FiatDeposit(_) |
@@ -156,7 +159,7 @@ impl FIFO {
 
             if let Some(fee) = fee {
                 if !fee.is_fiat() {
-                    match self.dispose_holdings(&mut capital_gains, transaction.timestamp, fee, fee_value) {
+                    match self.dispose_holdings(&mut capital_gains, transaction, fee, fee_value) {
                         Ok(gain) => {
                             match &mut transaction.gain {
                                 Some(Ok(g)) => {
@@ -179,7 +182,7 @@ impl FIFO {
 
     /// Determines the capital gains made with this sale based on the oldest
     /// holdings and the current price. Consumes the holdings in the process.
-    fn gains(&mut self, timestamp: NaiveDateTime, outgoing: &Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
+    fn gains(&mut self, transaction: &Transaction, outgoing: &Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
         let currency_holdings = self.holdings_for_currency(outgoing.token_currency().as_ref().unwrap_or(&outgoing.currency));
 
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
@@ -192,7 +195,7 @@ impl FIFO {
         let mut cost_base_error = Ok(());
 
         while let Some(holding) = currency_holdings.front_mut() {
-            if holding.timestamp > timestamp {
+            if holding.timestamp > transaction.timestamp {
                 return Err(GainError::InvalidTransactionOrder);
             }
 
@@ -209,7 +212,9 @@ impl FIFO {
 
             capital_gains.push(CapitalGain {
                 bought: holding.timestamp,
-                sold: timestamp,
+                bought_tx_index: holding.tx_index,
+                sold: transaction.timestamp,
+                sold_tx_index: transaction.index,
                 amount: Amount {
                     quantity: processed_quantity,
                     currency: outgoing.currency.clone(),
@@ -232,7 +237,7 @@ impl FIFO {
         }
 
         if sold_quantity > Decimal::ZERO {
-            println!("warning: at {} a remaining sold amount of {} {} was not found in the holdings", timestamp, sold_quantity, outgoing.currency);
+            println!("warning: at {} a remaining sold amount of {} {} was not found in the holdings", transaction.timestamp, sold_quantity, outgoing.currency);
             return Err(GainError::InsufficientBalance(Amount::new(sold_quantity, outgoing.currency.clone())));
         }
 
@@ -275,6 +280,7 @@ impl FIFO {
         let unit_price = fiat_value(value).map(|value| value / amount.quantity);
         self.holdings_for_currency(amount.token_currency().as_ref().unwrap_or(&amount.currency)).push_back(Entry {
             timestamp: tx.timestamp,
+            tx_index: tx.index,
             unit_price,
             remaining: amount.quantity,
         });
@@ -282,10 +288,10 @@ impl FIFO {
         Ok(Decimal::ZERO)
     }
 
-    fn dispose_holdings(&mut self, capital_gains: &mut Vec<CapitalGain>, timestamp: NaiveDateTime, outgoing: &Amount, value: Option<&Amount>) -> Result<Decimal, GainError> {
+    fn dispose_holdings(&mut self, capital_gains: &mut Vec<CapitalGain>, transaction: &Transaction, outgoing: &Amount, value: Option<&Amount>) -> Result<Decimal, GainError> {
         let fiat = fiat_value(value);
 
-        match self.gains(timestamp, outgoing, *fiat.as_ref().unwrap_or(&Decimal::ZERO)) {
+        match self.gains(transaction, outgoing, *fiat.as_ref().unwrap_or(&Decimal::ZERO)) {
             Ok(gains) => {
                 let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
                 capital_gains.extend(gains);

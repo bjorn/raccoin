@@ -260,6 +260,10 @@ pub(crate) struct Transaction {
     pub fee_value: Option<Amount>,
     #[serde(skip)]
     pub gain: Option<Result<Decimal, GainError>>,
+    /// The index of this transaction in the list of loaded transactions.
+    #[serde(skip)]
+    pub index: usize,
+    /// The index of the wallet from which this transaction originated.
     #[serde(skip)]
     pub wallet_index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -273,6 +277,7 @@ pub(crate) struct MergeError;
 impl Transaction {
     pub(crate) fn new(timestamp: NaiveDateTime, operation: Operation) -> Self {
         Self {
+            index: 0,
             timestamp,
             operation,
             description: None,

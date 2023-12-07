@@ -14,15 +14,22 @@ import { UiCapitalGain } from "./structs.slint";
 export component CapitalGains inherits VerticalLayout {
     in property <[UiCapitalGain]> gain-entries;
 
+    callback select-transaction(int);
+
     spacing: 2px;
 
-    TableHeader {
+    header := TableHeader {
+        horizontal-padding-left: -2px;
+
         Rectangle {
             height: bought-text.preferred-height;
 
-            bought-text := HeaderCell {
-                text: "Bought";
-                width: 100%;
+            Cell {
+                padding-left: 5px;
+                bought-text := HeaderCell {
+                    text: "Bought";
+                    width: 100%;
+                }
             }
 
             DateTimeCell { visible: false; }    // only used for alignment purposes
@@ -30,9 +37,12 @@ export component CapitalGains inherits VerticalLayout {
         Rectangle {
             height: sold-text.preferred-height;
 
-            sold-text := HeaderCell {
-                text: "Sold";
-                width: 100%;
+            Cell {
+                padding-left: 5px;
+                sold-text := HeaderCell {
+                    text: "Sold";
+                    width: 100%;
+                }
             }
 
             DateTimeCell { visible: false; }    // only used for alignment purposes
@@ -54,19 +64,38 @@ export component CapitalGains inherits VerticalLayout {
             touch := TouchArea {}
 
             HorizontalLayout {
-                padding-left: 7px;
                 padding-right: 17px;
-                padding-top: 3px;
-                padding-bottom: 3px;
-                spacing: 2px;
+                spacing: header.item-spacing;
 
-                DateTimeCell {
-                    date: gain.bought-date;
-                    time: gain.bought-time;
+                Rectangle {
+                    background: sold-touch.has-hover ? #456 : transparent;
+                    border-radius: self.height / 4;
+
+                    sold-touch := TouchArea {
+                        clicked => { root.select-transaction(gain.bought-tx-id) }
+                        mouse-cursor: pointer;
+                    }
+                    DateTimeCell {
+                        padding-top: 3px;
+                        padding-bottom: 3px;
+                        date: gain.bought-date;
+                        time: gain.bought-time;
+                    }
                 }
-                DateTimeCell {
-                    date: gain.sold-date;
-                    time: gain.sold-time;
+                Rectangle {
+                    background: gain-touch.has-hover ? #456 : transparent;
+                    border-radius: self.height / 4;
+
+                    gain-touch := TouchArea {
+                        clicked => { root.select-transaction(gain.sold-tx-id) }
+                        mouse-cursor: pointer;
+                    }
+                    DateTimeCell {
+                        padding-top: 3px;
+                        padding-bottom: 3px;
+                        date: gain.sold-date;
+                        time: gain.sold-time;
+                    }
                 }
                 Cell {
                     horizontal-stretch: 1.5;

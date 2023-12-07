@@ -56,7 +56,7 @@ component HoldingsButton inherits TouchArea {
                         padding-right: 1px;
                         spacing: 5px;
 
-                        TableHeader {
+                        header := TableHeader {
                             separator: false;
                             horizontal-padding-left: 7px;
                             horizontal-padding-right: 7px;
@@ -68,7 +68,7 @@ component HoldingsButton inherits TouchArea {
                             HorizontalLayout {
                                 padding-left: 9px;
                                 padding-right: 9px;
-                                spacing: 2px;
+                                spacing: header.item-spacing;
 
                                 Cell {
                                     CurrencyIcon {

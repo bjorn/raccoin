@@ -18,6 +18,7 @@ component MonoText inherits Text {
 
 export component Reports inherits Rectangle {
     callback currency-filter-clicked(string);
+    callback select-transaction(int);
 
     in property <[StandardListViewItem]> report-years: Facade.report-years;
     in property <[UiTaxReport]> reports: Facade.reports;
@@ -173,7 +174,7 @@ export component Reports inherits Rectangle {
                     spacing: 2px;
                     visible: report-combo.current-index == 0;
 
-                    TableHeader {
+                    summary-header := TableHeader {
                         horizontal-padding-left: -2px;
                         Cell {
                             padding-left: 7px;
@@ -201,7 +202,7 @@ export component Reports inherits Rectangle {
 
                             HorizontalLayout {
                                 padding-right: 17px;
-                                spacing: 2px;
+                                spacing: summary-header.item-spacing;
 
                                 CurrencyCell {
                                     cmc-id: currency.currency-cmc-id;
@@ -225,6 +226,8 @@ export component Reports inherits Rectangle {
                 CapitalGains {
                     visible: report-combo.current-index == 1;
                     gain-entries: report.gains;
+
+                    select-transaction(id) => { root.select-transaction(id) }
                 }
             }
         }

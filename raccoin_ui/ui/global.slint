@@ -62,6 +62,9 @@ export global Facade {
 
     // DATA REQUESTS
 
+    // params: (id)
+    pure callback ui-index-for-transaction(int) -> int;
+
     // params: (currency)
     pure callback balances-for-currency(string) -> [UiBalanceForCurrency];
 

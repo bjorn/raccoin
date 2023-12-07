@@ -12,6 +12,7 @@ import {
 
 export global TestData {
     out property <[UiTransaction]> transactions : [{
+        id: 0,
         from: "Exchange Foo",
         to: "Exchange Foo",
         date: "2013-10-30",
@@ -28,6 +29,7 @@ export global TestData {
         description: "Invest in Bitcoin",
         tx_hash: "",
     }, {
+        id: 1,
         from: "Exchange Foo",
         to: "Wallet Bar",
         date: "2013-11-01",
@@ -44,6 +46,7 @@ export global TestData {
         description: "Sent some to hardware wallet",
         tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000",
     }, {
+        id: 2,
         from: "Exchange Foo",
         to: "Exchange Foo",
         date: "2013-10-30",
@@ -128,8 +131,10 @@ export global TestData {
             currency-cmc-id: 1,
             bought_date: "2013-09-24",
             bought_time: "12:00:42",
+            bought-tx-id: 0,
             sold_date: "2013-09-25",
             sold_time: "12:34:56",
+            sold-tx-id: 2,
             amount: "0.04013 BTC",
             cost: 3.82,
             proceeds: 3.80,

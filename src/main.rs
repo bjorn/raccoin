@@ -728,7 +728,7 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
             }
         }
 
-        for tx in wallet_transactions.iter_mut() {
+        for tx in &mut wallet_transactions {
             tx.wallet_index = wallet_index;
         }
 
@@ -738,6 +738,11 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
 
     // sort transactions
     transactions.sort_by(|a, b| a.cmp(b) );
+
+    // assign transaction indices
+    for (index, tx) in transactions.iter_mut().enumerate() {
+        tx.index = index;
+    }
 
     // warn about duplicates
     let mut last = transactions.first();
@@ -1309,6 +1314,7 @@ fn ui_set_transactions(app: &App) {
         let timestamp = Local.from_utc_datetime(&transaction.timestamp).naive_local();
 
         ui_transactions.push(UiTransaction {
+            id: transaction.index as i32,
             from: from.unwrap_or_default(),
             to: to.unwrap_or_default(),
             date: timestamp.date().to_string().into(),
@@ -1355,8 +1361,10 @@ fn ui_set_reports(app: &App) {
                 currency_cmc_id: gain.amount.cmc_id(),
                 bought_date: bought.date().to_string().into(),
                 bought_time: bought.time().format("%H:%M:%S").to_string().into(),
+                bought_tx_id: gain.bought_tx_index as i32,
                 sold_date: sold.date().to_string().into(),
                 sold_time: sold.time().format("%H:%M:%S").to_string().into(),
+                sold_tx_id: gain.sold_tx_index as i32,
                 amount: gain.amount.to_string().into(),
                 // todo: something else than unwrap()?
                 cost: rounded_to_cent(gain.cost).try_into().unwrap(),
@@ -1474,6 +1482,21 @@ async fn main() -> Result<()> {
 
     let app = Arc::new(Mutex::new(app));
     let facade = ui.global::<Facade>();
+
+    facade.on_ui_index_for_transaction({
+        let app = app.clone();
+
+        move |tx_index| {
+            // todo: This method copies each UiTransaction instance in order to
+            // find one by its id. This copying could be avoided if the VecModel
+            // provided an as_slice method.
+            use slint::Model;
+            let ui_index = app.lock().unwrap().transactions_model().iter().position(|tx| {
+                tx.id == tx_index
+            }).map(|i| i as i32).unwrap_or(-1);
+            ui_index
+        }
+    });
 
     facade.on_balances_for_currency({
         let app = app.clone();
