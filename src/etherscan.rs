@@ -24,15 +24,18 @@ trait EthereumTransaction {
     }
     fn value(&self) -> Result<Amount>;
     fn hash(&self) -> Option<String> {
-        self.hash_opt().map(|hash| serde_json::to_string(hash).unwrap().trim_matches('"').to_owned())
+        self.hash_h256().map(|hash| serde_json::to_string(hash).unwrap().trim_matches('"').to_owned())
     }
 
     fn fee(&self) -> Result<Option<Amount>> {
         Ok(match self.gas_price() {
             Some(gas_price) => {
-                let gas_used = u256_to_decimal(self.gas_used())?;
-                let gas_price = u256_to_eth(gas_price)?;
-                Some(Amount::new(gas_price * gas_used, "ETH".to_owned()))
+                let fee = u256_to_eth(gas_price * self.gas_used())?;
+                if fee.is_zero() {
+                    None
+                } else {
+                    Some(Amount::new(fee, "ETH".to_owned()))
+                }
             }
             None => None,
         })
@@ -45,11 +48,16 @@ trait EthereumTransaction {
             Ok(Operation::Receive(self.value()?))
         } else if self.from().is_some_and(|from_address| from_address == own_address) {
             fee = self.fee()?;
-            Ok(Operation::Send(self.value()?))
+            let value = self.value()?;
+            if value.is_zero() && fee.is_some() {
+                Ok(Operation::Fee(fee.take().unwrap()))
+            } else {
+                Ok(Operation::Send(value))
+            }
         } else {
             Err(anyhow!("unrecognized transaction"))
         }?;
-        let description = self.token_name().map(String::to_owned);
+        let description = self.token_name().map(str::to_owned);
 
         let mut tx = Transaction::new(timestamp, operation);
         tx.tx_hash = self.hash();
@@ -59,9 +67,9 @@ trait EthereumTransaction {
         Ok(tx)
     }
 
-    fn token_name(&self) -> Option<&String> { None }
-    fn timestamp_str(&self) -> &String;
-    fn hash_opt(&self) -> Option<&H256>;
+    fn token_name(&self) -> Option<&str> { None }
+    fn timestamp_str(&self) -> &str;
+    fn hash_h256(&self) -> Option<&H256>;
     fn to(&self) -> Option<&Address>;
     fn from(&self) -> Option<&Address>;
     fn gas_price(&self) -> Option<U256>;
@@ -73,8 +81,8 @@ impl EthereumTransaction for NormalTransaction {
         u256_to_eth(self.value).map(|v| Amount::new(v, "ETH".to_owned()))
     }
 
-    fn timestamp_str(&self) -> &String { &self.time_stamp }
-    fn hash_opt(&self) -> Option<&H256> { self.hash.value() }
+    fn timestamp_str(&self) -> &str { &self.time_stamp }
+    fn hash_h256(&self) -> Option<&H256> { self.hash.value() }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { self.from.value() }
     fn gas_price(&self) -> Option<U256> { self.gas_price }
@@ -86,8 +94,8 @@ impl EthereumTransaction for InternalTransaction {
         u256_to_eth(self.value).map(|v| Amount::new(v, "ETH".to_owned()))
     }
 
-    fn timestamp_str(&self) -> &String { &self.time_stamp }
-    fn hash_opt(&self) -> Option<&H256> { Some(&self.hash) }
+    fn timestamp_str(&self) -> &str { &self.time_stamp }
+    fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.value() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
     fn gas_price(&self) -> Option<U256> { None }
@@ -102,9 +110,9 @@ impl EthereumTransaction for ERC20TokenTransferEvent {
         Ok(Amount::new(value, self.token_symbol.clone()))
     }
 
-    fn token_name(&self) -> Option<&String> { Some(&self.token_name) }
-    fn timestamp_str(&self) -> &String { &self.time_stamp }
-    fn hash_opt(&self) -> Option<&H256> { Some(&self.hash) }
+    fn token_name(&self) -> Option<&str> { Some(&self.token_name) }
+    fn timestamp_str(&self) -> &str { &self.time_stamp }
+    fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
     fn gas_price(&self) -> Option<U256> { self.gas_price }
@@ -116,9 +124,9 @@ impl EthereumTransaction for ERC721TokenTransferEvent {
         Ok(Amount::new_token(self.token_id.clone(), self.token_symbol.clone()))
     }
 
-    fn token_name(&self) -> Option<&String> { Some(&self.token_name) }
-    fn timestamp_str(&self) -> &String { &self.time_stamp }
-    fn hash_opt(&self) -> Option<&H256> { Some(&self.hash) }
+    fn token_name(&self) -> Option<&str> { Some(&self.token_name) }
+    fn timestamp_str(&self) -> &str { &self.time_stamp }
+    fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
     fn gas_price(&self) -> Option<U256> { self.gas_price }
@@ -130,9 +138,9 @@ impl EthereumTransaction for ERC1155TokenTransferEvent {
         Ok(Amount::new_token(self.token_id.clone(), self.token_symbol.clone()))
     }
 
-    fn token_name(&self) -> Option<&String> { Some(&self.token_name) }
-    fn timestamp_str(&self) -> &String { &self.time_stamp }
-    fn hash_opt(&self) -> Option<&H256> { Some(&self.hash) }
+    fn token_name(&self) -> Option<&str> { Some(&self.token_name) }
+    fn timestamp_str(&self) -> &str { &self.time_stamp }
+    fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
     fn gas_price(&self) -> Option<U256> { self.gas_price }
@@ -146,12 +154,12 @@ pub(crate) async fn address_transactions(
     let address = address.parse()?;
 
     println!("requesting normal transactions for address: {:?}...", address);
-    let metadata = client.get_transactions(&address, None).await?;
-    println!("received {} normal transactions", metadata.len());
+    let normal_transactions = client.get_transactions(&address, None).await?;
+    println!("received {} normal transactions", normal_transactions.len());
 
     let mut transactions = Vec::new();
 
-    for normal_transaction in metadata {
+    for normal_transaction in normal_transactions {
         match normal_transaction.to_transaction(&address) {
             Ok(tx) => transactions.push(tx),
             Err(err) => println!("{:?}: {:?}", err, normal_transaction),
@@ -159,10 +167,10 @@ pub(crate) async fn address_transactions(
     }
 
     println!("requesting internal transactions for address: {:?}...", address);
-    let metadata = client.get_internal_transactions(InternalTxQueryOption::ByAddress(address), None).await?;
-    println!("received {} internal transactions", metadata.len());
+    let internal_transactions = client.get_internal_transactions(InternalTxQueryOption::ByAddress(address), None).await?;
+    println!("received {} internal transactions", internal_transactions.len());
 
-    for internal_transaction in metadata {
+    for internal_transaction in internal_transactions {
         match internal_transaction.to_transaction(&address) {
             Ok(tx) => transactions.push(tx),
             Err(err) => println!("{:?}: {:?}", err, internal_transaction),
@@ -170,34 +178,71 @@ pub(crate) async fn address_transactions(
     }
 
     println!("requesting erc-20 token transfers for address: {:?}...", address);
-    let metadata = client.get_erc20_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
-    println!("received {} erc-20 token transfers", metadata.len());
+    let erc20_transfers = client.get_erc20_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
+    println!("received {} erc-20 token transfers", erc20_transfers.len());
 
-    for token_transfer in metadata {
+    let mut merge_or_add_to_transactions = |transaction: Transaction| {
+        let mut merged = false;
+
+        // Try to find a transaction to merge with
+        if let Some(matching_tx) = transactions.iter_mut().find(|tx| tx.tx_hash == transaction.tx_hash) {
+            match (&matching_tx.operation, &transaction.operation) {
+                // A Receive turns an existing Send into a Trade
+                (Operation::Send(send_amount), Operation::Receive(receive_amount)) => {
+                    matching_tx.operation = Operation::Trade { incoming: receive_amount.clone(), outgoing: send_amount.clone() };
+                    merged = true;
+                }
+                // A Send turns an existing Receive into a Trade, and transfers the fee
+                (Operation::Receive(send_amount), Operation::Send(receive_amount)) => {
+                    assert!(matching_tx.fee.is_none());
+                    matching_tx.fee = transaction.fee.clone();
+                    matching_tx.operation = Operation::Trade { incoming: receive_amount.clone(), outgoing: send_amount.clone() };
+                    merged = true;
+                }
+                // Transfer an existing Fee to the fee field for the operation
+                (Operation::Fee(fee_amount), op) => {
+                    assert!(matching_tx.fee.is_none());
+                    matching_tx.fee = Some(fee_amount.clone());
+                    matching_tx.operation = op.clone();
+                    if matching_tx.description.is_none() {
+                        matching_tx.description = transaction.description.clone();
+                    }
+                    merged = true;
+                }
+                _ => {},
+            }
+        }
+
+        if !merged {
+            transactions.push(transaction);
+        }
+    };
+
+    for token_transfer in erc20_transfers {
         match token_transfer.to_transaction(&address) {
-            Ok(tx) => transactions.push(tx),
+            Ok(transaction) => merge_or_add_to_transactions(transaction),
             Err(err) => println!("{:?}: {:?}", err, token_transfer),
         }
     }
 
     println!("requesting erc-721 token transfers for address: {:?}...", address);
-    let metadata = client.get_erc721_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
-    println!("received {} erc-721 token transfers", metadata.len());
+    let erc721_transfers = client.get_erc721_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
+    println!("received {} erc-721 token transfers", erc721_transfers.len());
 
-    for token_transfer in metadata {
+    for token_transfer in erc721_transfers {
         match token_transfer.to_transaction(&address) {
-            Ok(tx) => transactions.push(tx),
+            Ok(transaction) => merge_or_add_to_transactions(transaction),
             Err(err) => println!("{:?}: {:?}", err, token_transfer),
         }
     }
 
     println!("requesting erc-1155 token transfers for address: {:?}...", address);
-    let metadata = client.get_erc1155_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
-    println!("received {} erc-1155 token transfers", metadata.len());
+    let erc1155_transfers = client.get_erc1155_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
+    println!("received {} erc-1155 token transfers", erc1155_transfers.len());
 
-    for token_transfer in metadata {
+    for token_transfer in erc1155_transfers {
         match token_transfer.to_transaction(&address) {
-            Ok(tx) => transactions.push(tx),
+            Ok(transaction) => merge_or_add_to_transactions(transaction),
             Err(err) => println!("{:?}: {:?}", err, token_transfer),
         }
     }

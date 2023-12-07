@@ -765,7 +765,7 @@ fn merge_consecutive_trades(transactions: &mut Vec<Transaction>) {
         let (a, b) = transactions.split_at_mut(index);
         let (a, b) = (a.last_mut().unwrap(), &b[0]);
 
-        if a.merge(b).is_ok() {
+        if a.merge_trades(b).is_ok() {
             transactions.remove(index);
         } else {
             index += 1;

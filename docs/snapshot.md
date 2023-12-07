@@ -30,6 +30,7 @@ Below is a summary of the changes since the current release.
 * Added block explorer link for Monero transactions.
 * Added support for more variations of Poloniex CSV export.
 * Adding a new wallet can now be triggered with Enter key in the name field.
+* Improved Ethereum address import to recognize token trades
 * Separated the long-term and short-term capital losses on the "Reports" page.
 * Timestamps of capital gain events are now clickable to jump to the relevant transaction.
 * Currency in "Report Summary" is now clickable to filter transactions.

@@ -110,6 +110,10 @@ impl Amount {
         self.currency == "EUR"
     }
 
+    pub(crate) fn is_zero(&self) -> bool {
+        self.quantity.is_zero()
+    }
+
     pub(crate) fn token_currency(&self) -> Option<String> {
         self.token_id.as_ref().map(|token_id| format!("{}:{}", token_id, self.currency))
     }
@@ -368,7 +372,7 @@ impl Transaction {
     }
 
     /// Used to merge trade operations to avoid clutter.
-    pub(crate) fn merge(&mut self, other: &Self) -> Result<(), MergeError> {
+    pub(crate) fn merge_trades(&mut self, other: &Self) -> Result<(), MergeError> {
         // Some things should be equal before we will merge transactions
         if self.blockchain != other.blockchain ||
             self.tx_hash != other.tx_hash
