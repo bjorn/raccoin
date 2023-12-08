@@ -111,7 +111,7 @@ impl EthereumTransaction for ERC20TokenTransferEvent {
     fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
-    fn gas_price(&self) -> Option<U256> { self.gas_price }
+    fn gas_price(&self) -> Option<U256> { None }
     fn gas_used(&self) -> U256 { self.gas_used }
 }
 
@@ -124,7 +124,7 @@ impl EthereumTransaction for ERC721TokenTransferEvent {
     fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
-    fn gas_price(&self) -> Option<U256> { self.gas_price }
+    fn gas_price(&self) -> Option<U256> { None }
     fn gas_used(&self) -> U256 { self.gas_used }
 }
 
@@ -137,7 +137,7 @@ impl EthereumTransaction for ERC1155TokenTransferEvent {
     fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
-    fn gas_price(&self) -> Option<U256> { self.gas_price }
+    fn gas_price(&self) -> Option<U256> { None }
     fn gas_used(&self) -> U256 { self.gas_used }
 }
 
