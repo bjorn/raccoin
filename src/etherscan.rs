@@ -57,17 +57,14 @@ trait EthereumTransaction {
         } else {
             Err(anyhow!("unrecognized transaction"))
         }?;
-        let description = self.token_name().map(str::to_owned);
 
         let mut tx = Transaction::new(timestamp, operation);
         tx.tx_hash = self.hash();
         tx.blockchain = Some("ETH".to_owned());
         tx.fee = fee;
-        tx.description = description;
         Ok(tx)
     }
 
-    fn token_name(&self) -> Option<&str> { None }
     fn timestamp_str(&self) -> &str;
     fn hash_h256(&self) -> Option<&H256>;
     fn to(&self) -> Option<&Address>;
@@ -107,10 +104,9 @@ impl EthereumTransaction for ERC20TokenTransferEvent {
         let scale: u32 = self.token_decimal.parse()?;
         let mut value = u256_to_decimal(self.value)?;
         value.set_scale(scale)?;
-        Ok(Amount::new(value, self.token_symbol.clone()))
+        Ok(Amount::new(value, format!("{} ({})", self.token_symbol, self.token_name)))
     }
 
-    fn token_name(&self) -> Option<&str> { Some(&self.token_name) }
     fn timestamp_str(&self) -> &str { &self.time_stamp }
     fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
@@ -121,10 +117,9 @@ impl EthereumTransaction for ERC20TokenTransferEvent {
 
 impl EthereumTransaction for ERC721TokenTransferEvent {
     fn value(&self) -> Result<Amount> {
-        Ok(Amount::new_token(self.token_id.clone(), self.token_symbol.clone()))
+        Ok(Amount::new_token(self.token_id.clone(), format!("{} ({})", self.token_symbol, self.token_name)))
     }
 
-    fn token_name(&self) -> Option<&str> { Some(&self.token_name) }
     fn timestamp_str(&self) -> &str { &self.time_stamp }
     fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
@@ -135,10 +130,9 @@ impl EthereumTransaction for ERC721TokenTransferEvent {
 
 impl EthereumTransaction for ERC1155TokenTransferEvent {
     fn value(&self) -> Result<Amount> {
-        Ok(Amount::new_token(self.token_id.clone(), self.token_symbol.clone()))
+        Ok(Amount::new_token(self.token_id.clone(), format!("{} ({})", self.token_symbol, self.token_name)))
     }
 
-    fn token_name(&self) -> Option<&str> { Some(&self.token_name) }
     fn timestamp_str(&self) -> &str { &self.time_stamp }
     fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }

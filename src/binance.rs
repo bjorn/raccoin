@@ -114,6 +114,7 @@ struct BinanceBnbConvert {
 fn normalize_currency(timestamp: NaiveDateTime, currency: String) -> String {
     match currency.as_str() {
         "BCC" => "BCH".to_owned(),
+        "MANA" => "MANA (Decentraland)".to_owned(),
         "NANO" => "XNO".to_owned(),
         // rename LUNA to LUNC if it is mentioned before the rename that happened between 2022-05-26 and 2022-05-30
         // https://www.binance.com/en/support/announcement/binance-will-list-terra-2-0-luna-in-the-innovation-zone-luna-old-renamed-as-lunc-d044a6742e484b77a170111460b0eed3

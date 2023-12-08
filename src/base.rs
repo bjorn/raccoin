@@ -25,6 +25,7 @@ pub(crate) fn cmc_id(currency: &str) -> i32 {
         ("LTC", 2),
         ("LUNA", 20314),
         ("LUNC", 4172),
+        ("MANA (Decentraland)", 1966),
         ("MANA", 1966),
         ("NXT", 66),
         ("PPC", 5),
