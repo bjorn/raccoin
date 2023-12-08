@@ -1682,6 +1682,23 @@ async fn main() -> Result<()> {
         }
     });
 
+    facade.on_ignore_currency({
+        let app = app.clone();
+
+        move |currency| {
+            let mut app = app.lock().unwrap();
+            let currency = currency.to_string();
+
+            if !app.portfolio.ignored_currencies.contains(&currency) {
+                app.portfolio.ignored_currencies.push(currency);
+                app.portfolio.ignored_currencies.sort();
+                app.refresh_transactions();
+                app.refresh_ui();
+                app.save_portfolio(None);
+            }
+        }
+    });
+
     facade.on_set_wallet_enabled({
         let app = app.clone();
 

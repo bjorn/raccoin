@@ -39,6 +39,8 @@ export global Facade {
     callback add-source(int);
     callback remove-source(int,int);
 
+    callback ignore-currency(string);
+
     // params: (blockchain, tx_hash)
     callback open-transaction(string, string);
 

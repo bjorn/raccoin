@@ -4,6 +4,7 @@ import {
     CurrencyIcon,
     DateTimeCell,
     ElidingText,
+    SmallButton,
     TableHeader,
     TextCell,
     HeaderCell,
@@ -11,47 +12,6 @@ import {
 } from "./common.slint";
 import { Facade } from "./global.slint";
 import { UiTransactionType, UiTransaction } from "./structs.slint";
-
-component SmallButton inherits Rectangle {
-    in property text <=> i-text.text;
-    in property tooltip <=> i-tooltip.text;
-    in property tooltip-font-family <=> i-tooltip.font-family;
-    out property <bool> has-hover: i-touch.has-hover;
-
-    callback clicked;
-
-    border-radius: self.height / 4;
-    background: i-touch.has-hover ? #5e5e5e : #2e2e2e;
-    border-color: i-touch.has-hover ? #6e6e6e : #3e3e3e;
-    border-width: 1px;
-    preferred-width: i-text.preferred-width + 5px;
-    min-width: self.height;
-    height: i-text.preferred-height + 5px;
-
-    i-text := Text {
-        vertical-alignment: center;
-    }
-    i-touch := TouchArea {
-        clicked => { root.clicked() }
-        mouse-cursor: pointer;
-    }
-
-    Rectangle {
-        background: #000000;
-        border-radius: self.height / 4;
-        opacity: root.has-hover ? 1.0 : 0;
-        width: i-tooltip.preferred-width + 8px;
-        height: i-tooltip.preferred-height + 4px;
-        x: -(root.has-hover ? 5px : 0) - self.width;
-        y: (root.height - self.height) / 2;
-
-        animate opacity, x {
-            duration: 100ms;
-        }
-
-        i-tooltip := Text {}
-    }
-}
 
 component TransactionsHeader inherits TableHeader {
     Rectangle {
@@ -77,7 +37,7 @@ component TransactionsHeader inherits TableHeader {
     HorizontalLayout {
         height: 0;
         visible: false; // only used for alignment purposes
-        spacing: 3px;
+        spacing: 4px;
 
         SmallButton { text: "#"; }
         SmallButton { text: "?"; }

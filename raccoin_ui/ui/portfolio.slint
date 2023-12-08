@@ -6,6 +6,7 @@ import {
     ElidingText,
     HeaderCell,
     MonoTextCell,
+    SmallButton,
     TableHeader,
     TextCell,
     TouchCell
@@ -77,13 +78,19 @@ export component Portfolio inherits Rectangle {
                 HeaderCell { text: "Value"; horizontal-alignment: right; }
                 HeaderCell { text: "ROI"; horizontal-alignment: right; }
                 HeaderCell { text: "Unrealized Gain"; horizontal-alignment: right; }
+                Rectangle { horizontal-stretch: 0.05; }
+                VerticalLayout {
+                    height: 0;
+                    visible: false; // only used for alignment purposes
+                    SmallButton { text: "#"; }
+                }
             }
 
             summary-view := ListView {
                 for holding[index] in Facade.portfolio.holdings: Rectangle {
                     property <bool> even: mod(index, 2) == 0;
 
-                    background: touch.has-hover || quantity-touch.has-hover ? #4564 : even ? #ffffff06 : transparent;
+                    background: touch.has-hover || quantity-touch.has-hover || ignore-btn.has-hover ? #4564 : even ? #ffffff06 : transparent;
                     border-radius: self.height / 4;
 
                     touch := TouchArea {}
@@ -188,6 +195,16 @@ export component Portfolio inherits Rectangle {
                             }
                         }
                         MonoTextCell { text: holding.unrealized-gain; }
+                        Rectangle { horizontal-stretch: 0.05; }
+                        VerticalLayout {
+                            alignment: center;
+                            ignore-btn := SmallButton {
+                                text: "–";
+                                tooltip: "Ignore currency";
+
+                                clicked => { Facade.ignore-currency(holding.currency) }
+                            }
+                        }
                     }
                 }
             }
