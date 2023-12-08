@@ -356,7 +356,8 @@ impl TransactionFilter {
                 }
             }
             TransactionFilter::Text(text) => {
-                tx.description.as_deref().is_some_and(|description| text.is_match(description))
+                tx.description.as_deref().is_some_and(|description| text.is_match(description)) ||
+                    tx.tx_hash.as_deref().is_some_and(|tx_hash| text.is_match(tx_hash))
             }
             TransactionFilter::HasGainError => {
                 tx.gain.as_ref().is_some_and(|gain| gain.is_err())
