@@ -25,6 +25,7 @@ Below is a summary of the changes since the current release.
 * Added support for lost, stolen and burn transactions.
 * Added importing of Liquid exchange CSV export.
 * Added importing of FTX exchange CSV export.
+* Added importing of Trezor Suite JSON export.
 * Added some icons to the UI.
 * Added AQUA currency.
 * Added block explorer link for Monero transactions.

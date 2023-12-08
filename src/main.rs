@@ -75,6 +75,7 @@ enum TransactionsSourceType {
     BinanceTransactionHistoryCsv,
     ReddcoinCoreCsv,
     TrezorCsv,
+    TrezorJson,
 }
 
 fn csv_file_has_headers(path: &Path, delimiter: u8, skip_lines: usize, headers: &[&str]) -> Result<bool> {
@@ -110,6 +111,7 @@ impl TransactionsSourceType {
             TransactionsSourceType::BitcoinXpubs |
             TransactionsSourceType::EthereumAddress |
             TransactionsSourceType::StellarAccount |
+            TransactionsSourceType::TrezorJson |
             TransactionsSourceType::Json => None,
 
             TransactionsSourceType::BitcoinDeCsv |
@@ -132,6 +134,7 @@ impl TransactionsSourceType {
             TransactionsSourceType::BitcoinXpubs |
             TransactionsSourceType::EthereumAddress |
             TransactionsSourceType::StellarAccount |
+            TransactionsSourceType::TrezorJson |
             TransactionsSourceType::Json => &[],
 
             TransactionsSourceType::BitcoinDeCsv => &["Date", "Type", "Currency", "Reference", "BTC-address", "Price", "unit (rate)", "BTC incl. fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "Incoming / Outgoing", "Account balance"],
@@ -201,6 +204,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::BinanceTransactionHistoryCsv => "Binance Transaction History (CSV)".to_owned(),
             TransactionsSourceType::ReddcoinCoreCsv => "Reddcoin Core (CSV)".to_owned(),
             TransactionsSourceType::TrezorCsv => "Trezor (CSV)".to_owned(),
+            TransactionsSourceType::TrezorJson => "Trezor (JSON)".to_owned(),
         }
     }
 }
@@ -684,6 +688,9 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
                 }
                 TransactionsSourceType::TrezorCsv => {
                     trezor::load_trezor_csv(&source.full_path)
+                }
+                TransactionsSourceType::TrezorJson => {
+                    trezor::load_trezor_json(&source.full_path)
                 }
             };
 

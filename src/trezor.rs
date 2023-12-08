@@ -1,17 +1,17 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Result, Context};
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount};
+use crate::base::{Transaction, Amount, Operation};
 
 #[derive(Debug, Clone, Deserialize)]
 enum TrezorTransactionType {
-    #[serde(rename = "SENT")]
+    #[serde(rename = "SENT", alias = "sent")]
     Sent,
-    #[serde(rename = "RECV")]
+    #[serde(rename = "RECV", alias = "recv")]
     Received,
 }
 
@@ -29,10 +29,10 @@ fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Tr
     }
 }
 
-// Stores values loaded from CSV file exported by TREZOR Suite, with the following header:
+// Stores values loaded from CSV file exported by Trezor Suite, with the following header:
 // Timestamp;Date;Time;Type;Transaction ID;Fee;Fee unit;Address;Label;Amount;Amount unit;Fiat (EUR);Other
 #[derive(Debug, Deserialize)]
-struct TrezorTransaction<'a> {
+struct TrezorTransactionCsv<'a> {
     #[serde(rename = "Timestamp")]
     timestamp: i64,
     // #[serde(rename = "Date")]
@@ -61,9 +61,9 @@ struct TrezorTransaction<'a> {
     // other: &'a str,
 }
 
-impl<'a> From<TrezorTransaction<'a>> for Transaction {
+impl<'a> From<TrezorTransactionCsv<'a>> for Transaction {
     // todo: translate address?
-    fn from(item: TrezorTransaction) -> Self {
+    fn from(item: TrezorTransactionCsv) -> Self {
         let date_time = NaiveDateTime::from_timestamp_opt(item.timestamp, 0).expect("valid timestamp");
         let amount = match item.amount {
             TrezorAmount::Quantity(quantity) => Amount::new(quantity, item.amount_unit.to_owned()),
@@ -100,8 +100,193 @@ pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let headers = rdr.headers()?.clone();
 
     while rdr.read_record(&mut raw_record)? {
-        let record: TrezorTransaction = raw_record.deserialize(Some(&headers))?;
+        let record: TrezorTransactionCsv = raw_record.deserialize(Some(&headers))?;
         transactions.push(record.into());
+    }
+
+    Ok(transactions)
+}
+
+#[derive(Deserialize)]
+struct InternalTransfer {
+    #[serde(rename = "type")]
+    type_: TrezorTransactionType,
+    amount: Decimal,
+    from: String,
+    to: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Target {
+    n: usize,
+    addresses: Vec<String>,
+    is_address: bool,
+    amount: Decimal,
+    #[serde(default)]
+    is_account_target: bool,
+}
+
+#[derive(Deserialize)]
+struct TokenTransfer {
+    #[serde(rename = "type")]
+    type_: TrezorTransactionType,
+    from: String,
+    to: String,
+    contract: String,
+    name: String,
+    symbol: String,
+    decimals: u8,
+    #[serde(deserialize_with = "deserialize_amount")]
+    amount: TrezorAmount,
+    standard: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrezorTransaction {
+    descriptor: String,
+    device_state: String,
+    symbol: String,
+    type_: TrezorTransactionType,
+    txid: String,
+    block_time: u64,
+    // block_height: u64,
+    // block_hash: String,
+    amount: Decimal,
+    fee: Decimal,
+    targets: Vec<Target>,
+    tokens: Vec<TokenTransfer>,
+    internal_transfers: Vec<InternalTransfer>,
+}
+
+#[derive(Deserialize)]
+struct TrezorWallet {
+    // coin: String,
+    transactions: Vec<TrezorTransaction>,
+}
+
+impl TrezorTransaction {
+    fn extract_transactions(self, transactions: &mut Vec<Transaction>) -> Result<()> {
+        let currency = self.symbol.to_uppercase();
+        let date_time = NaiveDateTime::from_timestamp_opt(self.block_time as i64, 0).context("invalid timestamp")?;
+
+        // Fee is only paid for "sent" transactions
+        let mut fee = if matches!(self.type_, TrezorTransactionType::Sent) && !self.fee.is_zero() {
+            Some(Amount::new(self.fee, currency.to_owned()))
+        } else {
+            None
+        };
+
+        let mut push_transaction = |operation, fee: &mut Option<Amount>| {
+            let mut tx = Transaction::new(date_time, operation);
+            tx.tx_hash = Some(self.txid.clone());
+            tx.blockchain = Some(currency.clone());
+            tx.fee = fee.take();
+            transactions.push(tx);
+        };
+
+        // Determine the main transaction type
+        let mut op = match self.type_ {
+            TrezorTransactionType::Sent if self.amount.is_zero() && fee.is_some() => {
+                Operation::Fee(fee.take().unwrap())
+            }
+            TrezorTransactionType::Sent => {
+                Operation::Send(Amount::new(self.amount, currency.clone()))
+            }
+            TrezorTransactionType::Received => {
+                Operation::Receive(Amount::new(self.amount, currency.clone()))
+            }
+        };
+
+        // Adjust the operation based on internal transfers
+        for internal_transfer in self.internal_transfers {
+            let internal_amount = Amount::new(internal_transfer.amount, currency.clone());
+            let internal_op = match internal_transfer.type_ {
+                TrezorTransactionType::Sent => Operation::Send(internal_amount),
+                TrezorTransactionType::Received => Operation::Receive(internal_amount),
+            };
+            op = match (op, internal_op) {
+                (Operation::Fee(fee_amount), internal_op) => {
+                    fee = Some(fee_amount);
+                    internal_op
+                }
+                (Operation::Receive(amount_a), Operation::Receive(amount_b)) => {
+                    Operation::Receive(amount_a.try_add(&amount_b).unwrap())
+                }
+                (Operation::Send(amount_a), Operation::Send(amount_b)) => {
+                    Operation::Send(amount_a.try_add(&amount_b).unwrap())
+                }
+                (Operation::Send(amount_a), Operation::Receive(amount_b)) => {
+                    let change = amount_b.quantity - amount_a.quantity;
+                    if change > Decimal::ZERO {
+                        Operation::Receive(Amount::new(change, currency.clone()))
+                    } else {
+                        Operation::Send(Amount::new(-change, currency.clone()))
+                    }
+                }
+                (Operation::Receive(amount_a), Operation::Send(amount_b)) => {
+                    let change = amount_a.quantity - amount_b.quantity;
+                    if change > Decimal::ZERO {
+                        Operation::Receive(Amount::new(change, currency.clone()))
+                    } else {
+                        Operation::Send(Amount::new(-change, currency.clone()))
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
+
+        // If we sent or received some token, change the operation to a trade when applicable
+        for token in self.tokens {
+            let currency = match token.symbol.as_str() {
+                "" | "ETH" => token.contract,
+                _ => token.symbol,
+            };
+            let token_amount = match token.amount {
+                TrezorAmount::Quantity(quantity) => Amount::new(quantity, currency),
+                TrezorAmount::TokenId(token_id) => Amount::new_token(token_id, currency),
+            };
+            let token_op = match token.type_ {
+                TrezorTransactionType::Sent => Operation::Send(token_amount),
+                TrezorTransactionType::Received => Operation::Receive(token_amount),
+            };
+
+            op = match (op, token_op) {
+                (Operation::Receive(amount_a), Operation::Receive(amount_b)) if amount_a.is_zero() => {
+                    Operation::Receive(amount_b)
+                }
+                (Operation::Receive(receive_amount), Operation::Send(send_amount)) |
+                (Operation::Send(send_amount), Operation::Receive(receive_amount)) => {
+                    Operation::Trade {
+                        incoming: receive_amount,
+                        outgoing: send_amount,
+                    }
+                },
+                (Operation::Fee(fee_amount), token_op) => {
+                    fee = Some(fee_amount);
+                    token_op
+                },
+                (op_orig, token_op) => {
+                    // When we can't merge, create multiple transactions
+                    push_transaction(op_orig, &mut fee);
+                    token_op
+                }
+            }
+        }
+
+        push_transaction(op, &mut fee);
+        Ok(())
+    }
+}
+
+// loads a TREZOR Suite JSON file into a list of unified transactions
+pub(crate) fn load_trezor_json(input_path: &Path) -> Result<Vec<Transaction>> {
+    let mut transactions = Vec::new();
+
+    let json: TrezorWallet = serde_json::from_str(&std::fs::read_to_string(input_path)?)?;
+    for tx in json.transactions {
+        tx.extract_transactions(&mut transactions)?;
     }
 
     Ok(transactions)
