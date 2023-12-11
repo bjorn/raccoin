@@ -43,4 +43,5 @@ Below is a summary of the changes since the current release.
 * Fixed 100% CPU usage or freezing while synchronizing wallets.
 * Fixed timestamps to use local timezone in UI and CSV export, rather than UTC and Europe/Berlin respectively.
 * Fixed handling of fee on transactions ignored by currency.
+* Fixed ETH deposits to Bittrex not getting merged as transfers.
 * Updated to Slint 1.3.2.

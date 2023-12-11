@@ -96,7 +96,16 @@ impl From<BittrexTransaction> for Transaction {
             BittrexTransactionType::Withdrawal => Transaction::send(item.date, Amount::new(-item.amount, item.currency)),
             BittrexTransactionType::Deposit => Transaction::receive(item.date, Amount::new(item.amount, item.currency)),
         };
-        tx.tx_hash = Some(item.tx_id);
+
+        // For ETH deposits on Bittrex, the reported tx_id can be the Sweep from
+        // the deposit address, rather than the transaction that was used to
+        // send the ETH to the deposit address. To still allow the transaction
+        // to be recognized as "transfer", we don't set the tx_hash in that
+        // case.
+        if !(tx.operation.is_receive() && blockchain == "ETH") {
+            tx.tx_hash = Some(item.tx_id);
+        }
+
         tx.blockchain = Some(blockchain);
         tx
     }
