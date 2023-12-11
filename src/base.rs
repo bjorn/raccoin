@@ -403,11 +403,18 @@ impl Transaction {
         // And then we only merge trades
         match (&mut self.operation, &other.operation) {
             (Operation::Trade { incoming, outgoing }, Operation::Trade { incoming: other_incoming, outgoing: other_outgoing }) => {
-                // And only when their incoming and outgoing amounts can be added
-                let merged_incoming = incoming.try_add(other_incoming).ok_or(MergeError)?;
-                let merged_outgoing = outgoing.try_add(other_outgoing).ok_or(MergeError)?;
-                *incoming = merged_incoming;
-                *outgoing = merged_outgoing;
+                if incoming == other_outgoing {
+                    // If the incoming and outgoing amounts are equal, we can
+                    // ignore the intermediate currency and shortcut the trade.
+                    *incoming = other_incoming.clone();
+                } else {
+                    // When the incoming and outgoing amounts can be added, we
+                    // can merge the trades.
+                    let total_incoming = incoming.try_add(other_incoming).ok_or(MergeError)?;
+                    let total_outgoing = outgoing.try_add(other_outgoing).ok_or(MergeError)?;
+                    *incoming = total_incoming;
+                    *outgoing = total_outgoing;
+                }
             }
             _ => Err(MergeError)?,
         }
