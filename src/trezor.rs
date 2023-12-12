@@ -112,41 +112,41 @@ struct InternalTransfer {
     #[serde(rename = "type")]
     type_: TrezorTransactionType,
     amount: Decimal,
-    from: String,
-    to: String,
+    // from: String,
+    // to: String,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Target {
-    n: usize,
-    addresses: Vec<String>,
-    is_address: bool,
-    amount: Decimal,
-    #[serde(default)]
-    is_account_target: bool,
-}
+// #[derive(Deserialize)]
+// #[serde(rename_all = "camelCase")]
+// struct Target {
+//     n: usize,
+//     addresses: Vec<String>,
+//     is_address: bool,
+//     amount: Decimal,
+//     #[serde(default)]
+//     is_account_target: bool,
+// }
 
 #[derive(Deserialize)]
 struct TokenTransfer {
     #[serde(rename = "type")]
     type_: TrezorTransactionType,
-    from: String,
-    to: String,
+    // from: String,
+    // to: String,
     contract: String,
     name: String,
     symbol: String,
-    decimals: u8,
+    // decimals: u8,
     #[serde(deserialize_with = "deserialize_amount")]
     amount: TrezorAmount,
-    standard: String,
+    // standard: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TrezorTransaction {
-    descriptor: String,
-    device_state: String,
+    // descriptor: String,
+    // device_state: String,
     symbol: String,
     type_: TrezorTransactionType,
     txid: String,
@@ -155,7 +155,7 @@ struct TrezorTransaction {
     // block_hash: String,
     amount: Decimal,
     fee: Decimal,
-    targets: Vec<Target>,
+    // targets: Vec<Target>,
     tokens: Vec<TokenTransfer>,
     internal_transfers: Vec<InternalTransfer>,
 }
@@ -240,8 +240,8 @@ impl TrezorTransaction {
         // If we sent or received some token, change the operation to a trade when applicable
         for token in self.tokens {
             let currency = match token.symbol.as_str() {
-                "" | "ETH" => token.contract,
-                _ => token.symbol,
+                "" => token.contract,
+                _ => format!("{} ({})", token.symbol, token.name),
             };
             let token_amount = match token.amount {
                 TrezorAmount::Quantity(quantity) => Amount::new(quantity, currency),
