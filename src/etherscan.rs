@@ -160,37 +160,26 @@ pub(crate) async fn address_transactions(
         }
     }
 
-    println!("requesting internal transactions for address: {:?}...", address);
-    let internal_transactions = client.get_internal_transactions(InternalTxQueryOption::ByAddress(address), None).await?;
-    println!("received {} internal transactions", internal_transactions.len());
-
-    for internal_transaction in internal_transactions {
-        match internal_transaction.to_transaction(&address) {
-            Ok(tx) => transactions.push(tx),
-            Err(err) => println!("{:?}: {:?}", err, internal_transaction),
-        }
-    }
-
-    println!("requesting erc-20 token transfers for address: {:?}...", address);
-    let erc20_transfers = client.get_erc20_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
-    println!("received {} erc-20 token transfers", erc20_transfers.len());
-
     let mut merge_or_add_to_transactions = |transaction: Transaction| {
         let mut merged = false;
 
         // Try to find a transaction to merge with
         if let Some(matching_tx) = transactions.iter_mut().find(|tx| tx.tx_hash == transaction.tx_hash) {
             match (&matching_tx.operation, &transaction.operation) {
-                // A Receive turns an existing Send into a Trade
-                (Operation::Send(send_amount), Operation::Receive(receive_amount)) => {
-                    matching_tx.operation = Operation::Trade { incoming: receive_amount.clone(), outgoing: send_amount.clone() };
-                    merged = true;
-                }
-                // A Send turns an existing Receive into a Trade, and transfers the fee
-                (Operation::Receive(send_amount), Operation::Send(receive_amount)) => {
-                    assert!(matching_tx.fee.is_none());
-                    matching_tx.fee = transaction.fee.clone();
-                    matching_tx.operation = Operation::Trade { incoming: receive_amount.clone(), outgoing: send_amount.clone() };
+                // Send + Receive => Trade (if different currencies)
+                (Operation::Send(send_amount), Operation::Receive(receive_amount)) |
+                (Operation::Receive(receive_amount), Operation::Send(send_amount)) => {
+                    if send_amount.currency == receive_amount.currency && send_amount.token_id.is_none() && receive_amount.token_id.is_none() {
+                        // Create a Send or a Receive, depending on the net change
+                        let change = receive_amount.quantity - send_amount.quantity;
+                        if change > Decimal::ZERO {
+                            matching_tx.operation = Operation::Receive(Amount::new(change, send_amount.currency.clone()));
+                        } else {
+                            matching_tx.operation = Operation::Send(Amount::new(-change, receive_amount.currency.clone()));
+                        }
+                    } else {
+                        matching_tx.operation = Operation::Trade { incoming: receive_amount.clone(), outgoing: send_amount.clone() };
+                    }
                     merged = true;
                 }
                 // Transfer an existing Fee to the fee field for the operation
@@ -211,6 +200,21 @@ pub(crate) async fn address_transactions(
             transactions.push(transaction);
         }
     };
+
+    println!("requesting internal transactions for address: {:?}...", address);
+    let internal_transactions = client.get_internal_transactions(InternalTxQueryOption::ByAddress(address), None).await?;
+    println!("received {} internal transactions", internal_transactions.len());
+
+    for internal_transaction in internal_transactions {
+        match internal_transaction.to_transaction(&address) {
+            Ok(transaction) => merge_or_add_to_transactions(transaction),
+            Err(err) => println!("{:?}: {:?}", err, internal_transaction),
+        }
+    }
+
+    println!("requesting erc-20 token transfers for address: {:?}...", address);
+    let erc20_transfers = client.get_erc20_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
+    println!("received {} erc-20 token transfers", erc20_transfers.len());
 
     for token_transfer in erc20_transfers {
         match token_transfer.to_transaction(&address) {
