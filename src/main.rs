@@ -269,6 +269,8 @@ struct Portfolio {
     wallets: Vec<Wallet>,
     #[serde(default)]
     ignored_currencies: Vec<String>,
+    #[serde(default)]
+    merge_consecutive_trades: bool,
 }
 
 #[derive(Default, Clone)]
@@ -474,7 +476,7 @@ impl App {
     }
 
     fn refresh_transactions(&mut self) {
-        self.transactions = load_transactions(&mut self.portfolio.wallets, &self.portfolio.ignored_currencies, &self.price_history).unwrap_or_default();
+        self.transactions = load_transactions(&mut self.portfolio, &self.price_history).unwrap_or_default();
         self.reports = calculate_tax_reports(&mut self.transactions);
     }
 
@@ -632,7 +634,8 @@ pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>, price_history: &PriceHistory) -> Result<Vec<Transaction>> {
+fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) -> Result<Vec<Transaction>> {
+    let (wallets, ignored_currencies) = (&mut portfolio.wallets, &portfolio.ignored_currencies);
     let mut transactions = Vec::new();
 
     for (wallet_index, wallet) in wallets.iter_mut().enumerate() {
@@ -740,7 +743,9 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
                     source_transactions.sort_by(|a, b| a.cmp(b) );
 
                     // merge consecutive trades that are really the same order
-                    merge_consecutive_trades(&mut source_transactions);
+                    if portfolio.merge_consecutive_trades {
+                        merge_consecutive_trades(&mut source_transactions);
+                    }
 
                     // remove transactions with ignored currencies
                     source_transactions.retain_mut(|tx| {
@@ -1004,7 +1009,7 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                                 let min_value = value_incoming.quantity.min(value_outgoing.quantity);
                                 let max_value = value_incoming.quantity.max(value_outgoing.quantity);
                                 if min_value < max_value * Decimal::new(95, 2) {
-                                    println!("warning: over 5% value difference between incoming {} ({}) and outgoing {} ({})", incoming, value_incoming, outgoing, value_outgoing);
+                                    println!("warning: {}% value difference between incoming {} ({}) and outgoing {} ({})", (Decimal::ONE_HUNDRED * (max_value - min_value) / max_value).round(), incoming, value_incoming, outgoing, value_outgoing);
                                 }
                                 let average = (value_incoming.quantity + value_outgoing.quantity) / Decimal::TWO;
                                 Some(Amount::new(average, "EUR".to_owned()))
