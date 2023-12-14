@@ -1160,6 +1160,7 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
             "RDD" => open::that(format!("https://rddblockexplorer.com/tx/{}", tx_hash)),
             "XLM" => open::that(format!("https://stellar.expert/explorer/public/tx/{}", tx_hash)),
             "XMR" => open::that(format!("https://blockchair.com/monero/transaction/{}", tx_hash)),
+            "XRP" => open::that(format!("https://xrpscan.com/tx/{}", tx_hash)),
             "ZEC" => open::that(format!("https://blockchair.com/zcash/transaction/{}", tx_hash)),
             _ => {
                 println!("No explorer URL defind for blockchain: {}", blockchain);

@@ -28,7 +28,7 @@ Below is a summary of the changes since the current release.
 * Added importing of Trezor Suite JSON export.
 * Added some icons to the UI.
 * Added AQUA currency.
-* Added block explorer link for Monero transactions.
+* Added block explorer link for Monero and Ripple transactions.
 * Added support for more variations of Poloniex CSV export.
 * Added button to ignore a currency to the Portfolio page.
 * Added merging of trades done via intermediate currencies.
