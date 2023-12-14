@@ -1155,6 +1155,7 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
             "BTC" | "" => open::that(format!("https://blockchair.com/bitcoin/transaction/{}", tx_hash)),
             // or "https://btc.com/tx/{}"
             // or "https://live.blockcypher.com/btc/tx/{}"
+            "DASH" => open::that(format!("https://live.blockcypher.com/dash/tx/{}", tx_hash)),
             "ETH" => open::that(format!("https://etherscan.io/tx/{}", tx_hash)),
             "LTC" => open::that(format!("https://blockchair.com/litecoin/transaction/{}", tx_hash)),
             "PPC" => open::that(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
