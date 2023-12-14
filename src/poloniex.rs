@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use chrono::{NaiveDateTime, FixedOffset, DateTime};
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Deserializer};
 
 use crate::{
@@ -143,8 +143,9 @@ impl TryFrom<PoloniexTrade> for Transaction {
 
         let quote_currency = normalize_currency(quote_currency);
         let base_currency = normalize_currency(base_currency);
+        let fee_currency = normalize_currency(&item.fee_currency);
 
-        let total = item.total.unwrap_or_else(|| item.price * item.amount);
+        let total = item.total.unwrap_or_else(|| (item.price * item.amount).round_dp_with_strategy(8, RoundingStrategy::ToZero));
 
         let mut tx = match item.side {
             Operation::Buy => Transaction::trade(
@@ -159,7 +160,10 @@ impl TryFrom<PoloniexTrade> for Transaction {
             ),
         };
 
-        tx.fee = Some(Amount::new(item.fee_total, normalize_currency(&item.fee_currency).to_owned()));
+        // Some Poloniex export formats report a more precise fee than the one
+        // that is actually calculated, judging by balance errors.
+        let actual_fee = item.fee_total.round_dp_with_strategy(8, RoundingStrategy::ToZero);
+        tx.fee = Some(Amount::new(actual_fee, fee_currency.to_owned()));
         tx.description = Some(format!("Order #{}", item.order_number));
 
         Ok(tx)
