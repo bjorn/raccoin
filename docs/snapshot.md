@@ -23,11 +23,12 @@ Below is a summary of the changes since the current release.
 * Added a filter to show only transactions with warnings.
 * Added a text filer for transaction descriptions.
 * Added support for lost, stolen and burn transactions.
+* Added support for swap transactions.
 * Added importing of Liquid exchange CSV export.
 * Added importing of FTX exchange CSV export.
 * Added importing of Trezor Suite JSON export.
 * Added some icons to the UI.
-* Added AQUA currency.
+* Added AQUA and 1INCH currencies.
 * Added block explorer link for Monero and Ripple transactions.
 * Added support for more variations of Poloniex CSV export.
 * Added button to ignore a currency to the Portfolio page.

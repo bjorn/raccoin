@@ -245,5 +245,22 @@ pub(crate) async fn address_transactions(
         }
     }
 
+    // Turn Trade into Swap for known cases
+    const SWAP_PAIRS: &[(&str, &str)] = &[
+        ("1INCH (1INCH Token)", "st1INCH (1INCH Token (Staked))"),
+    ];
+    for tx in transactions.iter_mut() {
+        match &tx.operation {
+            Operation::Trade { incoming, outgoing } => {
+                if let Some(_) = SWAP_PAIRS.iter().find(|(from, to)|
+                    (from == &incoming.currency && to == &outgoing.currency) ||
+                    (from == &outgoing.currency && to == &incoming.currency)) {
+                    tx.operation = Operation::Swap { incoming: incoming.clone(), outgoing: outgoing.clone() }
+                }
+            }
+            _ => {}
+        }
+    }
+
     Ok(transactions)
 }

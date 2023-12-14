@@ -9,6 +9,8 @@ use rust_decimal::prelude::*;
 /// todo: support more currencies and load from file
 pub(crate) fn cmc_id(currency: &str) -> i32 {
     const CMC_ID_MAP: &[(&str, i32)] = &[
+        ("1INCH", 8104),
+        ("1INCH (1INCH Token)", 8104),
         ("AQUA", 14112),
         ("BCH", 1831),
         ("BCN", 372),
@@ -25,8 +27,8 @@ pub(crate) fn cmc_id(currency: &str) -> i32 {
         ("LTC", 2),
         ("LUNA", 20314),
         ("LUNC", 4172),
-        ("MANA (Decentraland)", 1966),
         ("MANA", 1966),
+        ("MANA (Decentraland)", 1966),
         ("NXT", 66),
         ("PPC", 5),
         ("RDD", 118),
@@ -42,6 +44,7 @@ pub(crate) fn cmc_id(currency: &str) -> i32 {
         ("XRP", 52),
         ("ZCL", 1447),
         ("ZEC", 1437),
+        ("st1INCH (1INCH Token (Staked))", 8104),
     ];
     match CMC_ID_MAP.binary_search_by(|(cur, _)| (*cur).cmp(currency)) {
         Ok(index) => CMC_ID_MAP[index].1,
@@ -55,6 +58,7 @@ pub(crate) enum GainError {
     MissingFiatValue,
     MissingCostBase,
     InvalidFiatValue,
+    InvalidSwap,
     InsufficientBalance(Amount),
 }
 
@@ -65,6 +69,7 @@ impl fmt::Display for GainError {
             GainError::MissingFiatValue => f.write_str("Missing fiat value"),
             GainError::MissingCostBase => f.write_str("Missing cost base"),
             GainError::InvalidFiatValue => f.write_str("Invalid fiat value"),
+            GainError::InvalidSwap => f.write_str("Invalid swap"),
             GainError::InsufficientBalance(amount) => f.write_str(format!("Missing {}", amount).as_str()),
         }
     }
@@ -184,6 +189,10 @@ pub(crate) enum Operation {
     Buy(Amount),
     Sell(Amount),
     Trade {
+        incoming: Amount,
+        outgoing: Amount,
+    },
+    Swap {
         incoming: Amount,
         outgoing: Amount,
     },
@@ -346,7 +355,8 @@ impl Transaction {
             Operation::OutgoingGift(amount) => {
                 (None, Some(amount))
             }
-            Operation::Trade { incoming, outgoing } => {
+            Operation::Trade { incoming, outgoing } |
+            Operation::Swap { incoming, outgoing } => {
                 (Some(incoming), Some(outgoing))
             }
         }

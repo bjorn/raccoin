@@ -82,6 +82,7 @@ component TransactionDisplay inherits Rectangle {
             text: tx.tx-type == UiTransactionType.buy ? "Buy" :
                 tx.tx-type == UiTransactionType.sell ? "Sell" :
                 tx.tx-type == UiTransactionType.trade ? "Trade" :
+                tx.tx-type == UiTransactionType.swap ? "Swap" :
                 tx.tx-type == UiTransactionType.deposit ? "Deposit" :
                 tx.tx-type == UiTransactionType.withdrawal ? "Withdrawal" :
                 tx.tx-type == UiTransactionType.fee ? "Fee" :

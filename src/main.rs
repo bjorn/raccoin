@@ -946,7 +946,8 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
     let estimate_transaction_value = |tx: &mut Transaction| {
         if tx.value.is_none() {
             tx.value = match &tx.operation {
-                Operation::Trade { incoming, outgoing } => {
+                Operation::Trade { incoming, outgoing } |
+                Operation::Swap { incoming, outgoing } => {
                     if incoming.is_fiat() {
                         Some(incoming.clone())
                     } else if outgoing.is_fiat() {
@@ -1238,6 +1239,9 @@ fn ui_set_transactions(app: &App) {
             Operation::Sell(amount) => (UiTransactionType::Sell, Some(amount), None, wallet_name, None),
             Operation::Trade { incoming, outgoing } => {
                 (UiTransactionType::Trade, Some(outgoing), Some(incoming), wallet_name.clone(), wallet_name)
+            }
+            Operation::Swap { incoming, outgoing } => {
+                (UiTransactionType::Swap, Some(outgoing), Some(incoming), wallet_name.clone(), wallet_name)
             }
             Operation::FiatDeposit(amount) => {
                 (UiTransactionType::Deposit, None, Some(amount), None, wallet_name)

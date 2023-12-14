@@ -93,12 +93,14 @@ impl FIFO {
                 }
             };
 
+            let mut tx_gain: Option<Result<Decimal, GainError>> = None;
+
             match &transaction.operation {
                 Operation::Staking(amount) |
                 Operation::ChainSplit(amount) => {
                     if !amount.is_fiat() {
                         // Staking reward and Chain splits are treated as a zero-cost buy
-                        transaction.gain = Some(self.add_holdings(transaction, amount, Some(&Amount::new(Decimal::ZERO, "EUR".to_owned()))));
+                        tx_gain = Some(self.add_holdings(transaction, amount, Some(&Amount::new(Decimal::ZERO, "EUR".to_owned()))));
                     }
                 }
                 Operation::IncomingGift(amount) |
@@ -108,7 +110,7 @@ impl FIFO {
                 Operation::Income(amount) |     // todo: track income total
                 Operation::Spam(amount) => {
                     if !amount.is_fiat() {
-                        transaction.gain = Some(self.add_holdings(transaction, amount, transaction.value.as_ref()));
+                        tx_gain = Some(self.add_holdings(transaction, amount, transaction.value.as_ref()));
                     }
                 }
                 Operation::Trade{incoming, outgoing} => {
@@ -118,15 +120,31 @@ impl FIFO {
                     // handled as if we sold one crypto for fiat and then used
                     // fiat to buy another crypto.
                     if !outgoing.is_fiat() {
-                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction, outgoing, transaction.value.as_ref()));
+                        tx_gain = Some(self.dispose_holdings(&mut capital_gains, transaction, outgoing, transaction.value.as_ref()));
                     }
 
                     if !incoming.is_fiat() {
                         let result = self.add_holdings(transaction, incoming, transaction.value.as_ref());
-                        if result.is_err() && transaction.gain.is_none() {
-                            transaction.gain = Some(result);
+                        if result.is_err() && tx_gain.is_none() {
+                            tx_gain = Some(result);
                         }
                     }
+                }
+                Operation::Swap { incoming, outgoing } => {
+                    tx_gain = Some(if !outgoing.is_fiat() && !incoming.is_fiat() {
+                        self.swap_holdings(transaction, outgoing, incoming)
+                    } else {
+                        // Swapping is not supported to/from fiat, handle as trade and return error
+                        if !outgoing.is_fiat() {
+                            let _ = self.dispose_holdings(&mut capital_gains, transaction, outgoing, transaction.value.as_ref());
+                        }
+
+                        if !incoming.is_fiat() {
+                            let _ = self.add_holdings(transaction, incoming, transaction.value.as_ref());
+                        }
+
+                        Err(GainError::InvalidFiatValue)
+                    })
                 }
                 Operation::Fee(amount) |
                 Operation::Expense(amount) |
@@ -134,7 +152,7 @@ impl FIFO {
                 Operation::OutgoingGift(amount) => {
                     if !amount.is_fiat() {
                         let (amount, value) = try_include_fee(amount, &transaction.value);
-                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction, &amount, value.as_ref()));
+                        tx_gain = Some(self.dispose_holdings(&mut capital_gains, transaction, &amount, value.as_ref()));
                     }
                 }
                 // Lost/stolen/burned funds are handled as if they were sold for nothing
@@ -143,7 +161,7 @@ impl FIFO {
                 Operation::Burn(amount) => {
                     if !amount.is_fiat() {
                         let (amount, _) = try_include_fee(amount, &transaction.value);
-                        transaction.gain = Some(self.dispose_holdings(&mut capital_gains, transaction, &amount, Some(Amount::from_fiat(Decimal::ZERO)).as_ref()));
+                        tx_gain = Some(self.dispose_holdings(&mut capital_gains, transaction, &amount, Some(Amount::from_fiat(Decimal::ZERO)).as_ref()));
                     }
                 }
                 Operation::FiatDeposit(_) |
@@ -161,20 +179,22 @@ impl FIFO {
                 if !fee.is_fiat() {
                     match self.dispose_holdings(&mut capital_gains, transaction, fee, fee_value) {
                         Ok(gain) => {
-                            match &mut transaction.gain {
+                            match &mut tx_gain {
                                 Some(Ok(g)) => {
                                     *g += gain;
                                 }
                                 Some(Err(_)) => {}
-                                None => transaction.gain = Some(Ok(gain)),
+                                None => tx_gain = Some(Ok(gain)),
                             }
                         }
-                        Err(err) => if transaction.gain.is_none() {
-                            transaction.gain = Some(Err(err));
+                        Err(err) => if tx_gain.is_none() {
+                            tx_gain = Some(Err(err));
                         }
                     }
                 }
             }
+
+            transaction.gain = tx_gain;
         }
 
         capital_gains
@@ -272,6 +292,10 @@ impl FIFO {
     }
 
     fn add_holdings(&mut self, tx: &Transaction, amount: &Amount, value: Option<&Amount>) -> Result<Decimal, GainError> {
+        self.add_holdings_with_timestamp(tx, amount, value, tx.timestamp)
+    }
+
+    fn add_holdings_with_timestamp(&mut self, tx: &Transaction, amount: &Amount, value: Option<&Amount>, timestamp: NaiveDateTime) -> Result<Decimal, GainError> {
         // Refuse to add zero balances (and protect against division by zero)
         if amount.quantity.is_zero() {
             return Ok(Decimal::ZERO);
@@ -279,7 +303,7 @@ impl FIFO {
 
         let unit_price = fiat_value(value).map(|value| value / amount.quantity);
         self.holdings_for_currency(amount.token_currency().as_ref().unwrap_or(&amount.currency)).push_back(Entry {
-            timestamp: tx.timestamp,
+            timestamp,
             tx_index: tx.index,
             unit_price,
             remaining: amount.quantity,
@@ -296,6 +320,29 @@ impl FIFO {
                 let gain = gains.iter().map(|f| f.proceeds - f.cost).sum();
                 capital_gains.extend(gains);
                 fiat.map(|_| gain).map_err(|_| GainError::MissingFiatValue)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn swap_holdings(&mut self, transaction: &Transaction, outgoing: &Amount, incoming: &Amount) -> Result<Decimal, GainError> {
+        if outgoing.quantity.is_zero() && incoming.quantity.is_zero() {
+            return Ok(Decimal::ZERO);
+        }
+        if outgoing.quantity.is_zero() || incoming.quantity.is_zero() {
+            return Err(GainError::InvalidSwap);
+        }
+
+        let ratio = outgoing.quantity / incoming.quantity;
+
+        match self.gains(transaction, outgoing, Decimal::ZERO) {
+            Ok(gains) => {
+                // Transfer the original acquisition cost and timestamp to the newly acquired currency
+                for gain in gains {
+                    let amount = Amount::new(ratio * gain.amount.quantity, incoming.currency.clone());
+                    self.add_holdings_with_timestamp(transaction, &amount, Some(&Amount::from_fiat(gain.cost)), gain.bought)?;
+                }
+                Ok(Decimal::ZERO)
             }
             Err(e) => Err(e),
         }

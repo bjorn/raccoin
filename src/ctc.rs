@@ -257,7 +257,8 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
         let (operation, base, quote) = match &item.operation {
             Operation::Buy(amount) => (CtcTxType::Buy, amount, item.value.as_ref()),
             Operation::Sell(amount) => (CtcTxType::Sell, amount, item.value.as_ref()),
-            Operation::Trade { incoming, outgoing } => {
+            Operation::Trade { incoming, outgoing } |
+            Operation::Swap { incoming, outgoing } => { // Swap is not supported in CTC CSV import (at least not documented)
                 if outgoing.is_fiat() {
                     (CtcTxType::Buy, incoming, Some(outgoing))
                 } else {
