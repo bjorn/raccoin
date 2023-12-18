@@ -106,6 +106,12 @@ impl From<BittrexTransaction> for Transaction {
             tx.tx_hash = Some(item.tx_id);
         }
 
+        // For BCH withdrawals from Bittrex, it appears a 0.001 BCH fee was
+        // charged, but the CSV does unfortunately not report withdrawal fees.
+        if tx.operation.is_send() && blockchain == "BCH" {
+            tx.fee = Some(Amount::new(Decimal::new(1, 3), blockchain.clone()));
+        }
+
         tx.blockchain = Some(blockchain);
         tx
     }
