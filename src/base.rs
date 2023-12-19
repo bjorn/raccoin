@@ -255,6 +255,14 @@ impl Operation {
     pub(crate) fn is_send(&self) -> bool {
         matches!(self, Self::Send(..))
     }
+
+    /// Returns `true` if the operation is [`Trade`].
+    ///
+    /// [`Trade`]: Operation::Trade
+    #[must_use]
+    pub(crate) fn is_trade(&self) -> bool {
+        matches!(self, Self::Trade { .. })
+    }
 }
 
 /// Unified transaction type for all exchanges and wallets
@@ -375,7 +383,20 @@ impl Transaction {
                 match (self.has_incoming(), other.has_incoming()) {
                     (true, false) => Ordering::Less,
                     (false, true) => Ordering::Greater,
-                    _ => Ordering::Equal,
+                    _ => {
+                        // If both sides are a trade, order by fee currency,
+                        // since this helps with grouping certain trades
+                        if self.operation.is_trade() && other.operation.is_trade() {
+                            match (self.fee.as_ref(), other.fee.as_ref()) {
+                                (Some(a), Some(b)) => a.currency.cmp(&b.currency),
+                                (Some(_), None) => Ordering::Less,
+                                (None, Some(_)) => Ordering::Greater,
+                                (None, None) => Ordering::Equal,
+                            }
+                        } else {
+                            Ordering::Equal
+                        }
+                    },
                 }
             }
             Ordering::Greater => Ordering::Greater,

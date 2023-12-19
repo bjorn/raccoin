@@ -697,6 +697,9 @@ fn load_transactions(wallets: &mut Vec<Wallet>, ignored_currencies: &Vec<String>
 
             match source_txs {
                 Ok(mut source_transactions) => {
+                    // sort transactions
+                    source_transactions.sort_by(|a, b| a.cmp(b) );
+
                     // merge consecutive trades that are really the same order
                     merge_consecutive_trades(&mut source_transactions);
 
