@@ -163,7 +163,7 @@ async fn scan_children<C: secp256k1::Verification>(
 
         if !txs.as_ref().is_ok_and(|txs| { !txs.is_empty() }) {
             empty_addresses += 1;
-            if empty_addresses > 3 {
+            if empty_addresses > 10 {
                 break;
             }
         }
