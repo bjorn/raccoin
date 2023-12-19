@@ -27,6 +27,7 @@ impl From<&Stroops> for Amount {
 fn normalize_asset(code: &str, issuer: &str) -> String {
     match (code, issuer) {
         ("AQUA", "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA") => "AQUA".to_owned(),
+        ("USDC", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN") => "USDC".to_owned(),
         _ => format!("{}:{}", code, issuer),
     }
 }
@@ -172,7 +173,12 @@ async fn address_payments(client: &HorizonHttpClient, address: &str) -> Result<V
             let operation = if sender == address {
                 Operation::Send(amount)
             } else {
-                Operation::Receive(amount)
+                // Crude spam recognition
+                if amount.currency == "XLM" && amount.quantity > Decimal::ZERO && amount.quantity < (Decimal::ONE / Decimal::ONE_HUNDRED) {
+                    Operation::Spam(amount)
+                } else {
+                    Operation::Receive(amount)
+                }
             };
 
             let mut tx = Transaction::new(timestamp, operation);
