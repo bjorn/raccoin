@@ -26,7 +26,7 @@ enum Operation {
     SmallAssetsExchange,
     #[serde(rename = "Fiat Deposit")]
     FiatDeposit,
-    #[serde(rename = "Fiat Withdrawal")]
+    #[serde(rename = "Fiat Withdrawal", alias = "Fiat Withdraw")]
     FiatWithdrawal,
     #[serde(rename = "Binance Card Cashback")]
     CardCashback,
