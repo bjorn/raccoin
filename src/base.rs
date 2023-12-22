@@ -23,6 +23,7 @@ pub(crate) fn cmc_id(currency: &str) -> i32 {
         ("EUR", 2790),
         ("FLR", 7950),
         ("FTC", 8),
+        ("FTT", 4195),
         ("IOTA", 1720),
         ("LTC", 2),
         ("LUNA", 20314),

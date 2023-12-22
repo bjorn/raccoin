@@ -28,7 +28,7 @@ Below is a summary of the changes since the current release.
 * Added importing of FTX exchange CSV export.
 * Added importing of Trezor Suite JSON export.
 * Added some icons to the UI.
-* Added AQUA and 1INCH currencies.
+* Added AQUA, 1INCH and FTT currencies.
 * Added block explorer link for Dash, Monero and Ripple transactions.
 * Added support for more variations of Poloniex CSV export.
 * Added button to ignore a currency to the Portfolio page.
