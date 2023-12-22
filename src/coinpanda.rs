@@ -211,6 +211,8 @@ fn convert_ctc_to_coinpanda<'a>(ctc: &'a CtcTx) -> CoinpandaTx<'a> {
         CtcTxType::FailedIn => todo!(),
         CtcTxType::FailedOut => todo!(),
         CtcTxType::Spam => todo!(),
+        CtcTxType::SwapIn => todo!(),
+        CtcTxType::SwapOut => todo!(),
     };
     tx.description = ctc.description;
     // tx.fee_amount = ctc.fee_amount;

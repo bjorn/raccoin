@@ -180,6 +180,14 @@ pub(crate) enum CtcTxType {
     /// Mark the transactions as spam and ignore them from tax and balance calculations.
     #[serde(rename = "spam")]
     Spam,
+
+    /// To account for a non-taxable transaction where one asset is traded for another. It works by assigning the cost basis and purchase date of the original asset to the new one.
+    #[serde(rename = "swap-in")]
+    SwapIn,
+
+    /// To account for a non-taxable transaction where one asset is traded for another. It works by assigning the cost basis and purchase date of the original asset to the new one.
+    #[serde(rename = "swap-out")]
+    SwapOut,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -257,13 +265,15 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
         let (operation, base, quote) = match &item.operation {
             Operation::Buy(amount) => (CtcTxType::Buy, amount, item.value.as_ref()),
             Operation::Sell(amount) => (CtcTxType::Sell, amount, item.value.as_ref()),
-            Operation::Trade { incoming, outgoing } |
-            Operation::Swap { incoming, outgoing } => { // Swap is not supported in CTC CSV import (at least not documented)
+            Operation::Trade { incoming, outgoing } => {
                 if outgoing.is_fiat() {
                     (CtcTxType::Buy, incoming, Some(outgoing))
                 } else {
                     (CtcTxType::Sell, outgoing, Some(incoming))
                 }
+            }
+            Operation::Swap { incoming: _, outgoing: _ } => {
+                todo!("A Swap needs to be exported as SwapIn and SwapOut pair");
             }
             Operation::FiatDeposit(amount) => (CtcTxType::FiatDeposit, amount, None),
             Operation::FiatWithdrawal(amount) => (CtcTxType::FiatWithdrawal, amount, None),
@@ -356,6 +366,8 @@ impl<'a> From<CtcTx<'a>> for Transaction {
             CtcTxType::FailedIn => todo!(),
             CtcTxType::FailedOut => todo!(),
             CtcTxType::Spam => Operation::Spam(base_amount),
+            CtcTxType::SwapIn => todo!(),
+            CtcTxType::SwapOut => todo!(),
         };
 
         let mut tx = Transaction::new(item.timestamp, operation);
