@@ -114,17 +114,27 @@ impl FIFO {
                     }
                 }
                 Operation::Trade{incoming, outgoing} => {
-                    // todo: consider factoring in trading fees to reduce capital gain events
+                    // If we're paying a fee in the same currency as the
+                    // outgoing currency, we can merge it with the outgoing
+                    // amount to reduce capital gain events (in case the fee is
+                    // crypto) as well as to take the fee into account for the
+                    // cost base
+                    let (outgoing, value) = try_include_fee(outgoing, &transaction.value);
+
+                    // todo: when we're paying a fee in the same currency as the
+                    // incoming currency, we could similarly reduce capital gain
+                    // events by subtracting it from the incoming amount.
+                    // (see also calculate_tax_reports)
 
                     // When we're trading crypto for crypto, it is technically
                     // handled as if we sold one crypto for fiat and then used
                     // fiat to buy another crypto.
                     if !outgoing.is_fiat() {
-                        tx_gain = Some(self.dispose_holdings(&mut capital_gains, transaction, outgoing, transaction.value.as_ref()));
+                        tx_gain = Some(self.dispose_holdings(&mut capital_gains, transaction, &outgoing, transaction.value.as_ref()));
                     }
 
                     if !incoming.is_fiat() {
-                        let result = self.add_holdings(transaction, incoming, transaction.value.as_ref());
+                        let result = self.add_holdings(transaction, incoming, value.as_ref());
                         if result.is_err() && tx_gain.is_none() {
                             tx_gain = Some(result);
                         }
