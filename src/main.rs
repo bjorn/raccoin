@@ -306,6 +306,8 @@ impl CurrencySummary {
 
 struct TaxReport {
     year: i32,
+    short_term_cost: Decimal,
+    short_term_proceeds: Decimal,
     short_term_capital_gains: Decimal,
     short_term_capital_losses: Decimal,
     long_term_capital_gains: Decimal,
@@ -582,7 +584,29 @@ pub(crate) fn save_summary_to_csv(report: &TaxReport, output_path: &Path) -> Res
 
 /// Exports the tax reports for each year
 pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
+    let path = output_path.join(format!("yearly_summary.csv"));
+    let mut wtr = csv::WriterBuilder::new()
+        .from_path(path)?;
+
+    #[derive(Serialize)]
+    struct YearSummary {
+        #[serde(rename = "Year")]
+        year: i32,
+        #[serde(rename = "Proceeds")]
+        proceeds: Decimal,
+        #[serde(rename = "Cost")]
+        cost: Decimal,
+        #[serde(rename = "Gain or Loss")]
+        gains: Decimal,
+    }
+
     for report in &app.reports {
+        wtr.serialize(YearSummary {
+            year: report.year,
+            proceeds: rounded_to_cent(report.short_term_proceeds),
+            cost: rounded_to_cent(report.short_term_cost),
+            gains: rounded_to_cent(report.short_term_proceeds - report.short_term_cost),
+        })?;
         let year = if report.year == 0 { "all_time".to_owned() } else { report.year.to_string() };
         let path = output_path.join(format!("{}_report_summary.csv", year));
         save_summary_to_csv(report, &path)?;
@@ -948,9 +972,8 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
 fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_history: &PriceHistory) {
     let estimate_transaction_value = |tx: &mut Transaction| {
         if tx.value.is_none() {
-            tx.value = match &tx.operation {
-                Operation::Trade { incoming, outgoing } |
-                Operation::Swap { incoming, outgoing } => {
+            tx.value = match tx.incoming_outgoing() {
+                (Some(incoming), Some(outgoing)) => {
                     if incoming.is_fiat() {
                         Some(incoming.clone())
                     } else if outgoing.is_fiat() {
@@ -974,27 +997,11 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
                         }
                     }
                 }
-                Operation::Buy(amount) |
-                Operation::Sell(amount) |
-                Operation::FiatDeposit(amount) |
-                Operation::FiatWithdrawal(amount) |
-                Operation::Fee(amount) |
-                Operation::Receive(amount) |
-                Operation::Send(amount) |
-                Operation::ChainSplit(amount) |
-                Operation::Expense(amount) |
-                Operation::Stolen(amount) |
-                Operation::Lost(amount) |
-                Operation::Burn(amount) |
-                Operation::Income(amount) |
-                Operation::Airdrop(amount) |
-                Operation::Staking(amount) |
-                Operation::Cashback(amount) |
-                Operation::IncomingGift(amount) |
-                Operation::OutgoingGift(amount) |
-                Operation::Spam(amount) => {
+                (Some(amount), None) |
+                (None, Some(amount)) => {
                     price_history.estimate_value(tx.timestamp, amount)
                 }
+                (None, None) => None,
             };
         }
 
@@ -1043,6 +1050,8 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
         let year = txs.first().unwrap().timestamp.year();
         let gains = fifo.process(txs);
 
+        let mut short_term_cost = Decimal::ZERO;
+        let mut short_term_proceeds = Decimal::ZERO;
         let mut short_term_capital_gains = Decimal::ZERO;
         let mut short_term_capital_losses = Decimal::ZERO;
         let mut long_term_capital_gains = Decimal::ZERO;
@@ -1065,14 +1074,32 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
                 }
             }
 
+            if !gain.long_term() {
+                short_term_cost += gain.cost;
+                short_term_proceeds += gain.proceeds;
+            }
+
             let summary = summary_for(&mut currencies, &gain.amount.currency);
             summary.quantity_disposed += gain.amount.quantity;
             // summary.quantity_income += // todo: sum up all income quantities
             summary.cost += gain.cost;
-            // summary.fees = ; // todo: calculate all trade fees relevant for this currency
             summary.proceeds += gain.proceeds;
             // summary.income = ;   // todo: calculate the value of all income transactions for this currency
         }
+
+        // Sum up the fees on trades in this year, when they were not merged
+        // into the outgoing amount for a trade
+        txs.iter().for_each(|tx| {
+            match (&tx.operation, &tx.fee, &tx.fee_value) {
+                (Operation::Trade { incoming: _, outgoing }, Some(fee), Some(fee_value)) => {
+                    if outgoing.try_add(fee).is_none() {
+                        let summary = summary_for(&mut currencies, &fee.currency);
+                        summary.fees += fee_value.quantity;
+                    }
+                }
+                _ => {}
+            }
+        });
 
         // Make sure there is an entry for each held currency, even if it didn't generate gains or losses
         fifo.holdings().iter().for_each(|(currency, holdings)| {
@@ -1086,12 +1113,18 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
             summary.cost_end = fifo.currency_cost_base(&summary.currency);
             summary.capital_profit_loss = summary.proceeds - summary.cost - summary.fees;
             summary.total_profit_loss = summary.capital_profit_loss + summary.income;
+
+            // Count the fees as short-term loss (todo: not sure if correct)
+            short_term_capital_losses += summary.fees;
+            short_term_cost += summary.fees;
         });
 
         currencies.sort_unstable_by(CurrencySummary::cmp);
 
         TaxReport {
             year,
+            short_term_cost,
+            short_term_proceeds,
             short_term_capital_gains,
             short_term_capital_losses,
             long_term_capital_gains,
@@ -1104,6 +1137,8 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
     // add an "all time" report
     let mut all_time = TaxReport {
         year: 0,
+        short_term_cost: Decimal::ZERO,
+        short_term_proceeds: Decimal::ZERO,
         short_term_capital_gains: Decimal::ZERO,
         short_term_capital_losses: Decimal::ZERO,
         long_term_capital_gains: Decimal::ZERO,
@@ -1112,6 +1147,8 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
         gains: Vec::new(),
     };
     for report in &reports {
+        all_time.short_term_cost += report.short_term_cost;
+        all_time.short_term_proceeds += report.short_term_proceeds;
         all_time.short_term_capital_gains += report.short_term_capital_gains;
         all_time.short_term_capital_losses += report.short_term_capital_losses;
         all_time.long_term_capital_gains += report.long_term_capital_gains;
