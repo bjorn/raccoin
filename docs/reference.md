@@ -18,13 +18,15 @@ Raccoin can import CSV files exported from the following sources:
 * [CryptoTaxCalculator](https://cryptotaxcalculator.io/) custom [CSV import
   format](https://help.cryptotaxcalculator.io/en/articles/5777675-advanced-manual-custom-csv-import)
 * [Electrum](https://www.electrum.org/) (desktop wallet)
+* [FTX](https://ftx.com/) (exchange)
+* [Liquid](https://www.liquid.com/) (exchange)
 * [Mycelium](https://wallet.mycelium.com/) (mobile wallet)
 * [Peercoin](https://www.peercoin.net/wallet) (desktop wallet)
 * [Poloniex](https://poloniex.com/) (exchange)
 * [Reddcoin](https://www.reddcoin.com/reddwallet.html) (desktop wallet)
 * [Trezor Suite](https://trezor.io/trezor-suite) (desktop and web wallet)
 
-> Is your wallet or change missing? Feel free to [open an
+> Is your wallet or exchange missing? Feel free to [open an
 > issue](https://github.com/bjorn/raccoin/issues) describing the contents of
 > that file and its origins. It is usually very easy to add support for
 > additional formats!
@@ -53,6 +55,13 @@ Supported are:
 > After making the edit, you'll have to restart Raccoin since it won't
 > auto-reload the portfolio. Then, on the Wallets page, click the "Sync" button
 > to fetch the transations. They will be stored inside the portfolio JSON file.
+>
+> Supported source types:
+>
+> * `BitcoinAddresses`: Plain Bitcoin addresses (separated by space)
+> * `BitcoinXpubs`: HD wallet x/y/zpub addresses (separated by space)
+> * `EthereumAddress`: A single Ethereum address
+> * `StellarAccount`: A single Stellar account
 
 ### JSON Format
 
@@ -68,6 +77,10 @@ Supported are:
 >   }
 > ]
 > ```
+>
+> Raccoin also supports the JSON format which can be exported from [Trezor
+> Suite](https://docs.trezor.io/trezor-suite/features/transactions/export.html).
+> In this case, set `source_type` to `TrezorJson`.
 
 ## Supported Export Formats
 

@@ -18,9 +18,9 @@ their needs.
 
 <div class="thumbnails">
 <img class="thumbnail" src="/screenshots/raccoin-welcome.png" alt="Welcome screen">
-<img class="thumbnail" src="/screenshots/raccoin-wallets.png" alt="The wallets page shows the transaction sources">
-<img class="thumbnail" src="/screenshots/raccoin-transactions.png" alt="The transactions page provides a detailed view of events">
-<img class="thumbnail" src="/screenshots/raccoin-reports.png" alt="Reports can be exported as CSV files">
+<img class="thumbnail" src="/screenshots/raccoin-wallets-0.2.png" alt="The wallets page shows the transaction sources">
+<img class="thumbnail" src="/screenshots/raccoin-transactions-0.2.png" alt="The transactions page provides a detailed view of events">
+<img class="thumbnail" src="/screenshots/raccoin-reports-0.2.png" alt="Reports can be exported as CSV files">
 </div>
 
 <div id="fullpage" onclick="this.style.display='none';">
@@ -45,9 +45,9 @@ thumbnails.forEach(thumbnail => {
 
 ## Download
 
-* [Raccoin 0.1 for Windows (installer)](https://github.com/bjorn/raccoin/releases/download/v0.1.0/raccoin_0.1.0_x64-setup.exe)
-* [Raccoin 0.1 for Linux (AppImage)](https://github.com/bjorn/raccoin/releases/download/v0.1.0/raccoin_0.1.0_x86_64.AppImage)
-* [Raccoin 0.1 for Linux (.deb)](https://github.com/bjorn/raccoin/releases/download/v0.1.0/raccoin_0.1.0_amd64.deb)
-* [Raccoin 0.1 for macOS (.dmg)](https://github.com/bjorn/raccoin/releases/download/v0.1.0/Raccoin_0.1.0_x64.dmg)
+* [Raccoin 0.2 for Windows (installer)](https://github.com/bjorn/raccoin/releases/download/v0.2.0/raccoin_0.2.0_x64-setup.exe)
+* [Raccoin 0.2 for Linux (AppImage)](https://github.com/bjorn/raccoin/releases/download/v0.2.0/raccoin_0.2.0_x86_64.AppImage)
+* [Raccoin 0.2 for Linux (.deb)](https://github.com/bjorn/raccoin/releases/download/v0.2.0/raccoin_0.2.0_amd64.deb)
+* [Raccoin 0.2 for macOS (.dmg)](https://github.com/bjorn/raccoin/releases/download/v0.2.0/Raccoin_0.2.0_x64.dmg)
 
 Alternatively, download the latest [development snapshot](/snapshot/).
