@@ -1,4 +1,4 @@
-import { HorizontalBox, CheckBox, ComboBox, Button, VerticalBox} from "std-widgets.slint";
+import { HorizontalBox, CheckBox, ComboBox, Button, VerticalBox } from "std-widgets.slint";
 import { Portfolio } from "portfolio.slint";
 import { Wallets } from "wallets.slint";
 import { Transactions } from "transactions.slint";
@@ -167,4 +167,35 @@ export component AppWindow inherits Window {
         visible: Facade.portfolio.file-name != "";
     }
     if (Facade.portfolio.file-name == ""): WelcomePage {}
+
+    HorizontalBox {
+        alignment: center;
+        VerticalBox {
+            alignment: end;
+
+            Rectangle { vertical-stretch: 1; }
+
+            for notification[index] in Facade.notifications: Rectangle {
+                border-radius: 5px;
+                background: darkred;
+                border-color: red;
+                border-width: 1px;
+
+                HorizontalBox {
+                    padding-left: 10px;
+                    spacing: 10px;
+                    Text {
+                        text: notification.message;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                        color: white;
+                    }
+                    Button {
+                        icon: @image-url("icons/x.svg");
+                        clicked => { Facade.remove-notification(index); }
+                    }
+                }
+            }
+        }
+    }
 }

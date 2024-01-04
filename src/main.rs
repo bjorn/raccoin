@@ -498,6 +498,21 @@ impl App {
         self.ui().global::<Facade>().get_reports()
     }
 
+    fn report_error(&self, message: &str) {
+        let notifications_rc = self.ui().global::<Facade>().get_notifications();
+        let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
+        notifications.push(UiNotification {
+            notification_type: UiNotificationType::Error,
+            message: message.into(),
+        });
+    }
+
+    fn remove_notification(&self, index: usize) {
+        let notifications_rc = self.ui().global::<Facade>().get_notifications();
+        let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
+        notifications.remove(index);
+    }
+
     fn refresh_ui(&self) {
         ui_set_wallets(self);
         ui_set_transactions(self);
@@ -1188,6 +1203,7 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     facade.set_report_years(ModelRc::new(VecModel::<StandardListViewItem>::default()));
     facade.set_reports(ModelRc::new(VecModel::<UiTaxReport>::default()));
     facade.set_portfolio(UiPortfolio::default());
+    facade.set_notifications(ModelRc::new(VecModel::<UiNotification>::default()));
 
     facade.on_open_transaction(move |blockchain, tx_hash| {
         let _ = match blockchain.as_str() {
@@ -1716,6 +1732,8 @@ async fn main() -> Result<()> {
                         app.refresh_transactions();
                         app.refresh_ui();
                         app.save_portfolio(None);
+                    } else {
+                        app.report_error("Unrecognized file type. Please consider opening an issue on GitHub!");
                     }
                 }
             }
@@ -1985,6 +2003,15 @@ async fn main() -> Result<()> {
                 }
                 _ => {}
             }
+        }
+    });
+
+    facade.on_remove_notification({
+        let app = app.clone();
+
+        move |index| {
+            let app = app.lock().unwrap();
+            app.remove_notification(index as usize);
         }
     });
 

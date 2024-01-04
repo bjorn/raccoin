@@ -2,6 +2,7 @@ import {
     UiBalanceForCurrency,
     UiBalanceForWallet,
     UiCapitalGain,
+    UiNotification,
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
@@ -21,6 +22,7 @@ export global Facade {
     in-out property <[StandardListViewItem]> report-years: TestData.report-years;
     in-out property <[UiTaxReport]> reports: TestData.reports;
     in-out property <UiPortfolio> portfolio: TestData.portfolio;
+    in-out property <[UiNotification]> notifications;
 
     out property <int> wallet-filter: -1;
     out property <string> currency-filter: "";
@@ -59,6 +61,9 @@ export global Facade {
 
     callback export-transactions-csv;
     callback export-transactions-json;
+
+    // parems: (notification_index)
+    callback remove-notification(int);
 
     callback transaction-filter-changed;
 

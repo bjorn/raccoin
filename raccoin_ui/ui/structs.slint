@@ -135,3 +135,14 @@ export struct UiPortfolio {
     unrealized_gains: float,
     holdings: [UiCurrencyHoldings],
 }
+
+export enum UiNotificationType {
+    info,
+    warning,
+    error,
+}
+
+export struct UiNotification {
+    notification_type: UiNotificationType,
+    message: string,
+}

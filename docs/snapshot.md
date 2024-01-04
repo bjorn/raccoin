@@ -19,6 +19,7 @@ Below is a summary of the changes since the current release.
 * Automatically restore the previously open portfolio.
 * Added a "Close" button to close the portfolio, and a "Load" button to switch to a different portfolio.
 * Added an "Export All" button to export all available reports to a directory.
+* Added error notification when a source file isn't recognized.
 * Added the summary displayed on the "Reports" page to the "Report Summary" CSV export.
 * Added a CSV file with the yearly data relevant in Germany to the "Export All" action.
 * Added a filter to show only transactions with warnings.
