@@ -1,6 +1,6 @@
 [package]
 name = "raccoin_ui"
-version = "0.1.0"
+version = "0.2.0"
 description = "The UI for Raccoin"
 homepage = "https://raccoin.org/"
 repository = "https://github.com/bjorn/raccoin"
