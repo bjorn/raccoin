@@ -436,6 +436,7 @@ impl Transaction {
         match (&mut self.operation, &other.operation) {
             (Operation::Trade { incoming, outgoing }, Operation::Trade { incoming: other_incoming, outgoing: other_outgoing }) => {
                 if incoming == other_outgoing {
+                    println!("Removing intermediate trade amount: {}, replacing with target amount: {}", incoming, other_incoming);
                     // If the incoming and outgoing amounts are equal, we can
                     // ignore the intermediate currency and shortcut the trade.
                     *incoming = other_incoming.clone();
