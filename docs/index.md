@@ -50,4 +50,8 @@ thumbnails.forEach(thumbnail => {
 * [Raccoin 0.2 for Linux (.deb)](https://github.com/bjorn/raccoin/releases/download/v0.2.0/raccoin_0.2.0_amd64.deb)
 * [Raccoin 0.2 for macOS (.dmg)](https://github.com/bjorn/raccoin/releases/download/v0.2.0/Raccoin_0.2.0_x64.dmg)
 
-Alternatively, download the latest [development snapshot](/snapshot/).
+For those with [Rust](https://www.rust-lang.org/) installed, you can also run
+`cargo install raccoin` to install the latest release from source.
+
+You can help test development builds by downloading a [development
+snapshot](/snapshot/).

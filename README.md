@@ -22,6 +22,8 @@ Raccoin can import CSV files exported from the following sources:
 * [Bittrex](https://bittrex.com/) (exchange) (order and transaction history for disabled accounts)
 * [CryptoTaxCalculator](https://cryptotaxcalculator.io/) custom [CSV import format](https://help.cryptotaxcalculator.io/en/articles/5777675-advanced-manual-custom-csv-import)
 * [Electrum](https://www.electrum.org/) (desktop wallet)
+* [FTX](https://ftx.com/) (exchange)
+* [Liquid](https://www.liquid.com/) (exchange)
 * [Mycelium](https://wallet.mycelium.com/) (mobile wallet)
 * [Peercoin](https://www.peercoin.net/wallet) (desktop wallet)
 * [Poloniex](https://poloniex.com/) (exchange)
