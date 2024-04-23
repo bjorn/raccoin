@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result, Context};
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime};
 use ethers_core::types::{Chain, U256, H256, Address};
 use ethers_etherscan::{Client, account::*};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
@@ -20,7 +20,7 @@ fn u256_to_eth(value: U256) -> Result<Decimal> {
 trait EthereumTransaction {
     fn timestamp(&self) -> Result<NaiveDateTime> {
         let timestamp: i64 = self.timestamp_str().parse()?;
-        NaiveDateTime::from_timestamp_opt(timestamp, 0).context("invalid timestamp")
+        DateTime::from_timestamp(timestamp, 0).map(|dt| dt.naive_utc()).context("invalid timestamp")
     }
     fn value(&self) -> Result<Amount>;
     fn hash(&self) -> Option<String> {

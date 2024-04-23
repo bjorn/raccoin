@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Result, Context};
-use chrono::NaiveDateTime;
+use chrono::DateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
@@ -64,7 +64,7 @@ struct TrezorTransactionCsv<'a> {
 impl<'a> From<TrezorTransactionCsv<'a>> for Transaction {
     // todo: translate address?
     fn from(item: TrezorTransactionCsv) -> Self {
-        let date_time = NaiveDateTime::from_timestamp_opt(item.timestamp, 0).expect("valid timestamp");
+        let date_time = DateTime::from_timestamp(item.timestamp, 0).expect("valid timestamp").naive_utc();
         let amount = match item.amount {
             TrezorAmount::Quantity(quantity) => Amount::new(quantity, item.amount_unit.to_owned()),
             TrezorAmount::TokenId(token_id) => Amount::new_token(token_id, item.amount_unit.to_owned()),
@@ -169,7 +169,7 @@ struct TrezorWallet {
 impl TrezorTransaction {
     fn extract_transactions(self, transactions: &mut Vec<Transaction>) -> Result<()> {
         let currency = self.symbol.to_uppercase();
-        let date_time = NaiveDateTime::from_timestamp_opt(self.block_time as i64, 0).context("invalid timestamp")?;
+        let date_time = DateTime::from_timestamp(self.block_time as i64, 0).context("invalid timestamp")?.naive_utc();
 
         // Fee is only paid for "sent" transactions
         let mut fee = if matches!(self.type_, TrezorTransactionType::Sent) && !self.fee.is_zero() {

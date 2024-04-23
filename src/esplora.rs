@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::{str::FromStr, collections::{HashMap, HashSet, hash_map::Entry}};
-use bitcoin::{Address, Network, bip32::{ExtendedPubKey, DerivationPath, ChildNumber}, secp256k1::{Secp256k1, self}, base58, ScriptBuf};
-use chrono::NaiveDateTime;
+use bitcoin::{Address, Network, bip32::{Xpub, DerivationPath, ChildNumber}, secp256k1::{Secp256k1, self}, base58, ScriptBuf};
+use chrono::DateTime;
 use esplora_client::{Builder, AsyncClient, Tx};
 
 use crate::base::{Transaction, Amount};
@@ -71,7 +71,7 @@ fn tx_to_transaction(
 
     // determine timestamp
     let timestamp = tx.status.block_time.unwrap_or_default();
-    let naive_utc = NaiveDateTime::from_timestamp_opt(timestamp as i64, 0).unwrap();
+    let naive_utc = DateTime::from_timestamp(timestamp as i64, 0).unwrap().naive_utc();
 
     // determine if send or receive, and convert Satoshi to BTC
     let mut transaction = if own_in > own_out {
@@ -132,7 +132,7 @@ async fn scan_children<C: secp256k1::Verification>(
     client: &AsyncClient,
     address_transactions: &mut HashMap<Address, Result<Vec<Tx>>>,
     secp: &Secp256k1<C>,
-    xpub_key: &ExtendedPubKey,
+    xpub_key: &Xpub,
     derivation_path: &DerivationPath,
     address_type: AddressType
 ) -> Result<()> {
@@ -183,7 +183,7 @@ async fn xpub_addresses_and_txs<C: secp256k1::Verification>(
     // replace the version bytes with 0488b21e, this way we can support ypub and zpub
     xpub_data[0..4].copy_from_slice(&[0x04, 0x88, 0xb2, 0x1e]);
 
-    let xpub_key = ExtendedPubKey::decode(&xpub_data)?;
+    let xpub_key = Xpub::decode(&xpub_data)?;
     let xpub_prefix = xpub.split_at(4).0;
     let address_type = match xpub_prefix {
         "xpub" => AddressType::P2PKH,
