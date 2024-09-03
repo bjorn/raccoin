@@ -1367,9 +1367,17 @@ fn ui_set_transactions(app: &App) {
             Operation::Cashback(amount) => {
                 (UiTransactionType::Cashback, None, Some(amount), None, wallet_name)
             }
-            Operation::IncomingGift(amount) |
-            Operation::OutgoingGift(amount) => {
+            Operation::IncomingGift(amount) => {
                 (UiTransactionType::Gift, None, Some(amount), None, wallet_name)
+            }
+            Operation::OutgoingGift(amount) => {
+                (UiTransactionType::Gift, Some(amount), None, wallet_name, None)
+            }
+            Operation::RealizedProfit(amount) => {
+                (UiTransactionType::RealizedPnl, None, Some(amount), None, wallet_name)
+            }
+            Operation::RealizedLoss(amount) => {
+                (UiTransactionType::RealizedPnl, Some(amount), None, wallet_name, None)
             }
             Operation::Spam(amount) => {
                 (UiTransactionType::Spam, None, Some(amount), None, wallet_name)
