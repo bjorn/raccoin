@@ -2,7 +2,8 @@ use anyhow::Result;
 use std::{str::FromStr, collections::{HashMap, HashSet, hash_map::Entry}};
 use bitcoin::{Address, Network, bip32::{Xpub, DerivationPath, ChildNumber}, secp256k1::{Secp256k1, self}, base58, ScriptBuf};
 use chrono::DateTime;
-use esplora_client::{Builder, AsyncClient, Tx};
+use esplora_client::{Builder, Tx};
+use esplora_client::r#async::AsyncClient;
 
 use crate::base::{Transaction, Amount};
 
@@ -143,8 +144,8 @@ async fn scan_children<C: secp256k1::Verification>(
         let key = xpub_key.derive_pub(secp, &child)?.to_pub();
         let address = match address_type {
             AddressType::P2PKH => Address::p2pkh(&key, Network::Bitcoin),
-            AddressType::P2SHWPKH => Address::p2shwpkh(&key, Network::Bitcoin)?,
-            AddressType::P2WPKH => Address::p2wpkh(&key, Network::Bitcoin)?,
+            AddressType::P2SHWPKH => Address::p2shwpkh(&key, Network::Bitcoin),
+            AddressType::P2WPKH => Address::p2wpkh(&key, Network::Bitcoin),
         };
 
         println!("  checking address {}: {}", child, address);
