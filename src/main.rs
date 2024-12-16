@@ -1222,7 +1222,7 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
             "XRP" => open::that(format!("https://xrpscan.com/tx/{}", tx_hash)),
             "ZEC" => open::that(format!("https://blockchair.com/zcash/transaction/{}", tx_hash)),
             _ => {
-                println!("No explorer URL defind for blockchain: {}", blockchain);
+                println!("No explorer URL defined for blockchain: {}", blockchain);
                 Ok(())
             }
         };
