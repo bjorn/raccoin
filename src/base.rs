@@ -149,22 +149,26 @@ impl TryFrom<&str> for Amount {
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         // This parses the formats '<amount> <currency>' and '<amount><currency>'
-        let mut quantity_str = s.trim_end_matches(|c: char| c.is_ascii_alphabetic());
-        let currency = &s[quantity_str.len()..];
-        quantity_str = quantity_str.trim_end();
+        // Currency code may contain digits (e.g., "C98"), but always starts with a letter.
+        let first_alpha = s.find(|c: char| c.is_ascii_alphabetic())
+            .ok_or("No currency code found")?;
+        let (quantity_str, currency) = s.split_at(first_alpha);
+        let quantity_str = quantity_str.trim();
+        let currency = currency.trim();
 
-        // Strip commas when necessary, since Decimal::try_from doesn't like those
+        // Strip commas since Decimal::try_from doesn't like those, but only
+        // allocate if commas are present.
         let quantity_owned: String;
-        if quantity_str.contains(',') {
+        let quantity_no_commas = if quantity_str.contains(',') {
             quantity_owned = quantity_str.replace(',', "");
-            quantity_str = quantity_owned.as_str();
-        }
+            quantity_owned.as_str()
+        } else {
+            quantity_str
+        };
 
-        match Decimal::try_from(quantity_str) {
-            Ok(quantity) if !currency.is_empty() => {
-                Ok(Amount::new(quantity, currency.to_owned()))
-            }
-            _ => Err("Invalid format, expected: '<amount> <currency>' or '<amount><currency>'"),
+        match Decimal::try_from(quantity_no_commas) {
+            Ok(quantity) => Ok(Amount::new(quantity, currency.to_owned())),
+            Err(_) => Err("No valid quantity before currency"),
         }
     }
 }
@@ -180,7 +184,15 @@ impl fmt::Display for Amount {
 
 pub (crate) fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Amount, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
-    Ok(Amount::try_from(raw).unwrap())
+    match Amount::try_from(raw) {
+        Ok(amount) => Ok(amount),
+        Err(e) => {
+            Err(serde::de::Error::custom(format!(
+                "Could not parse the amount '{}': {} (expected format: '100 EUR')",
+                raw, e
+            )))
+        }
+    }
 }
 
 /// Unified transaction type for all exchanges and wallets
