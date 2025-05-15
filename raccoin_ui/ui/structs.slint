@@ -10,6 +10,7 @@ export struct UiTransactionSource {
 export struct UiWallet {
     name: string,
     enabled: bool,
+    expanded: bool,
     sources: [UiTransactionSource],
     transaction_count: int,
 }

@@ -235,6 +235,9 @@ struct Wallet {
     /// Whether this wallet is enabled.
     #[serde(default)]
     enabled: bool,
+    /// Whether this wallet is expanded.
+    #[serde(skip)]
+    expanded: bool,
     sources: Vec<TransactionSource>,
     /// Currency balances, as calculated based on the transactions imported from this source.
     #[serde(skip)]
@@ -246,6 +249,7 @@ impl Wallet {
         Self {
             name,
             enabled: true,
+            expanded: true, // Show new wallets expanded by default
             sources: Vec::new(),
             balances: HashMap::new(),
         }
@@ -1258,6 +1262,7 @@ fn ui_set_wallets(app: &App) {
             // source_type: source.source_type.to_string().into(),
             name: wallet.name.clone().into(),
             enabled: wallet.enabled,
+            expanded: wallet.expanded,
             transaction_count: wallet.transaction_count() as i32,
             sources: Rc::new(VecModel::from(ui_sources)).into(),
         }
