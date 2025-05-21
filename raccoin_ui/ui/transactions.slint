@@ -16,8 +16,9 @@ import { UiTransactionType, UiTransaction } from "./structs.slint";
 component TransactionsHeader inherits TableHeader {
     Rectangle {
         height: date-text.preferred-height;
+        width: date-time-cell.preferred-width;
 
-        DateTimeCell {
+        date-time-cell := DateTimeCell {
             padding-left: 0;
             visible: false; // only used for alignment purposes
         }
