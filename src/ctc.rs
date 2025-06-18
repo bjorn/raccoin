@@ -291,6 +291,8 @@ impl<'a> From<&'a Transaction> for CtcTx<'a> {
             Operation::Cashback(amount) => (CtcTxType::Cashback, amount, None),
             Operation::IncomingGift(amount) => (CtcTxType::IncomingGift, amount, None),
             Operation::OutgoingGift(amount) => (CtcTxType::OutgoingGift, amount, None),
+            Operation::RealizedProfit(amount) => (CtcTxType::RealizedProfit, amount, None),
+            Operation::RealizedLoss(amount) => (CtcTxType::RealizedLoss, amount, None),
             Operation::Spam(amount) => (CtcTxType::Spam, amount, None),
         };
         Self {

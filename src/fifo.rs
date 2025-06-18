@@ -104,6 +104,7 @@ impl FIFO {
                     }
                 }
                 Operation::IncomingGift(amount) |
+                Operation::RealizedProfit(amount) |
                 Operation::Airdrop(amount) |
                 Operation::Buy(amount) |
                 Operation::Cashback(amount) |
@@ -159,7 +160,8 @@ impl FIFO {
                 Operation::Fee(amount) |
                 Operation::Expense(amount) |
                 Operation::Sell(amount) |
-                Operation::OutgoingGift(amount) => {
+                Operation::OutgoingGift(amount) |
+                Operation::RealizedLoss(amount) => {
                     if !amount.is_fiat() {
                         let (amount, value) = try_include_fee(amount, &transaction.value);
                         tx_gain = Some(self.dispose_holdings(&mut capital_gains, transaction, &amount, value.as_ref()));
