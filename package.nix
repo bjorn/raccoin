@@ -4,13 +4,13 @@
   fetchFromGitHub,
   pkg-config,
   makeWrapper,
-  libxkbcommon,
-  wayland,
   cairo,
   pango,
   harfbuzz,
   fontconfig,
   freetype,
+  libxkbcommon,
+  wayland,
   alsa-lib,
   libGL,
   xorg,
@@ -24,19 +24,13 @@ rustPlatform.buildRustPackage (finalAttrs: {
   pname = "raccoin";
   version = "0.2.0";
 
-  src = lib.cleanSourceWith {
-    filter =
-      name: type:
-      !(
-        type == "directory"
-        && builtins.elem (baseNameOf name) [
-          ".github"
-          "target"
-        ]
-      );
-    src = lib.cleanSource ./.;
+  src = fetchFromGitHub {
+    owner = "bjorn";
+    repo = "raccoin";
+    tag = "v${finalAttrs.version}";
+    hash = "sha256-6BwRFU8qU6K0KqKdK+soKcWU2LPxkKKPOcn2gupunGg=";
   };
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoHash = "sha256-pz3dwIIBQZIwTammiI/UQwM0Iy1ZgC9ntK+qNGv3s24=";
 
   nativeBuildInputs = [
     pkg-config
@@ -53,9 +47,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     openssl
     libxkbcommon
   ]
-  ++ lib.optionals withWayland [
-    wayland
-  ]
+  ++ lib.optionals withWayland [ wayland ]
   ++ lib.optionals withX11 [
     xorg.libX11
     xorg.libXcursor
@@ -73,10 +65,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
   #'';
   #passthru.tests.version = testers.testVersion { package = raccoin; };
 
+  # other fix for runtime panick
   postFixup = ''
-    wrapProgram $out/bin/raccoin \
-      --set-default SLINT_BACKEND winit \
-      --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ libxkbcommon xorg.libX11 fontconfig ]}
+    patchelf --set-rpath "${lib.makeLibraryPath finalAttrs.buildInputs}" \
+             $out/bin/raccoin
   '';
 
   passthru.updateScript = nix-update-script { };
@@ -96,4 +88,4 @@ rustPlatform.buildRustPackage (finalAttrs: {
     platforms = lib.platforms.linux;
     maintainers = with lib.maintainers; [ vv01f ];
   };
-})
+}
