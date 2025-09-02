@@ -1,0 +1,11 @@
+// See https://aka.ms/devcontainer.json for more information.
+{
+	"name": "Ona",
+	"image": "mcr.microsoft.com/devcontainers/rust",
+
+	// See https://containers.dev/features
+	"features": {
+		"ghcr.io/devcontainers/features/github-cli:1": {}
+	}
+}
+ 
