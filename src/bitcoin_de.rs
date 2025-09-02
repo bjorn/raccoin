@@ -105,7 +105,7 @@ impl TryFrom<BitcoinDeAction> for Transaction {
             BitcoinDeActionType::PartnerProgramme => {
                 // Partner programme transactions are treated as income (free coins received)
                 // This is typically a referral bonus or similar promotional reward
-                Ok(Transaction::income(utc_time, Amount::new(item.incoming_outgoing, currency)))
+                Ok(Transaction::new(utc_time, Operation::Income(Amount::new(item.incoming_outgoing, currency))))
             }
         }?;
         match item.type_ {
@@ -143,19 +143,19 @@ pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
 
     if let Ok(headers) = rdr.headers() {
         // Check for original format
-        let original_headers = ["Date", "Type", "Currency", "Reference", "BTC-address", "Price", "unit (rate)", "BTC incl. fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "Incoming / Outgoing", "Account balance"];
+        let original_headers: &[&str] = &["Date", "Type", "Currency", "Reference", "BTC-address", "Price", "unit (rate)", "BTC incl. fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "Incoming / Outgoing", "Account balance"];
         if headers == original_headers {
             return Ok(true);
         }
 
         // Check for new English format
-        let english_headers = ["date", "Booking type", "currency", "reference", "BTC-Address", "Rate", "unit (rate)", "BTC before fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "incoming / outgoing", "balance"];
+        let english_headers: &[&str] = &["date", "Booking type", "currency", "reference", "BTC-Address", "Rate", "unit (rate)", "BTC before fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "incoming / outgoing", "balance"];
         if headers == english_headers {
             return Ok(true);
         }
 
         // Check for new German format
-        let german_headers = ["Datum", "Typ", "Währung", "Referenz", "BTC-Adresse", "Kurs", "Einheit (Kurs)", "BTC vor Gebühr", "Menge vor Gebühr", "Einheit (Menge vor Gebühr)", "BTC nach Bitcoin.de-Gebühr", "Menge nach Bitcoin.de-Gebühr", "Einheit (Menge nach Bitcoin.de-Gebühr)", "Zu- / Abgang", "Kontostand"];
+        let german_headers: &[&str] = &["Datum", "Typ", "Währung", "Referenz", "BTC-Adresse", "Kurs", "Einheit (Kurs)", "BTC vor Gebühr", "Menge vor Gebühr", "Einheit (Menge vor Gebühr)", "BTC nach Bitcoin.de-Gebühr", "Menge nach Bitcoin.de-Gebühr", "Einheit (Menge nach Bitcoin.de-Gebühr)", "Zu- / Abgang", "Kontostand"];
         if headers == german_headers {
             return Ok(true);
         }
