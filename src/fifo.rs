@@ -1,7 +1,7 @@
 use std::{collections::{VecDeque, HashMap}, path::Path};
 
 use anyhow::Result;
-use chrono::{NaiveDateTime, TimeZone, Local};
+use chrono::{NaiveDateTime, TimeZone, Local, Datelike};
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Serialize;
 
@@ -38,7 +38,16 @@ pub(crate) struct CapitalGain {
 
 impl CapitalGain {
     pub(crate) fn long_term(&self) -> bool {
-        (self.sold - self.bought) > chrono::Duration::days(365)
+        // Calculate one year from the bought date to handle leap years correctly
+        let one_year_later = self.bought.date()
+            .with_year(self.bought.year() + 1)
+            .unwrap_or_else(|| {
+                // Fallback for edge cases (e.g., Feb 29 in non-leap year)
+                self.bought.date().with_day(28).unwrap().with_year(self.bought.year() + 1).unwrap()
+            })
+            .and_time(self.bought.time());
+        
+        self.sold >= one_year_later
     }
 
     pub(crate) fn profit(&self) -> Decimal {
@@ -395,7 +404,7 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) ->
             cost: gain.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             proceeds: gain.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             gain_or_loss: (gain.proceeds - gain.cost).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
-            long_term: (gain.sold - gain.bought) > chrono::Duration::days(365),
+            long_term: gain.long_term(),
         })?;
     }
 
