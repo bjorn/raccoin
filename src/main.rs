@@ -96,9 +96,22 @@ fn csv_file_has_headers(path: &Path, delimiter: u8, skip_lines: usize, headers: 
     Ok(rdr.headers().map_or(false, |s| s == headers))
 }
 
+
+
 impl TransactionsSourceType {
     fn detect_from_file(path: &Path) -> Option<Self> {
+        // Special case for Bitcoin.de CSV files with multiple header formats
+        if bitcoin_de::is_bitcoin_de_csv(path).unwrap_or(false) {
+            return Some(TransactionsSourceType::BitcoinDeCsv);
+        }
+
+        // Standard detection for other formats
         Self::iter().find(|source_type| {
+            // Skip Bitcoin.de since we handled it above
+            if matches!(source_type, TransactionsSourceType::BitcoinDeCsv) {
+                return false;
+            }
+            
             source_type.delimiter().is_some_and(|delimiter| {
                 csv_file_has_headers(path, delimiter, source_type.skip_lines(), source_type.headers()).is_ok_and(|x| x)
             })
