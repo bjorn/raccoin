@@ -1,9 +1,31 @@
 use std::{collections::{VecDeque, HashMap}, path::Path};
 
 use anyhow::Result;
-use chrono::{NaiveDateTime, TimeZone, Local, Datelike};
+use chrono::{NaiveDateTime, TimeZone, Local, Duration, Months};
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Serialize;
+
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub enum HoldingPeriod {
+    Days(u32),
+    Months(u32),
+    Years(u32),
+}
+
+impl HoldingPeriod {
+    fn add_to(self, dt: NaiveDateTime) -> NaiveDateTime {
+        match self {
+            HoldingPeriod::Days(d) => dt + Duration::days(d as i64),
+            HoldingPeriod::Months(m) => dt
+                .checked_add_months(Months::new(m))
+                .expect("month addition should not overflow"),
+            HoldingPeriod::Years(y) => dt
+                .checked_add_months(Months::new(12 * y))
+                .expect("year addition should not overflow"),
+        }
+    }
+}
 
 use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_date_time};
 
@@ -37,17 +59,14 @@ pub(crate) struct CapitalGain {
 }
 
 impl CapitalGain {
+    pub(crate) fn is_held_for_at_least(&self, period: HoldingPeriod) -> bool {
+        let threshold = period.add_to(self.bought);
+        self.sold >= threshold
+    }
+
     pub(crate) fn long_term(&self) -> bool {
-        // Calculate one year from the bought date to handle leap years correctly
-        let one_year_later = self.bought.date()
-            .with_year(self.bought.year() + 1)
-            .unwrap_or_else(|| {
-                // Fallback for edge cases (e.g., Feb 29 in non-leap year)
-                self.bought.date().with_day(28).unwrap().with_year(self.bought.year() + 1).unwrap()
-            })
-            .and_time(self.bought.time());
-        
-        self.sold >= one_year_later
+        // Calendar-aware: 12 months from the buy timestamp
+        self.is_held_for_at_least(HoldingPeriod::Years(1))
     }
 
     pub(crate) fn profit(&self) -> Decimal {
