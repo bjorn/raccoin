@@ -49,7 +49,21 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
-    - run: cargo build --verbose --release
+    - name: Install targets
+      run: |
+        rustup target add x86_64-apple-darwin
+        rustup target add aarch64-apple-darwin
+    - name: Build Intel binary
+      run: cargo build --verbose --release --target x86_64-apple-darwin
+    - name: Build ARM64 binary
+      run: cargo build --verbose --release --target aarch64-apple-darwin
+    - name: Create universal binary
+      run: |
+        mkdir -p target/release
+        lipo -create \
+          target/x86_64-apple-darwin/release/raccoin \
+          target/aarch64-apple-darwin/release/raccoin \
+          -output target/release/raccoin
     - run: cargo install cargo-packager --locked
     - run: cargo packager --release
     - run: ditto -c -k --sequesterRsrc --keepParent target/release/Raccoin.app Raccoin.app.zip

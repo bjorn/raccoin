@@ -44,7 +44,6 @@ tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
 windows_exe_info = "0.5"
 
 [package.metadata.packager]
-before-packaging-command = "cargo build --release"
 identifier = "org.raccoin.Raccoin"
 product-name = "Raccoin"
 description = "Crypto Portfolio and Tax Reporting Tool"
