@@ -27,7 +27,7 @@ enum BitcoinDeActionType {
 }
 
 // struct for storing CSV columns from various Bitcoin.de export formats:
-// 
+//
 // Original format:
 // Date;Type;Currency;Reference;BTC-address;Price;"unit (rate)";"BTC incl. fee";"amount before fee";"unit (amount before fee)";"BTC excl. Bitcoin.de fee";"amount after Bitcoin.de-fee";"unit (amount after Bitcoin.de-fee)";"Incoming / Outgoing";"Account balance"
 //
@@ -39,29 +39,29 @@ enum BitcoinDeActionType {
 #[derive(Debug, Deserialize)]
 struct BitcoinDeAction {
     // Date field - supports multiple header variations
-    #[serde(rename = "Date", alias = "date", alias = "Datum", deserialize_with = "deserialize_date_time")]
+    #[serde(alias = "Date", alias = "Datum", deserialize_with = "deserialize_date_time")]
     pub date: NaiveDateTime,
-    
+
     // Type field - supports multiple header variations
     #[serde(rename = "Type", alias = "Booking type", alias = "Typ")]
     pub type_: BitcoinDeActionType,
-    
+
     // Currency field - supports multiple header variations
-    #[serde(rename = "Currency", alias = "currency", alias = "Währung")]
+    #[serde(alias = "Currency", alias = "Währung")]
     pub currency: String,
-    
+
     // Reference field - supports multiple header variations
-    #[serde(rename = "Reference", alias = "reference", alias = "Referenz")]
+    #[serde(alias = "Reference", alias = "Referenz")]
     pub reference: String,
-    
+
     // Amount after fee - supports multiple header variations
     #[serde(rename = "amount after Bitcoin.de-fee", alias = "Menge nach Bitcoin.de-Gebühr")]
     pub amount_after_bitcoin_de_fee: Option<Decimal>,
-    
+
     // Unit for amount after fee - supports multiple header variations
     #[serde(rename = "unit (amount after Bitcoin.de-fee)", alias = "Einheit (Menge nach Bitcoin.de-Gebühr)")]
     pub unit_amount_after_bitcoin_de_fee: String,
-    
+
     // Incoming/Outgoing field - supports multiple header variations
     #[serde(rename = "Incoming / Outgoing", alias = "incoming / outgoing", alias = "Zu- / Abgang")]
     pub incoming_outgoing: Decimal,
@@ -131,11 +131,11 @@ impl TryFrom<BitcoinDeAction> for Transaction {
 // Detects if a CSV file is a Bitcoin.de export by checking for known header formats
 // Supports multiple CSV formats:
 // - Original format (Date;Type;Currency;...)
-// - New English format (date;"Booking type";currency;...)  
+// - New English format (date;"Booking type";currency;...)
 // - New German format (Datum;Typ;Währung;...)
 pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
     let file = File::open(path)?;
-    let mut buf_reader = BufReader::new(file);
+    let buf_reader = BufReader::new(file);
 
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b';')
@@ -167,7 +167,7 @@ pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
 // loads a bitcoin.de CSV file into a list of unified transactions
 // Supports multiple CSV formats:
 // - Original format (Date;Type;Currency;...)
-// - New English format (date;"Booking type";currency;...)  
+// - New English format (date;"Booking type";currency;...)
 // - New German format (Datum;Typ;Währung;...)
 pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
@@ -207,4 +207,90 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>>
     }
 
     Ok(transactions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::base::Operation;
+    use rust_decimal::Decimal;
+
+    #[test]
+    fn parses_all_header_formats() {
+        let test_files = [
+            ("tests/data/bitcoin_de_original.csv", "original"),
+            ("tests/data/bitcoin_de_english.csv", "english"),
+            ("tests/data/bitcoin_de_german.csv", "german"),
+        ];
+
+        for (path, format_name) in test_files {
+            let path = Path::new(path);
+            
+            // Verify header detection works
+            assert!(is_bitcoin_de_csv(path).unwrap(), "Failed to detect {} format", format_name);
+
+            let transactions = load_bitcoin_de_csv(path).unwrap();
+            assert_eq!(transactions.len(), 5, "Wrong transaction count for {} format", format_name); // 6 records - 1 merged fee = 5 (Registration filtered out)
+
+            // Check the purchase trade (transaction 0)
+            match &transactions[0].operation {
+                Operation::Trade { incoming, outgoing } => {
+                    assert_eq!(incoming.currency, "BTC", "Purchase incoming currency wrong in {} format", format_name);
+                    assert_eq!(incoming.quantity, Decimal::new(99, 2), "Purchase incoming quantity wrong in {} format", format_name); // 0.99
+                    assert_eq!(outgoing.currency, "EUR", "Purchase outgoing currency wrong in {} format", format_name);
+                    assert_eq!(outgoing.quantity, Decimal::new(9950, 2), "Purchase outgoing quantity wrong in {} format", format_name); // 99.50
+                }
+                _ => panic!("Expected Trade operation for purchase in {} format", format_name),
+            }
+
+            // Check disbursement with merged fee (transaction 1)
+            match &transactions[1].operation {
+                Operation::Send(amount) => {
+                    assert_eq!(amount.currency, "BTC", "Disbursement currency wrong in {} format", format_name);
+                    assert_eq!(amount.quantity, Decimal::new(9899, 4), "Disbursement quantity wrong in {} format", format_name); // 0.9899
+                }
+                _ => panic!("Expected Send operation for disbursement in {} format", format_name),
+            }
+
+            // Verify that disbursement fee was merged
+            assert!(transactions[1].fee.is_some(), "Fee not merged for disbursement in {} format", format_name);
+            if let Some(fee) = &transactions[1].fee {
+                assert_eq!(fee.quantity, Decimal::new(1, 4), "Fee amount wrong in {} format", format_name); // 0.0001
+            }
+
+            // Check deposit (transaction 2)
+            match &transactions[2].operation {
+                Operation::Receive(amount) => {
+                    assert_eq!(amount.currency, "BTC", "Deposit currency wrong in {} format", format_name);
+                    assert_eq!(amount.quantity, Decimal::new(5, 1), "Deposit quantity wrong in {} format", format_name); // 0.5
+                }
+                _ => panic!("Expected Receive operation for deposit in {} format", format_name),
+            }
+
+            // Check partner programme (transaction 3)
+            match &transactions[3].operation {
+                Operation::Income(amount) => {
+                    assert_eq!(amount.currency, "BTC", "Partner programme currency wrong in {} format", format_name);
+                    assert_eq!(amount.quantity, Decimal::new(1, 3), "Partner programme quantity wrong in {} format", format_name); // 0.001
+                }
+                _ => panic!("Expected Income operation for partner programme in {} format", format_name),
+            }
+
+            // Check sale trade (transaction 4)
+            match &transactions[4].operation {
+                Operation::Trade { incoming, outgoing } => {
+                    assert_eq!(incoming.currency, "EUR", "Sale incoming currency wrong in {} format", format_name);
+                    assert_eq!(outgoing.currency, "BTC", "Sale outgoing currency wrong in {} format", format_name);
+                    assert_eq!(outgoing.quantity, Decimal::new(5, 1), "Sale outgoing quantity wrong in {} format", format_name); // 0.5
+                }
+                _ => panic!("Expected Trade operation for sale in {} format", format_name),
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_non_bitcoin_de_csv() {
+        // Test non-Bitcoin.de format
+        assert!(!is_bitcoin_de_csv(Path::new("tests/data/bitcoin_core_transactions.csv")).unwrap());
+    }
 }
