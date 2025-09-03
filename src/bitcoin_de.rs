@@ -140,9 +140,8 @@ pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
         &["Datum", "Typ", "Währung", "Referenz", "BTC-Adresse", "Kurs", "Einheit (Kurs)", "BTC vor Gebühr", "Menge vor Gebühr", "Einheit (Menge vor Gebühr)", "BTC nach Bitcoin.de-Gebühr", "Menge nach Bitcoin.de-Gebühr", "Einheit (Menge nach Bitcoin.de-Gebühr)", "Zu- / Abgang", "Kontostand"],
     ];
 
-    Ok(rdr.headers().is_ok_and(|headers| {
-        KNOWN_FORMATS.iter().any(|format_headers| headers == *format_headers)
-    }))
+    let headers = rdr.headers()?;
+    Ok(KNOWN_FORMATS.iter().any(|format_headers| headers == *format_headers))
 }
 
 // loads a bitcoin.de CSV file into a list of unified transactions
@@ -151,7 +150,6 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>>
 
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b';')
-        .flexible(true)  // Allow records with varying number of fields
         .from_path(input_path)?;
 
     for result in rdr.deserialize() {
