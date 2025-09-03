@@ -47,6 +47,6 @@ windows_exe_info = "0.5"
 identifier = "org.raccoin.Raccoin"
 product-name = "Raccoin"
 description = "Crypto Portfolio and Tax Reporting Tool"
-icons = ["raccoin_ui/ui/icons/app-icon-64.png"]
+icons = ["raccoin_ui/ui/icons/Raccoin.icns", "raccoin_ui/ui/icons/raccoin.ico", "raccoin_ui/ui/icons/app-icon-64.png"]
 homepage = "https://raccoin.org/"
 license_file = "LICENSE"
