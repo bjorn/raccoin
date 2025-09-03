@@ -38,31 +38,24 @@ enum BitcoinDeActionType {
 // Datum;Typ;Währung;Referenz;BTC-Adresse;Kurs;"Einheit (Kurs)";"BTC vor Gebühr";"Menge vor Gebühr";"Einheit (Menge vor Gebühr)";"BTC nach Bitcoin.de-Gebühr";"Menge nach Bitcoin.de-Gebühr";"Einheit (Menge nach Bitcoin.de-Gebühr)";"Zu- / Abgang";Kontostand
 #[derive(Debug, Deserialize)]
 struct BitcoinDeAction {
-    // Date field - supports multiple header variations
     #[serde(alias = "Date", alias = "Datum", deserialize_with = "deserialize_date_time")]
     pub date: NaiveDateTime,
 
-    // Type field - supports multiple header variations
     #[serde(rename = "Type", alias = "Booking type", alias = "Typ")]
     pub type_: BitcoinDeActionType,
 
-    // Currency field - supports multiple header variations
     #[serde(alias = "Currency", alias = "Währung")]
     pub currency: String,
 
-    // Reference field - supports multiple header variations
     #[serde(alias = "Reference", alias = "Referenz")]
     pub reference: String,
 
-    // Amount after fee - supports multiple header variations
     #[serde(rename = "amount after Bitcoin.de-fee", alias = "Menge nach Bitcoin.de-Gebühr")]
     pub amount_after_bitcoin_de_fee: Option<Decimal>,
 
-    // Unit for amount after fee - supports multiple header variations
     #[serde(rename = "unit (amount after Bitcoin.de-fee)", alias = "Einheit (Menge nach Bitcoin.de-Gebühr)")]
     pub unit_amount_after_bitcoin_de_fee: String,
 
-    // Incoming/Outgoing field - supports multiple header variations
     #[serde(rename = "Incoming / Outgoing", alias = "incoming / outgoing", alias = "Zu- / Abgang")]
     pub incoming_outgoing: Decimal,
 }
@@ -129,39 +122,25 @@ impl TryFrom<BitcoinDeAction> for Transaction {
 }
 
 // Detects if a CSV file is a Bitcoin.de export by checking for known header formats
-// Supports multiple CSV formats:
-// - Original format (Date;Type;Currency;...)
-// - New English format (date;"Booking type";currency;...)
-// - New German format (Datum;Typ;Währung;...)
 pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
     let file = File::open(path)?;
     let buf_reader = BufReader::new(file);
-
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b';')
         .from_reader(buf_reader);
 
-    if let Ok(headers) = rdr.headers() {
-        // Check for original format
-        let original_headers: &[&str] = &["Date", "Type", "Currency", "Reference", "BTC-address", "Price", "unit (rate)", "BTC incl. fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "Incoming / Outgoing", "Account balance"];
-        if headers == original_headers {
-            return Ok(true);
-        }
+    const KNOWN_FORMATS: [&[&str]; 3] = [
+        // Original format
+        &["Date", "Type", "Currency", "Reference", "BTC-address", "Price", "unit (rate)", "BTC incl. fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "Incoming / Outgoing", "Account balance"],
+        // New English format
+        &["date", "Booking type", "currency", "reference", "BTC-Address", "Rate", "unit (rate)", "BTC before fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "incoming / outgoing", "balance"],
+        // New German format
+        &["Datum", "Typ", "Währung", "Referenz", "BTC-Adresse", "Kurs", "Einheit (Kurs)", "BTC vor Gebühr", "Menge vor Gebühr", "Einheit (Menge vor Gebühr)", "BTC nach Bitcoin.de-Gebühr", "Menge nach Bitcoin.de-Gebühr", "Einheit (Menge nach Bitcoin.de-Gebühr)", "Zu- / Abgang", "Kontostand"],
+    ];
 
-        // Check for new English format
-        let english_headers: &[&str] = &["date", "Booking type", "currency", "reference", "BTC-Address", "Rate", "unit (rate)", "BTC before fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "incoming / outgoing", "balance"];
-        if headers == english_headers {
-            return Ok(true);
-        }
-
-        // Check for new German format
-        let german_headers: &[&str] = &["Datum", "Typ", "Währung", "Referenz", "BTC-Adresse", "Kurs", "Einheit (Kurs)", "BTC vor Gebühr", "Menge vor Gebühr", "Einheit (Menge vor Gebühr)", "BTC nach Bitcoin.de-Gebühr", "Menge nach Bitcoin.de-Gebühr", "Einheit (Menge nach Bitcoin.de-Gebühr)", "Zu- / Abgang", "Kontostand"];
-        if headers == german_headers {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
+    Ok(rdr.headers().is_ok_and(|headers| {
+        KNOWN_FORMATS.iter().any(|format_headers| headers == *format_headers)
+    }))
 }
 
 // loads a bitcoin.de CSV file into a list of unified transactions
@@ -225,7 +204,7 @@ mod tests {
 
         for (path, format_name) in test_files {
             let path = Path::new(path);
-            
+
             // Verify header detection works
             assert!(is_bitcoin_de_csv(path).unwrap(), "Failed to detect {} format", format_name);
 
