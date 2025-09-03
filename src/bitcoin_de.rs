@@ -129,9 +129,11 @@ pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
         .delimiter(b';')
         .from_reader(buf_reader);
 
-    const KNOWN_FORMATS: [&[&str]; 3] = [
+    const KNOWN_FORMATS: [&[&str]; 4] = [
         // Original format
         &["Date", "Type", "Currency", "Reference", "BTC-address", "Price", "unit (rate)", "BTC incl. fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "Incoming / Outgoing", "Account balance"],
+        // Original format (extended)
+        &["Date", "Type", "Currency", "Reference", "BTC-address", "Price", "unit (rate)", "BTC incl. fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "EUR excl. Bitcoin.de and Fidor fee", "Incoming / Outgoing", "Account balance"],
         // New English format
         &["date", "Booking type", "currency", "reference", "BTC-Address", "Rate", "unit (rate)", "BTC before fee", "amount before fee", "unit (amount before fee)", "BTC excl. Bitcoin.de fee", "amount after Bitcoin.de-fee", "unit (amount after Bitcoin.de-fee)", "incoming / outgoing", "balance"],
         // New German format
@@ -144,10 +146,6 @@ pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
 }
 
 // loads a bitcoin.de CSV file into a list of unified transactions
-// Supports multiple CSV formats:
-// - Original format (Date;Type;Currency;...)
-// - New English format (date;"Booking type";currency;...)
-// - New German format (Datum;Typ;Währung;...)
 pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
@@ -162,6 +160,14 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>>
             Ok(tx) => transactions.push(tx),
             Err(_) => continue,  // Skip non-transaction records like Registration
         };
+    }
+
+    // reverse the transactions when the last transaction happened before the first
+    // (new CSV exports appear to be ordered in reverse)
+    if let Some(last) = transactions.last() {
+        if last.timestamp < transactions.first().unwrap().timestamp {
+            transactions.reverse();
+        }
     }
 
     // bitcoin.de reports disbursement fees separately. Merge them where possible.
