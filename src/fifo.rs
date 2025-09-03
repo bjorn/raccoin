@@ -1,9 +1,31 @@
 use std::{collections::{VecDeque, HashMap}, path::Path};
 
 use anyhow::Result;
-use chrono::{NaiveDateTime, TimeZone, Local};
+use chrono::{NaiveDateTime, TimeZone, Local, Duration, Months};
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Serialize;
+
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub enum HoldingPeriod {
+    Days(u32),
+    Months(u32),
+    Years(u32),
+}
+
+impl HoldingPeriod {
+    fn add_to(self, dt: NaiveDateTime) -> NaiveDateTime {
+        match self {
+            HoldingPeriod::Days(d) => dt + Duration::days(d as i64),
+            HoldingPeriod::Months(m) => dt
+                .checked_add_months(Months::new(m))
+                .expect("month addition should not overflow"),
+            HoldingPeriod::Years(y) => dt
+                .checked_add_months(Months::new(12 * y))
+                .expect("year addition should not overflow"),
+        }
+    }
+}
 
 use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_date_time};
 
@@ -37,8 +59,14 @@ pub(crate) struct CapitalGain {
 }
 
 impl CapitalGain {
+    pub(crate) fn is_held_for_at_least(&self, period: HoldingPeriod) -> bool {
+        let threshold = period.add_to(self.bought);
+        self.sold >= threshold
+    }
+
     pub(crate) fn long_term(&self) -> bool {
-        (self.sold - self.bought) > chrono::Duration::days(365)
+        // Calendar-aware: 12 months from the buy timestamp
+        self.is_held_for_at_least(HoldingPeriod::Years(1))
     }
 
     pub(crate) fn profit(&self) -> Decimal {
@@ -395,9 +423,50 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) ->
             cost: gain.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             proceeds: gain.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             gain_or_loss: (gain.proceeds - gain.cost).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
-            long_term: (gain.sold - gain.bought) > chrono::Duration::days(365),
+            long_term: gain.long_term(),
         })?;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDateTime;
+    use rust_decimal::Decimal;
+
+    fn gain(bought: &str, sold: &str) -> CapitalGain {
+        let bought = NaiveDateTime::parse_from_str(bought, "%Y-%m-%d %H:%M:%S").unwrap();
+        let sold = NaiveDateTime::parse_from_str(sold, "%Y-%m-%d %H:%M:%S").unwrap();
+        
+        CapitalGain {
+            bought,
+            bought_tx_index: 0,
+            sold,
+            sold_tx_index: 0,
+            amount: Amount::new(Decimal::ONE, "BTC".to_string()),
+            cost: Decimal::ZERO,
+            proceeds: Decimal::ZERO,
+        }
+    }
+
+    #[test]
+    fn long_term_exact_calendar_year_regular() {
+        assert!(!gain("2021-01-01 00:00:00", "2021-12-31 23:59:59").long_term());
+        assert!(gain("2021-01-01 00:00:00", "2022-01-01 00:00:00").long_term());
+    }
+
+    #[test]
+    fn long_term_leap_feb29_to_feb28() {
+        assert!(!gain("2020-02-29 12:00:00", "2021-02-28 11:59:59").long_term());
+        assert!(gain("2020-02-29 12:00:00", "2021-02-28 12:00:00").long_term());
+    }
+
+    #[test]
+    fn configurable_days_183_threshold() {
+        // 183 days from 2021-01-01 00:00:00 is 2021-07-03 00:00:00
+        assert!(!gain("2021-01-01 00:00:00", "2021-07-02 23:59:59").is_held_for_at_least(HoldingPeriod::Days(183)));
+        assert!(gain("2021-01-01 00:00:00", "2021-07-03 00:00:00").is_held_for_at_least(HoldingPeriod::Days(183)));
+    }
 }
