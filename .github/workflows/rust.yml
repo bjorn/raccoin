@@ -64,6 +64,8 @@ jobs:
           target/x86_64-apple-darwin/release/raccoin \
           target/aarch64-apple-darwin/release/raccoin \
           -output target/release/raccoin
+    - name: Create .icns file
+      run: iconutil -c icns raccoin_ui/ui/icons/Raccoin.iconset
     - run: cargo install cargo-packager --locked
     - run: cargo packager --release
     - run: ditto -c -k --sequesterRsrc --keepParent target/release/Raccoin.app Raccoin.app.zip
