@@ -29,21 +29,96 @@ impl HoldingPeriod {
 
 use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_date_time};
 
-// Temporary bookkeeping entry for FIFO
-#[derive(Debug)]
-pub(crate) struct Entry {
+/// A single entry in the FIFO (First-In-First-Out) queue representing a
+/// cryptocurrency acquisition.
+///
+/// This structure tracks an individual purchase or acquisition of
+/// cryptocurrency holdings, including when it was acquired, its cost basis, and
+/// how much of the original amount remains to be disposed of. Each entry
+/// represents a "lot" of cryptocurrency that will be consumed in FIFO order
+/// when calculating capital gains for disposals.
+#[derive(Debug, Clone)]
+pub(crate) struct Lot {
+    /// The timestamp when this cryptocurrency was acquired
     timestamp: NaiveDateTime,
+
+    /// The index of the transaction that created this FIFO entry
     tx_index: usize,
+
+    /// The unit price paid for each unit of cryptocurrency in this entry.
+    /// Contains `Err(GainError)` if the cost basis could not be determined
+    /// (e.g., missing fiat value), in which case a zero cost basis is used.
     unit_price: Result<Decimal, GainError>,
-    remaining: Decimal,
+
+    /// The remaining quantity of cryptocurrency in this entry that has not yet
+    /// been disposed of. This value decreases as holdings are sold or disposed of.
+    quantity: Decimal,
 }
 
-impl Entry {
+impl Lot {
     fn cost_base(&self) -> Decimal {
         match self.unit_price {
-            Ok(unit_price) => unit_price * self.remaining,
+            Ok(unit_price) => unit_price * self.quantity,
             Err(_) => Decimal::ZERO
         }
+    }
+}
+
+/// A queue for managing cryptocurrency lots using FIFO (First-In-First-Out)
+/// ordering.
+///
+/// This structure maintains a queue of lots ordered by acquisition time (oldest
+/// first)
+///
+/// When disposing of holdings, the oldest entries are processed first to comply
+/// with FIFO accounting rules for capital gains calculations.
+#[derive(Default)]
+pub(crate) struct LotQueue {
+    /// Queue of lots ordered by acquisition time (oldest first)
+    lots: VecDeque<Lot>,
+}
+
+impl LotQueue {
+    pub fn is_empty(&self) -> bool {
+        self.lots.is_empty()
+    }
+
+    fn add(&mut self, lot: Lot) {
+        self.lots.push_back(lot);
+    }
+
+    fn remove(&mut self, mut quantity: Decimal) -> (Vec<Lot>, Decimal) {
+        let mut removed_lots = Vec::new();
+
+        while let Some(lot) = self.lots.front_mut() {
+            if lot.quantity <= quantity {
+                // consume the lot and keep processing the remaining quantity
+                quantity -= lot.quantity;
+                removed_lots.push(self.lots.pop_front().unwrap());
+                continue;
+            }
+
+            // we finished processing the disposal
+            if !quantity.is_zero() {
+                lot.quantity -= quantity;
+                removed_lots.push(Lot {
+                    quantity,
+                    ..lot.clone()
+                });
+                quantity = Decimal::ZERO;
+            }
+            break;
+        }
+
+        (removed_lots, quantity)
+    }
+
+    fn total_quantity(&self) -> Decimal {
+        self.lots.iter().map(|e| e.quantity).sum()
+    }
+
+    fn total_cost_base(&self) -> Decimal {
+        self.lots.iter().map(Lot::cost_base).sum()
     }
 }
 
@@ -89,7 +164,7 @@ fn fiat_value(amount: Option<&Amount>) -> Result<Decimal, GainError> {
 
 pub(crate) struct FIFO {
     /// Holdings represented as a map of currency -> deque.
-    holdings: HashMap<String, VecDeque<Entry>>,
+    holdings: HashMap<String, LotQueue>,
 }
 
 impl FIFO {
@@ -244,78 +319,66 @@ impl FIFO {
         let currency_holdings = self.holdings_for_currency(outgoing.token_currency().as_ref().unwrap_or(&outgoing.currency));
 
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
-        let mut sold_quantity = outgoing.quantity;
-        if sold_quantity.is_zero() {
+        if outgoing.quantity.is_zero() {
             return Ok(capital_gains);
         }
 
-        let sold_unit_price = incoming_fiat / sold_quantity;
+        let sold_unit_price = incoming_fiat / outgoing.quantity;
         let mut cost_base_error = Ok(());
 
-        while let Some(holding) = currency_holdings.front_mut() {
-            if holding.timestamp > transaction.timestamp {
+        let (lots, missing_quantity) = currency_holdings.remove(outgoing.quantity);
+
+        for lot in lots {
+            if lot.timestamp > transaction.timestamp {
                 return Err(GainError::InvalidTransactionOrder);
             }
 
-            // we can process up to the amount in the holding entry
-            let processed_quantity = holding.remaining.min(sold_quantity);
-            let cost = match holding.unit_price {
-                Ok(price) => processed_quantity * price,
+            let cost = match lot.unit_price {
+                Ok(price) => lot.quantity * price,
                 Err(_) => {
                     cost_base_error = Err(GainError::MissingCostBase);
                     Decimal::ZERO
                 }
             };
-            let proceeds = processed_quantity * sold_unit_price;
+            let proceeds = lot.quantity * sold_unit_price;
 
             capital_gains.push(CapitalGain {
-                bought: holding.timestamp,
-                bought_tx_index: holding.tx_index,
+                bought: lot.timestamp,
+                bought_tx_index: lot.tx_index,
                 sold: transaction.timestamp,
                 sold_tx_index: transaction.index,
                 amount: Amount {
-                    quantity: processed_quantity,
+                    quantity: lot.quantity,
                     currency: outgoing.currency.clone(),
                     token_id: outgoing.token_id.clone(),
                 },
                 cost,
                 proceeds,
             });
-
-            sold_quantity -= processed_quantity;
-
-            if holding.remaining == processed_quantity {
-                // consume the holding and keep processing the remaining quantity
-                currency_holdings.pop_front();
-            } else {
-                // we finished processing the sale
-                holding.remaining -= processed_quantity;
-                break;
-            }
         }
 
-        if sold_quantity > Decimal::ZERO {
-            println!("warning: at {} a remaining sold amount of {} {} was not found in the holdings", transaction.timestamp, sold_quantity, outgoing.currency);
-            return Err(GainError::InsufficientBalance(Amount::new(sold_quantity, outgoing.currency.clone())));
+        if missing_quantity > Decimal::ZERO {
+            println!("warning: at {} a remaining sold amount of {} {} was not found in the holdings", transaction.timestamp, missing_quantity, outgoing.currency);
+            return Err(GainError::InsufficientBalance(Amount::new(missing_quantity, outgoing.currency.clone())));
         }
 
         cost_base_error.map(|_| capital_gains)
     }
 
     pub(crate) fn currency_balance(&self, currency: &str) -> Decimal {
-        self.holdings.get(currency).map_or(Decimal::ZERO, total_holdings)
+        self.holdings.get(currency).map_or(Decimal::ZERO, LotQueue::total_quantity)
     }
 
     pub(crate) fn currency_cost_base(&self, currency: &str) -> Decimal {
-        self.holdings.get(currency).map_or(Decimal::ZERO, |h| h.iter().map(|e| e.cost_base()).sum())
+        self.holdings.get(currency).map_or(Decimal::ZERO, LotQueue::total_cost_base)
     }
 
     /// Read-only access to the holdings.
-    pub(crate) fn holdings(&self) -> &HashMap<String, VecDeque<Entry>> {
+    pub(crate) fn holdings(&self) -> &HashMap<String, LotQueue> {
         &self.holdings
     }
 
-    fn holdings_for_currency(&mut self, currency: &str) -> &mut VecDeque<Entry> {
+    fn holdings_for_currency(&mut self, currency: &str) -> &mut LotQueue {
         // match self.holdings.get_mut(currency) {
         //     Some(vec) => vec,
         //     None => self.holdings.entry(currency.to_owned()).or_default(),
@@ -340,11 +403,11 @@ impl FIFO {
         }
 
         let unit_price = fiat_value(value).map(|value| value / amount.quantity);
-        self.holdings_for_currency(amount.token_currency().as_ref().unwrap_or(&amount.currency)).push_back(Entry {
+        self.holdings_for_currency(amount.token_currency().as_ref().unwrap_or(&amount.currency)).add(Lot {
             timestamp,
             tx_index: tx.index,
             unit_price,
-            remaining: amount.quantity,
+            quantity: amount.quantity,
         });
 
         Ok(Decimal::ZERO)
@@ -385,10 +448,6 @@ impl FIFO {
             Err(e) => Err(e),
         }
     }
-}
-
-fn total_holdings(holdings: &VecDeque<Entry>) -> Decimal {
-    holdings.iter().map(|e| e.remaining).sum()
 }
 
 pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) -> Result<()> {
@@ -439,7 +498,7 @@ mod tests {
     fn gain(bought: &str, sold: &str) -> CapitalGain {
         let bought = NaiveDateTime::parse_from_str(bought, "%Y-%m-%d %H:%M:%S").unwrap();
         let sold = NaiveDateTime::parse_from_str(sold, "%Y-%m-%d %H:%M:%S").unwrap();
-        
+
         CapitalGain {
             bought,
             bought_tx_index: 0,
