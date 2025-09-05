@@ -1,4 +1,4 @@
-use std::{path::Path, fmt, cmp::Ordering, collections::HashMap};
+use std::{borrow::Cow, cmp::Ordering, collections::HashMap, fmt, path::Path};
 
 use anyhow::Result;
 use chrono::{NaiveDateTime, Duration};
@@ -121,8 +121,11 @@ impl Amount {
         self.quantity.is_zero()
     }
 
-    pub(crate) fn token_currency(&self) -> Option<String> {
-        self.token_id.as_ref().map(|token_id| format!("{}:{}", token_id, self.currency))
+    pub(crate) fn effective_currency(&self) -> Cow<'_, str> {
+        match &self.token_id {
+            Some(token_id) => Cow::Owned(format!("{}:{}", token_id, self.currency)),
+            None => Cow::Borrowed(&self.currency),
+        }
     }
 
     pub(crate) fn try_add(&self, amount: &Amount) -> Option<Amount> {
