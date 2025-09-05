@@ -1129,7 +1129,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
         });
 
         // Make sure there is an entry for each held currency, even if it didn't generate gains or losses
-        fifo.holdings().iter().for_each(|(currency, holdings)| {
+        fifo.holdings().inner().iter().for_each(|(currency, holdings)| {
             if !holdings.is_empty() {
                 let _ = summary_for(&mut currencies, currency);
             }

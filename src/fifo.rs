@@ -79,14 +79,29 @@ pub(crate) struct LotQueue {
 }
 
 impl LotQueue {
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.lots.is_empty()
     }
 
+    /// Adds a lot to the queue while maintaining chronological order by timestamp.
     fn add(&mut self, lot: Lot) {
-        self.lots.push_back(lot);
+        // Most of the time we can just append at the end
+        if self.lots.back().map_or(true, |last_lot| last_lot.timestamp <= lot.timestamp) {
+            self.lots.push_back(lot);
+            return;
+        }
+
+        // Find the correct position to insert while maintaining timestamp order using binary search
+        let insert_index = self.lots.binary_search_by_key(&lot.timestamp, |existing_lot| existing_lot.timestamp)
+            .unwrap_or_else(|pos| pos);
+        self.lots.insert(insert_index, lot);
     }
 
+    /// Removes the specified quantity from the queue in FIFO order.
+    ///
+    /// Returns a tuple containing:
+    /// - A vector of lots that were consumed (fully or partially) to satisfy the removal
+    /// - The remaining quantity that couldn't be satisfied due to insufficient holdings
     fn remove(&mut self, mut quantity: Decimal) -> (Vec<Lot>, Decimal) {
         let mut removed_lots = Vec::new();
 
@@ -119,6 +134,40 @@ impl LotQueue {
 
     fn total_cost_base(&self) -> Decimal {
         self.lots.iter().map(Lot::cost_base).sum()
+    }
+}
+
+/// A collection of cryptocurrency holdings organized by currency.
+#[derive(Default)]
+pub(crate) struct Holdings {
+    lots_by_currency: HashMap<String, LotQueue>,
+}
+
+impl Holdings {
+    pub(crate) fn inner(&self) -> &HashMap<String, LotQueue> {
+        &self.lots_by_currency
+    }
+
+    fn add_lot(&mut self, currency: &str, lot: Lot) {
+        match self.lots_by_currency.get_mut(currency) {
+            Some(lots) => lots,
+            None => self.lots_by_currency.entry(currency.to_owned()).or_default(),
+        }.add(lot)
+    }
+
+    fn remove_lots(&mut self, currency: &str, quantity: Decimal) -> (Vec<Lot>, Decimal) {
+        match self.lots_by_currency.get_mut(currency) {
+            Some(lots) => lots.remove(quantity),
+            None => (vec![], quantity),
+        }
+    }
+
+    fn currency_balance(&self, currency: &str) -> Decimal {
+        self.lots_by_currency.get(currency).map_or(Decimal::ZERO, LotQueue::total_quantity)
+    }
+
+    fn currency_cost_base(&self, currency: &str) -> Decimal {
+        self.lots_by_currency.get(currency).map_or(Decimal::ZERO, LotQueue::total_cost_base)
     }
 }
 
@@ -163,14 +212,13 @@ fn fiat_value(amount: Option<&Amount>) -> Result<Decimal, GainError> {
 }
 
 pub(crate) struct FIFO {
-    /// Holdings represented as a map of currency -> deque.
-    holdings: HashMap<String, LotQueue>,
+    holdings: Holdings,
 }
 
 impl FIFO {
     pub(crate) fn new() -> Self {
         FIFO {
-            holdings: HashMap::new(),
+            holdings: Default::default(),
         }
     }
 
@@ -316,8 +364,6 @@ impl FIFO {
     /// Determines the capital gains made with this sale based on the oldest
     /// holdings and the current price. Consumes the holdings in the process.
     fn gains(&mut self, transaction: &Transaction, outgoing: &Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
-        let currency_holdings = self.holdings_for_currency(outgoing.token_currency().as_ref().unwrap_or(&outgoing.currency));
-
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
         if outgoing.quantity.is_zero() {
             return Ok(capital_gains);
@@ -326,7 +372,7 @@ impl FIFO {
         let sold_unit_price = incoming_fiat / outgoing.quantity;
         let mut cost_base_error = Ok(());
 
-        let (lots, missing_quantity) = currency_holdings.remove(outgoing.quantity);
+        let (lots, missing_quantity) = self.holdings.remove_lots(outgoing.token_currency().as_ref().unwrap_or(&outgoing.currency), outgoing.quantity);
 
         for lot in lots {
             if lot.timestamp > transaction.timestamp {
@@ -340,8 +386,6 @@ impl FIFO {
                     Decimal::ZERO
                 }
             };
-            let proceeds = lot.quantity * sold_unit_price;
-
             capital_gains.push(CapitalGain {
                 bought: lot.timestamp,
                 bought_tx_index: lot.tx_index,
@@ -353,7 +397,7 @@ impl FIFO {
                     token_id: outgoing.token_id.clone(),
                 },
                 cost,
-                proceeds,
+                proceeds: lot.quantity * sold_unit_price,
             });
         }
 
@@ -366,30 +410,16 @@ impl FIFO {
     }
 
     pub(crate) fn currency_balance(&self, currency: &str) -> Decimal {
-        self.holdings.get(currency).map_or(Decimal::ZERO, LotQueue::total_quantity)
+        self.holdings.currency_balance(currency)
     }
 
     pub(crate) fn currency_cost_base(&self, currency: &str) -> Decimal {
-        self.holdings.get(currency).map_or(Decimal::ZERO, LotQueue::total_cost_base)
+        self.holdings.currency_cost_base(currency)
     }
 
     /// Read-only access to the holdings.
-    pub(crate) fn holdings(&self) -> &HashMap<String, LotQueue> {
+    pub(crate) fn holdings(&self) -> &Holdings {
         &self.holdings
-    }
-
-    fn holdings_for_currency(&mut self, currency: &str) -> &mut LotQueue {
-        // match self.holdings.get_mut(currency) {
-        //     Some(vec) => vec,
-        //     None => self.holdings.entry(currency.to_owned()).or_default(),
-        // }
-        // Why does the above not work? It would avoid one needles lookup...
-        // (see https://rust-lang.github.io/rfcs/2094-nll.html#problem-case-3-conditional-control-flow-across-functions)
-        if self.holdings.contains_key(currency) {
-            self.holdings.get_mut(currency).unwrap()
-        } else {
-            self.holdings.entry(currency.to_owned()).or_default()
-        }
     }
 
     fn add_holdings(&mut self, tx: &Transaction, amount: &Amount, value: Option<&Amount>) -> Result<Decimal, GainError> {
@@ -403,7 +433,7 @@ impl FIFO {
         }
 
         let unit_price = fiat_value(value).map(|value| value / amount.quantity);
-        self.holdings_for_currency(amount.token_currency().as_ref().unwrap_or(&amount.currency)).add(Lot {
+        self.holdings.add_lot(amount.token_currency().as_ref().unwrap_or(&amount.currency), Lot {
             timestamp,
             tx_index: tx.index,
             unit_price,
