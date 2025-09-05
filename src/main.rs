@@ -941,8 +941,64 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
         }
     }
 
-    unmatched_sends_receives.iter().for_each(|unmatched_send| {
-        let tx = &mut transactions[*unmatched_send];
+    for (send_index, receive_index) in matching_pairs {
+        // Derive the fee based on received amount and sent amount
+        enum MatchResult {
+            NoAdjustment,
+            AdjustFee(Amount, Amount), // (adjusted_send_amount, adjusted_fee)
+            AbortMatch,
+        }
+
+        let match_result = match (&transactions[send_index].operation, &transactions[receive_index].operation) {
+            (Operation::Send(sent), Operation::Receive(received)) if received.quantity < sent.quantity => {
+                assert!(sent.currency == received.currency);
+
+                let implied_fee = Amount::new(sent.quantity - received.quantity, sent.currency.clone());
+                match &transactions[send_index].fee {
+                    Some(existing_fee) => {
+                        if existing_fee.currency != implied_fee.currency {
+                            println!("warning: send/receive amounts imply fee, but existing fee is set in a different currency for transaction {:?}", transactions[send_index]);
+                            MatchResult::AbortMatch
+                        } else if existing_fee.quantity != implied_fee.quantity {
+                            println!("warning: replacing existing fee {:} with implied fee of {:} and adjusting sent amount to {:}", existing_fee, implied_fee, received);
+                            MatchResult::AdjustFee(received.clone(), implied_fee)
+                        } else {
+                            println!("warning: fee {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:}", existing_fee, sent, received);
+                            MatchResult::AdjustFee(received.clone(), implied_fee)
+                        }
+                    }
+                    None => {
+                        println!("warning: a fee of {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:} and setting fee", implied_fee, sent, received);
+                        MatchResult::AdjustFee(received.clone(), implied_fee)
+                    }
+                }
+            }
+            _ => MatchResult::NoAdjustment,
+        };
+
+        match match_result {
+            MatchResult::AbortMatch => {
+                // Move matched transactions back to unmatched
+                unmatched_sends_receives.push(send_index);
+                unmatched_sends_receives.push(receive_index);
+                continue;
+            }
+            MatchResult::AdjustFee(adjusted_send_amount, adjusted_fee) => {
+                let tx = &mut transactions[send_index];
+                tx.fee = Some(adjusted_fee);
+                if let Operation::Send(send_amount) = &mut tx.operation {
+                    *send_amount = adjusted_send_amount;
+                }
+            }
+            MatchResult::NoAdjustment => {}
+        }
+
+        transactions[send_index].matching_tx = Some(receive_index);
+        transactions[receive_index].matching_tx = Some(send_index);
+    }
+
+    unmatched_sends_receives.iter().for_each(|unmatched_tx| {
+        let tx = &mut transactions[*unmatched_tx];
         match &tx.operation {
             // Turn unmatched Sends into Sells
             Operation::Send(amount) => {
@@ -955,47 +1011,6 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
             _ => unreachable!("only Send and Receive transactions can be unmatched"),
         }
     });
-
-    for (send_index, receive_index) in matching_pairs {
-        transactions[send_index].matching_tx = Some(receive_index);
-        transactions[receive_index].matching_tx = Some(send_index);
-
-        // Derive the fee based on received amount and sent amount
-        let adjusted = match (&transactions[send_index].operation, &transactions[receive_index].operation) {
-            (Operation::Send(sent), Operation::Receive(received)) if received.quantity < sent.quantity => {
-                assert!(sent.currency == received.currency);
-
-                let implied_fee = Amount::new(sent.quantity - received.quantity, sent.currency.clone());
-                match &transactions[send_index].fee {
-                    Some(existing_fee) => {
-                        if existing_fee.currency != implied_fee.currency {
-                            println!("warning: send/receive amounts imply fee, but existing fee is set in a different currency for transaction {:?}", transactions[send_index]);
-                            None
-                        } else if existing_fee.quantity != implied_fee.quantity {
-                            println!("warning: replacing existing fee {:} with implied fee of {:} and adjusting sent amount to {:}", existing_fee, implied_fee, received);
-                            Some((received.clone(), implied_fee))
-                        } else {
-                            println!("warning: fee {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:}", existing_fee, sent, received);
-                            Some((received.clone(), implied_fee))
-                        }
-                    }
-                    None => {
-                        println!("warning: a fee of {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:} and setting fee", implied_fee, sent, received);
-                        Some((received.clone(), implied_fee))
-                    }
-                }
-            }
-            _ => None,
-        };
-
-        if let Some((adjusted_send_amount, adjusted_fee)) = adjusted {
-            let tx = &mut transactions[send_index];
-            tx.fee = Some(adjusted_fee);
-            if let Operation::Send(send_amount) = &mut tx.operation {
-                *send_amount = adjusted_send_amount;
-            }
-        }
-    }
 }
 
 fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_history: &PriceHistory) {
@@ -1059,6 +1074,11 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
         }
     }
 
+    // Build metadata for cross-slice lookups (global -> wallet_index)
+    let tx_meta: Vec<fifo::TxMeta> = transactions.iter().map(|tx| fifo::TxMeta {
+        wallet_index: tx.wallet_index,
+    }).collect();
+
     // Process transactions per-year
     let mut fifo = FIFO::with_tracking(tracking);
     let mut reports: Vec<TaxReport> = transactions.linear_group_by_key_mut(|tx| tx.timestamp.year()).map(|txs| {
@@ -1077,7 +1097,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
         });
 
         let year = txs.first().unwrap().timestamp.year();
-        let gains = fifo.process(txs);
+        let gains = fifo.process(txs, &tx_meta);
 
         let mut short_term_cost = Decimal::ZERO;
         let mut short_term_proceeds = Decimal::ZERO;

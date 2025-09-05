@@ -224,6 +224,11 @@ enum CostBasis {
     PerWallet(Vec<Holdings>),
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TxMeta {
+    pub wallet_index: usize,
+}
+
 pub(crate) struct FIFO {
     // Where holdings live (universal or one per wallet)
     cost_basis: CostBasis,
@@ -244,25 +249,25 @@ impl FIFO {
     }
 
     fn get_holdings_mut(&mut self, tx: &Transaction) -> &mut Holdings {
-        match &mut (&mut *self).cost_basis {
+        self.get_holdings_for_wallet_index_mut(tx.wallet_index)
+    }
+
+    fn get_holdings_for_wallet_index_mut(&mut self, wallet_index: usize) -> &mut Holdings {
+        match &mut self.cost_basis {
             CostBasis::Universal(h) => h,
             CostBasis::PerWallet(vec) => {
-                if tx.wallet_index >= vec.len() {
-                    vec.resize_with(tx.wallet_index + 1, Holdings::default);
+                if wallet_index >= vec.len() {
+                    vec.resize_with(wallet_index + 1, Holdings::default);
                 }
-                &mut vec[tx.wallet_index]
+                &mut vec[wallet_index]
             }
         }
     }
 
-    pub(crate) fn process(&mut self, transactions: &mut [Transaction]) -> Vec<CapitalGain> {
+    pub(crate) fn process(&mut self, year_txs: &mut [Transaction], tx_meta: &[TxMeta]) -> Vec<CapitalGain> {
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
 
-        for i in 0..transactions.len() {
-            // Split the slice to safely access the matching tx while mutably borrowing the current one
-            let (before, tail) = transactions.split_at_mut(i);
-            let (transaction, after) = tail.split_first_mut().unwrap();
-
+        for transaction in year_txs.iter_mut() {
             let mut fee = transaction.fee.as_ref();
             let mut fee_value = transaction.fee_value.as_ref();
 
@@ -375,13 +380,8 @@ impl FIFO {
                     assert!(transaction.matching_tx.is_some(), "Unmatched Receive should have been changed to Buy");
                     if self.is_per_wallet() && !received_amount.is_fiat() {
                         let send_index = transaction.matching_tx.expect("Receive should have matched a Send");
-                        // Access the matching send transaction safely
-                        let send_tx = if send_index < i {
-                            &before[send_index]
-                        } else {
-                            &after[send_index - i - 1]
-                        };
-                        self.transfer_holdings(send_tx, transaction, received_amount);
+                        let meta = &tx_meta[send_index];
+                        self.transfer_holdings(meta.wallet_index, transaction, received_amount);
                     }
                 }
             }
@@ -536,41 +536,36 @@ impl FIFO {
         }
     }
 
-    /// Transfers holdings from one wallet to another for a matched Send/Receive (PerWallet mode).
-    fn transfer_holdings(&mut self, send_tx: &Transaction, receive_tx: &Transaction, received_amount: &Amount) {
+    /// Transfers lots from one wallet to another for a matched Send/Receive (PerWallet mode).
+    fn transfer_holdings(&mut self, sender_wallet_index: usize, receive_tx: &Transaction, received_amount: &Amount) {
         // No-op if both transactions are for the same wallet
-        if send_tx.wallet_index == receive_tx.wallet_index {
+        if sender_wallet_index == receive_tx.wallet_index {
             return;
         }
-        if let Operation::Send(_sent_amount) = &send_tx.operation {
-            // Determine currency and quantity to transfer (use the received quantity)
-            let currency = received_amount.effective_currency();
-            let quantity = received_amount.quantity;
+        // Determine currency and quantity to transfer (use the received quantity)
+        let currency = received_amount.effective_currency();
+        let quantity = received_amount.quantity;
 
-            // Remove from sender wallet holdings (FIFO)
-            let sender_holdings = self.get_holdings_mut(send_tx);
-            let (mut lots, missing_quantity) = sender_holdings.remove_lots(&currency, quantity);
+        // Remove from sender wallet holdings (FIFO)
+        let sender_holdings = self.get_holdings_for_wallet_index_mut(sender_wallet_index);
+        let (mut lots, missing_quantity) = sender_holdings.remove_lots(&currency, quantity);
 
-            // Add the removed lots to the receiver wallet holdings preserving acquisition data
-            let receiver_holdings = self.get_holdings_mut(receive_tx);
-            for lot in lots.drain(..) {
-                receiver_holdings.add_lot(&currency, lot);
-            }
+        // Add the removed lots to the receiver wallet holdings preserving acquisition data
+        let receiver_holdings = self.get_holdings_mut(receive_tx);
+        for lot in lots.drain(..) {
+            receiver_holdings.add_lot(&currency, lot);
+        }
 
-            // If some quantity is missing, synthesize a lot with cost basis from the receive transaction and warn
-            if missing_quantity > Decimal::ZERO {
-                println!("warning: at {} a remaining transferred amount of {} {} was not found in the sender holdings", receive_tx.timestamp, missing_quantity, &currency);
-                let unit_price = fiat_value(receive_tx.value.as_ref()).map(|value| value / quantity);
-                receiver_holdings.add_lot(&currency, Lot {
-                    timestamp: receive_tx.timestamp,
-                    tx_index: receive_tx.index,
-                    unit_price,
-                    quantity: missing_quantity,
-                });
-            }
-        } else {
-            // Should not happen: matched tx for Receive must be Send
-            assert!(false, "Receive matched with non-Send transaction");
+        // If some quantity is missing, synthesize a lot with cost basis from the receive transaction and warn
+        if missing_quantity > Decimal::ZERO {
+            println!("warning: at {} a remaining transferred amount of {} {} was not found in the sender holdings", receive_tx.timestamp, missing_quantity, &currency);
+            let unit_price = fiat_value(receive_tx.value.as_ref()).map(|value| value / quantity);
+            receiver_holdings.add_lot(&currency, Lot {
+                timestamp: receive_tx.timestamp,
+                tx_index: receive_tx.index,
+                unit_price,
+                quantity: missing_quantity,
+            });
         }
     }
 }
