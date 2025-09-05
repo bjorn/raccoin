@@ -27,7 +27,7 @@ use base::{Operation, Amount, Transaction, cmc_id, PriceHistory};
 use chrono::{Duration, Datelike, Utc, TimeZone, Local};
 use directories::ProjectDirs;
 use raccoin_ui::*;
-use fifo::{FIFO, CapitalGain};
+use fifo::{FIFO, CapitalGain, CostBasisTracking};
 use regex::{Regex, RegexBuilder};
 use rust_decimal_macros::dec;
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -286,6 +286,8 @@ struct Portfolio {
     ignored_currencies: Vec<String>,
     #[serde(default)]
     merge_consecutive_trades: bool,
+    #[serde(default)]
+    cost_basis_tracking: CostBasisTracking,
 }
 
 #[derive(Default, Clone)]
@@ -500,7 +502,7 @@ impl App {
 
     fn refresh_transactions(&mut self) {
         self.transactions = load_transactions(&mut self.portfolio, &self.price_history).unwrap_or_default();
-        self.reports = calculate_tax_reports(&mut self.transactions);
+        self.reports = calculate_tax_reports(&mut self.transactions, self.portfolio.cost_basis_tracking);
     }
 
     fn ui(&self) -> AppWindow {
@@ -1044,7 +1046,7 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
     transactions.iter_mut().for_each(estimate_transaction_value);
 }
 
-fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> {
+fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasisTracking) -> Vec<TaxReport> {
     let mut currencies = Vec::<CurrencySummary>::new();
 
     fn summary_for<'a>(currencies: &'a mut Vec<CurrencySummary>, currency: &str) -> &'a mut CurrencySummary {
@@ -1058,7 +1060,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
     }
 
     // Process transactions per-year
-    let mut fifo = FIFO::new();
+    let mut fifo = FIFO::with_tracking(tracking);
     let mut reports: Vec<TaxReport> = transactions.linear_group_by_key_mut(|tx| tx.timestamp.year()).map(|txs| {
         // prepare currency summary
         currencies.retain_mut(|summary| {
@@ -1128,16 +1130,18 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>) -> Vec<TaxReport> 
             }
         });
 
+        let holdings_snapshot = fifo.holdings();
+
         // Make sure there is an entry for each held currency, even if it didn't generate gains or losses
-        fifo.holdings().inner().iter().for_each(|(currency, holdings)| {
-            if !holdings.is_empty() {
+        holdings_snapshot.inner().iter().for_each(|(currency, lots)| {
+            if !lots.is_empty() {
                 let _ = summary_for(&mut currencies, currency);
             }
         });
 
         currencies.iter_mut().for_each(|summary| {
-            summary.balance_end = fifo.currency_balance(&summary.currency);
-            summary.cost_end = fifo.currency_cost_base(&summary.currency);
+            summary.balance_end = holdings_snapshot.currency_balance(&summary.currency);
+            summary.cost_end = holdings_snapshot.currency_cost_base(&summary.currency);
             summary.capital_profit_loss = summary.proceeds - summary.cost - summary.fees;
             summary.total_profit_loss = summary.capital_profit_loss + summary.income;
 
