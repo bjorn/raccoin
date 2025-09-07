@@ -381,7 +381,7 @@ impl FIFO {
                     if self.is_per_wallet() && !received_amount.is_fiat() {
                         let send_index = transaction.matching_tx.expect("Receive should have matched a Send");
                         let meta = &tx_meta[send_index];
-                        self.transfer_holdings(meta.wallet_index, transaction, received_amount);
+                        self.transfer_holdings(meta.wallet_index, transaction, received_amount, &mut tx_gain);
                     }
                 }
             }
@@ -537,7 +537,7 @@ impl FIFO {
     }
 
     /// Transfers lots from one wallet to another for a matched Send/Receive (PerWallet mode).
-    fn transfer_holdings(&mut self, sender_wallet_index: usize, receive_tx: &Transaction, received_amount: &Amount) {
+    fn transfer_holdings(&mut self, sender_wallet_index: usize, receive_tx: &Transaction, received_amount: &Amount, tx_gain: &mut Option<Result<Decimal, GainError>>) {
         // No-op if both transactions are for the same wallet
         if sender_wallet_index == receive_tx.wallet_index {
             return;
@@ -566,6 +566,8 @@ impl FIFO {
                 unit_price,
                 quantity: missing_quantity,
             });
+            // Assign the appropriate error to tx_gain
+            *tx_gain = Some(Err(GainError::InsufficientBalance(Amount::new(missing_quantity, currency.into_owned()))));
         }
     }
 }
