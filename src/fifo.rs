@@ -3,7 +3,7 @@ use std::{collections::{VecDeque, HashMap}, path::Path};
 use anyhow::Result;
 use chrono::{NaiveDateTime, TimeZone, Local, Duration, Months};
 use rust_decimal::{Decimal, RoundingStrategy};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
@@ -29,21 +29,145 @@ impl HoldingPeriod {
 
 use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_date_time};
 
-// Temporary bookkeeping entry for FIFO
-#[derive(Debug)]
-pub(crate) struct Entry {
+/// A single entry in the FIFO (First-In-First-Out) queue representing a
+/// cryptocurrency acquisition.
+///
+/// This structure tracks an individual purchase or acquisition of
+/// cryptocurrency holdings, including when it was acquired, its cost basis, and
+/// how much of the original amount remains to be disposed of. Each entry
+/// represents a "lot" of cryptocurrency that will be consumed in FIFO order
+/// when calculating capital gains for disposals.
+#[derive(Clone)]
+pub(crate) struct Lot {
+    /// The timestamp when this cryptocurrency was acquired
     timestamp: NaiveDateTime,
+
+    /// The index of the transaction that created this FIFO entry
     tx_index: usize,
+
+    /// The unit price paid for each unit of cryptocurrency in this entry.
+    /// Contains `Err(GainError)` if the cost basis could not be determined
+    /// (e.g., missing fiat value), in which case a zero cost basis is used.
     unit_price: Result<Decimal, GainError>,
-    remaining: Decimal,
+
+    /// The remaining quantity of cryptocurrency in this entry that has not yet
+    /// been disposed of. This value decreases as holdings are sold or disposed of.
+    quantity: Decimal,
 }
 
-impl Entry {
+impl Lot {
     fn cost_base(&self) -> Decimal {
         match self.unit_price {
-            Ok(unit_price) => unit_price * self.remaining,
+            Ok(unit_price) => unit_price * self.quantity,
             Err(_) => Decimal::ZERO
         }
+    }
+}
+
+/// A queue for managing cryptocurrency lots using FIFO (First-In-First-Out)
+/// ordering.
+///
+/// This structure maintains a queue of lots ordered by acquisition time (oldest
+/// first)
+///
+/// When disposing of holdings, the oldest entries are processed first to comply
+/// with FIFO accounting rules for capital gains calculations.
+#[derive(Default, Clone)]
+pub(crate) struct LotQueue {
+    /// Queue of lots ordered by acquisition time (oldest first)
+    lots: VecDeque<Lot>,
+}
+
+impl LotQueue {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.lots.is_empty()
+    }
+
+    /// Adds a lot to the queue while maintaining chronological order by timestamp.
+    fn add(&mut self, lot: Lot) {
+        // Most of the time we can just append at the end
+        if self.lots.back().map_or(true, |last_lot| last_lot.timestamp <= lot.timestamp) {
+            self.lots.push_back(lot);
+            return;
+        }
+
+        // Find the correct position to insert while maintaining timestamp order using binary search
+        let insert_index = self.lots.binary_search_by_key(&lot.timestamp, |existing_lot| existing_lot.timestamp)
+            .unwrap_or_else(|pos| pos);
+        self.lots.insert(insert_index, lot);
+    }
+
+    /// Removes the specified quantity from the queue in FIFO order.
+    ///
+    /// Returns a tuple containing:
+    /// - A vector of lots that were consumed (fully or partially) to satisfy the removal
+    /// - The remaining quantity that couldn't be satisfied due to insufficient holdings
+    fn remove(&mut self, mut quantity: Decimal) -> (Vec<Lot>, Decimal) {
+        let mut removed_lots = Vec::new();
+
+        while let Some(lot) = self.lots.front_mut() {
+            if lot.quantity <= quantity {
+                // consume the lot and keep processing the remaining quantity
+                quantity -= lot.quantity;
+                removed_lots.push(self.lots.pop_front().unwrap());
+                continue;
+            }
+
+            // we finished processing the disposal
+            if !quantity.is_zero() {
+                lot.quantity -= quantity;
+                removed_lots.push(Lot {
+                    quantity,
+                    ..lot.clone()
+                });
+                quantity = Decimal::ZERO;
+            }
+            break;
+        }
+
+        (removed_lots, quantity)
+    }
+
+    fn total_quantity(&self) -> Decimal {
+        self.lots.iter().map(|e| e.quantity).sum()
+    }
+
+    fn total_cost_base(&self) -> Decimal {
+        self.lots.iter().map(Lot::cost_base).sum()
+    }
+}
+
+/// A collection of cryptocurrency holdings organized by currency.
+#[derive(Default, Clone)]
+pub(crate) struct Holdings {
+    lots_by_currency: HashMap<String, LotQueue>,
+}
+
+impl Holdings {
+    pub(crate) fn inner(&self) -> &HashMap<String, LotQueue> {
+        &self.lots_by_currency
+    }
+
+    fn add_lot(&mut self, currency: &str, lot: Lot) {
+        match self.lots_by_currency.get_mut(currency) {
+            Some(lots) => lots,
+            None => self.lots_by_currency.entry(currency.to_owned()).or_default(),
+        }.add(lot)
+    }
+
+    fn remove_lots(&mut self, currency: &str, quantity: Decimal) -> (Vec<Lot>, Decimal) {
+        match self.lots_by_currency.get_mut(currency) {
+            Some(lots) => lots.remove(quantity),
+            None => (vec![], quantity),
+        }
+    }
+
+    pub(crate) fn currency_balance(&self, currency: &str) -> Decimal {
+        self.lots_by_currency.get(currency).map_or(Decimal::ZERO, LotQueue::total_quantity)
+    }
+
+    pub(crate) fn currency_cost_base(&self, currency: &str) -> Decimal {
+        self.lots_by_currency.get(currency).map_or(Decimal::ZERO, LotQueue::total_cost_base)
     }
 }
 
@@ -87,22 +211,63 @@ fn fiat_value(amount: Option<&Amount>) -> Result<Decimal, GainError> {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+pub(crate) enum CostBasisTracking {
+    #[default]
+    Universal,
+    PerWallet,
+}
+
+// Internal storage for holdings
+enum CostBasis {
+    Universal(Holdings),
+    PerWallet(Vec<Holdings>),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TxMeta {
+    pub wallet_index: usize,
+}
+
 pub(crate) struct FIFO {
-    /// Holdings represented as a map of currency -> deque.
-    holdings: HashMap<String, VecDeque<Entry>>,
+    // Where holdings live (universal or one per wallet)
+    cost_basis: CostBasis,
 }
 
 impl FIFO {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn with_tracking(tracking: CostBasisTracking) -> Self {
         FIFO {
-            holdings: HashMap::new(),
+            cost_basis: match tracking {
+                CostBasisTracking::Universal => CostBasis::Universal(Default::default()),
+                CostBasisTracking::PerWallet => CostBasis::PerWallet(Vec::new()),
+            },
         }
     }
 
-    pub(crate) fn process(&mut self, transactions: &mut [Transaction]) -> Vec<CapitalGain> {
+    fn is_per_wallet(&self) -> bool {
+        matches!(self.cost_basis, CostBasis::PerWallet(_))
+    }
+
+    fn get_holdings_mut(&mut self, tx: &Transaction) -> &mut Holdings {
+        self.get_holdings_for_wallet_index_mut(tx.wallet_index)
+    }
+
+    fn get_holdings_for_wallet_index_mut(&mut self, wallet_index: usize) -> &mut Holdings {
+        match &mut self.cost_basis {
+            CostBasis::Universal(h) => h,
+            CostBasis::PerWallet(vec) => {
+                if wallet_index >= vec.len() {
+                    vec.resize_with(wallet_index + 1, Holdings::default);
+                }
+                &mut vec[wallet_index]
+            }
+        }
+    }
+
+    pub(crate) fn process(&mut self, year_txs: &mut [Transaction], tx_meta: &[TxMeta]) -> Vec<CapitalGain> {
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
 
-        for transaction in transactions {
+        for transaction in year_txs.iter_mut() {
             let mut fee = transaction.fee.as_ref();
             let mut fee_value = transaction.fee_value.as_ref();
 
@@ -206,10 +371,18 @@ impl FIFO {
                 Operation::FiatWithdrawal(_) => {
                     // We're not tracking fiat at the moment (it's not relevant for tax purposes)
                 }
-                Operation::Receive(_) |
                 Operation::Send(_) => {
                     // Verify that these are matched as transfer, otherwise they should have been Buy/Sell
-                    assert!(transaction.matching_tx.is_some(), "no matching tx");
+                    assert!(transaction.matching_tx.is_some(), "Unmatched Send should have been changed to Sell");
+                }
+                Operation::Receive(received_amount) => {
+                    // Verify matched pair and, if per-wallet tracking, move lots from sender to receiver.
+                    assert!(transaction.matching_tx.is_some(), "Unmatched Receive should have been changed to Buy");
+                    if self.is_per_wallet() && !received_amount.is_fiat() {
+                        let send_index = transaction.matching_tx.expect("Receive should have matched a Send");
+                        let meta = &tx_meta[send_index];
+                        self.transfer_holdings(meta.wallet_index, transaction, received_amount, &mut tx_gain);
+                    }
                 }
             }
 
@@ -241,91 +414,67 @@ impl FIFO {
     /// Determines the capital gains made with this sale based on the oldest
     /// holdings and the current price. Consumes the holdings in the process.
     fn gains(&mut self, transaction: &Transaction, outgoing: &Amount, incoming_fiat: Decimal) -> Result<Vec<CapitalGain>, GainError> {
-        let currency_holdings = self.holdings_for_currency(outgoing.token_currency().as_ref().unwrap_or(&outgoing.currency));
-
         let mut capital_gains: Vec<CapitalGain> = Vec::new();
-        let mut sold_quantity = outgoing.quantity;
-        if sold_quantity.is_zero() {
+        if outgoing.quantity.is_zero() {
             return Ok(capital_gains);
         }
 
-        let sold_unit_price = incoming_fiat / sold_quantity;
+        let sold_unit_price = incoming_fiat / outgoing.quantity;
         let mut cost_base_error = Ok(());
 
-        while let Some(holding) = currency_holdings.front_mut() {
-            if holding.timestamp > transaction.timestamp {
+        let holdings = self.get_holdings_mut(transaction);
+        let (lots, missing_quantity) = holdings.remove_lots(outgoing.effective_currency().as_ref(), outgoing.quantity);
+
+        for lot in lots {
+            if lot.timestamp > transaction.timestamp {
                 return Err(GainError::InvalidTransactionOrder);
             }
 
-            // we can process up to the amount in the holding entry
-            let processed_quantity = holding.remaining.min(sold_quantity);
-            let cost = match holding.unit_price {
-                Ok(price) => processed_quantity * price,
+            let cost = match lot.unit_price {
+                Ok(price) => lot.quantity * price,
                 Err(_) => {
                     cost_base_error = Err(GainError::MissingCostBase);
                     Decimal::ZERO
                 }
             };
-            let proceeds = processed_quantity * sold_unit_price;
-
             capital_gains.push(CapitalGain {
-                bought: holding.timestamp,
-                bought_tx_index: holding.tx_index,
+                bought: lot.timestamp,
+                bought_tx_index: lot.tx_index,
                 sold: transaction.timestamp,
                 sold_tx_index: transaction.index,
                 amount: Amount {
-                    quantity: processed_quantity,
+                    quantity: lot.quantity,
                     currency: outgoing.currency.clone(),
                     token_id: outgoing.token_id.clone(),
                 },
                 cost,
-                proceeds,
+                proceeds: lot.quantity * sold_unit_price,
             });
-
-            sold_quantity -= processed_quantity;
-
-            if holding.remaining == processed_quantity {
-                // consume the holding and keep processing the remaining quantity
-                currency_holdings.pop_front();
-            } else {
-                // we finished processing the sale
-                holding.remaining -= processed_quantity;
-                break;
-            }
         }
 
-        if sold_quantity > Decimal::ZERO {
-            println!("warning: at {} a remaining sold amount of {} {} was not found in the holdings", transaction.timestamp, sold_quantity, outgoing.currency);
-            return Err(GainError::InsufficientBalance(Amount::new(sold_quantity, outgoing.currency.clone())));
+        if missing_quantity > Decimal::ZERO {
+            println!("warning: at {} a remaining sold amount of {} {} was not found in the holdings", transaction.timestamp, missing_quantity, outgoing.currency);
+            return Err(GainError::InsufficientBalance(Amount::new(missing_quantity, outgoing.currency.clone())));
         }
 
         cost_base_error.map(|_| capital_gains)
     }
 
-    pub(crate) fn currency_balance(&self, currency: &str) -> Decimal {
-        self.holdings.get(currency).map_or(Decimal::ZERO, total_holdings)
-    }
-
-    pub(crate) fn currency_cost_base(&self, currency: &str) -> Decimal {
-        self.holdings.get(currency).map_or(Decimal::ZERO, |h| h.iter().map(|e| e.cost_base()).sum())
-    }
-
-    /// Read-only access to the holdings.
-    pub(crate) fn holdings(&self) -> &HashMap<String, VecDeque<Entry>> {
-        &self.holdings
-    }
-
-    fn holdings_for_currency(&mut self, currency: &str) -> &mut VecDeque<Entry> {
-        // match self.holdings.get_mut(currency) {
-        //     Some(vec) => vec,
-        //     None => self.holdings.entry(currency.to_owned()).or_default(),
-        // }
-        // Why does the above not work? It would avoid one needles lookup...
-        // (see https://rust-lang.github.io/rfcs/2094-nll.html#problem-case-3-conditional-control-flow-across-functions)
-        if self.holdings.contains_key(currency) {
-            self.holdings.get_mut(currency).unwrap()
-        } else {
-            self.holdings.entry(currency.to_owned()).or_default()
+    /// Returns a copy of the current holdings, aggregated in case of per-wallet cost basis
+    pub(crate) fn holdings(&self) -> Holdings {
+        match &self.cost_basis {
+            CostBasis::Universal(h) => h.clone(),
+            CostBasis::PerWallet(vec) => {
+                let mut aggregate = Holdings::default();
+                for h in vec {
+                    for (currency, queue) in &h.lots_by_currency {
+                        for lot in &queue.lots {
+                            aggregate.add_lot(currency, lot.clone());
+                        }
+                    }
+                }
+                aggregate
+            }
         }
     }
 
@@ -340,11 +489,12 @@ impl FIFO {
         }
 
         let unit_price = fiat_value(value).map(|value| value / amount.quantity);
-        self.holdings_for_currency(amount.token_currency().as_ref().unwrap_or(&amount.currency)).push_back(Entry {
+        let holdings = self.get_holdings_mut(tx);
+        holdings.add_lot(amount.effective_currency().as_ref(), Lot {
             timestamp,
             tx_index: tx.index,
             unit_price,
-            remaining: amount.quantity,
+            quantity: amount.quantity,
         });
 
         Ok(Decimal::ZERO)
@@ -385,10 +535,41 @@ impl FIFO {
             Err(e) => Err(e),
         }
     }
-}
 
-fn total_holdings(holdings: &VecDeque<Entry>) -> Decimal {
-    holdings.iter().map(|e| e.remaining).sum()
+    /// Transfers lots from one wallet to another for a matched Send/Receive (PerWallet mode).
+    fn transfer_holdings(&mut self, sender_wallet_index: usize, receive_tx: &Transaction, received_amount: &Amount, tx_gain: &mut Option<Result<Decimal, GainError>>) {
+        // No-op if both transactions are for the same wallet
+        if sender_wallet_index == receive_tx.wallet_index {
+            return;
+        }
+        // Determine currency and quantity to transfer (use the received quantity)
+        let currency = received_amount.effective_currency();
+        let quantity = received_amount.quantity;
+
+        // Remove from sender wallet holdings (FIFO)
+        let sender_holdings = self.get_holdings_for_wallet_index_mut(sender_wallet_index);
+        let (mut lots, missing_quantity) = sender_holdings.remove_lots(&currency, quantity);
+
+        // Add the removed lots to the receiver wallet holdings preserving acquisition data
+        let receiver_holdings = self.get_holdings_mut(receive_tx);
+        for lot in lots.drain(..) {
+            receiver_holdings.add_lot(&currency, lot);
+        }
+
+        // If some quantity is missing, synthesize a lot with cost basis from the receive transaction and warn
+        if missing_quantity > Decimal::ZERO {
+            println!("warning: at {} a remaining transferred amount of {} {} was not found in the sender holdings", receive_tx.timestamp, missing_quantity, &currency);
+            let unit_price = fiat_value(receive_tx.value.as_ref()).map(|value| value / quantity);
+            receiver_holdings.add_lot(&currency, Lot {
+                timestamp: receive_tx.timestamp,
+                tx_index: receive_tx.index,
+                unit_price,
+                quantity: missing_quantity,
+            });
+            // Assign the appropriate error to tx_gain
+            *tx_gain = Some(Err(GainError::InsufficientBalance(Amount::new(missing_quantity, currency.into_owned()))));
+        }
+    }
 }
 
 pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) -> Result<()> {
@@ -439,7 +620,7 @@ mod tests {
     fn gain(bought: &str, sold: &str) -> CapitalGain {
         let bought = NaiveDateTime::parse_from_str(bought, "%Y-%m-%d %H:%M:%S").unwrap();
         let sold = NaiveDateTime::parse_from_str(sold, "%Y-%m-%d %H:%M:%S").unwrap();
-        
+
         CapitalGain {
             bought,
             bought_tx_index: 0,
