@@ -14,5 +14,15 @@ For each change committed to [the repository](https://github.com/bjorn/raccoin),
 
 ## What's New
 
-No changes yet since the release of [Raccoin 0.2]({{ site.baseurl }}{%
+Below is a summary of the changes since [Raccoin 0.2]({{ site.baseurl }}{%
 post_url 2024-01-04-raccoin-0-2 %}).
+
+* Fixed handling of currencies that contain numbers ([#17](https://github.com/bjorn/raccoin/issues/17))
+* Fixed handling of leap years in holding period calculation ([#32](https://github.com/bjorn/raccoin/issues/32))
+* Adjust to bitcoin.de CSV format changes ([#31](https://github.com/bjorn/raccoin/issues/31))
+* Show new wallets expanded by default
+* Made the merging of consecutive trades optional (no UI yet)
+* Added BTC price history (EUR) for 2024 (by Òscar Casajuana)
+* macOS: Added universal binary support
+* macOS: Fixed app icon
+* Updated dependencies (Slint 1.11)
