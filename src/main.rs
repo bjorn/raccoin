@@ -1568,6 +1568,11 @@ fn ui_set_portfolio(app: &App) {
             cost_base: rounded_to_cent(cost_base).try_into().unwrap(),
             unrealized_gains: rounded_to_cent(balance - cost_base).try_into().unwrap(),
             holdings: Rc::new(VecModel::from(ui_holdings)).into(),
+            cost_basis_tracking: match app.portfolio.cost_basis_tracking {
+                CostBasisTracking::Universal => UiCostBasisTracking::Universal,
+                CostBasisTracking::PerWallet => UiCostBasisTracking::PerWallet,
+            },
+            merge_consecutive_trades: app.portfolio.merge_consecutive_trades,
         });
     }
 }
@@ -1582,6 +1587,7 @@ async fn main() -> Result<()> {
             println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
             return Ok(());
         }
+        println!("Restored portfolio {}", portfolio_file.display());
     }
 
     let ui = initialize_ui(&mut app)?;
@@ -1710,6 +1716,30 @@ async fn main() -> Result<()> {
             let mut app = app.borrow_mut();
             app.close_portfolio();
             app.refresh_ui();
+        }
+    });
+
+    facade.on_set_merge_consecutive_trades({
+        let app = app.clone();
+        move |enabled| {
+            let mut app = app.borrow_mut();
+            app.portfolio.merge_consecutive_trades = enabled;
+            app.refresh_transactions();
+            app.refresh_ui();
+            app.save_portfolio(None);
+        }
+    });
+    facade.on_set_cost_basis_tracking({
+        let app = app.clone();
+        move |cost_basis_tracking| {
+            let mut app = app.borrow_mut();
+            app.portfolio.cost_basis_tracking = match cost_basis_tracking {
+                UiCostBasisTracking::Universal => CostBasisTracking::Universal,
+                UiCostBasisTracking::PerWallet => CostBasisTracking::PerWallet,
+            };
+            app.refresh_transactions();
+            app.refresh_ui();
+            app.save_portfolio(None);
         }
     });
 

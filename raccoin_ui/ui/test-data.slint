@@ -1,6 +1,7 @@
 import {
     UiBalanceForCurrency,
     UiBalanceForWallet,
+    UiCostBasisTracking,
     UiCurrencySummary,
     UiPortfolio,
     UiTaxReport,
@@ -179,6 +180,8 @@ export global TestData {
             unrealized_gain: -500.00,
             percentage_of_portfolio: 0.00,
         }],
+        merge_consecutive_trades: false,
+        cost_basis_tracking: UiCostBasisTracking.per-wallet,
     };
 
     out property <[UiBalanceForWallet]> balances-for-wallet : [{

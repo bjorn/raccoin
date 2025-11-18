@@ -129,12 +129,19 @@ export struct UiCurrencyHoldings {
     percentage_of_portfolio: float,
 }
 
+export enum UiCostBasisTracking {
+    universal,
+    per-wallet,
+}
+
 export struct UiPortfolio {
     file-name: string,
     balance: float,
     cost_base: float,
     unrealized_gains: float,
     holdings: [UiCurrencyHoldings],
+    merge_consecutive_trades: bool,
+    cost_basis_tracking: UiCostBasisTracking,
 }
 
 export enum UiNotificationType {
