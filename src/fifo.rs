@@ -615,14 +615,15 @@ mod tests {
     use chrono::NaiveDateTime;
     use rust_decimal::Decimal;
 
-    fn gain(bought: &str, sold: &str) -> CapitalGain {
-        let bought = NaiveDateTime::parse_from_str(bought, "%Y-%m-%d %H:%M:%S").unwrap();
-        let sold = NaiveDateTime::parse_from_str(sold, "%Y-%m-%d %H:%M:%S").unwrap();
+    fn dt(s: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap()
+    }
 
+    fn gain(bought: &str, sold: &str) -> CapitalGain {
         CapitalGain {
-            bought,
+            bought: dt(bought),
             bought_tx_index: 0,
-            sold,
+            sold: dt(sold),
             sold_tx_index: 0,
             amount: Amount::new(Decimal::ONE, "BTC".to_string()),
             cost: Decimal::ZERO,
@@ -647,5 +648,164 @@ mod tests {
         // 183 days from 2021-01-01 00:00:00 is 2021-07-03 00:00:00
         assert!(!gain("2021-01-01 00:00:00", "2021-07-02 23:59:59").is_held_for_at_least(HoldingPeriod::Days(183)));
         assert!(gain("2021-01-01 00:00:00", "2021-07-03 00:00:00").is_held_for_at_least(HoldingPeriod::Days(183)));
+    }
+
+    #[test]
+    fn add_remove_lots() {
+        // Seed holdings with two BTC lots: 10 BTC (older), 20 BTC (newer)
+        let mut holdings = Holdings::default();
+
+        holdings.add_lot("BTC", Lot {
+            timestamp: dt("2021-01-01 00:00:00"),
+            tx_index: 0,
+            unit_price: Ok(Decimal::ONE),
+            quantity: Decimal::new(10, 0),
+        });
+
+        holdings.add_lot("BTC", Lot {
+            timestamp: dt("2021-02-01 00:00:00"),
+            tx_index: 1,
+            unit_price: Ok(Decimal::ONE),
+            quantity: Decimal::new(20, 0),
+        });
+
+        // Remove 15 BTC: should consume all of first lot (10) and 5 from second lot
+        let (removed, remaining_unsatisfied) = holdings.remove_lots("BTC", Decimal::new(15, 0));
+
+        assert!(remaining_unsatisfied.is_zero(), "All requested quantity should be satisfied");
+        assert_eq!(removed.len(), 2, "Should have consumed two lots (one full, one partial)");
+        assert_eq!(removed[0].quantity, Decimal::new(10, 0), "First removed lot should be the full 10 BTC (oldest)");
+        assert_eq!(removed[1].quantity, Decimal::new(5, 0), "Second removed lot should be the partial 5 BTC");
+        assert_eq!(holdings.currency_balance("BTC"), Decimal::new(15, 0), "Remaining holdings should be 15 BTC");
+    }
+
+    #[test]
+    fn fifo_basic_gain() {
+        // Create two transactions:
+        // 1) Buy 2 BTC for 100 EUR (50 EUR per BTC)
+        // 2) Sell 1 BTC for 200 EUR (months later)
+        let mut txs = vec![
+            Transaction::new(
+                dt("2021-01-01 00:00:00"),
+                Operation::Buy(Amount::new(Decimal::new(2, 0), "BTC".to_string())),
+            ),
+            Transaction::new(
+                dt("2021-06-01 00:00:00"),
+                Operation::Sell(Amount::new(Decimal::new(1, 0), "BTC".to_string())),
+            ),
+        ];
+        txs[0].value = Some(Amount::from_fiat(Decimal::new(100, 0)));
+        txs[1].value = Some(Amount::from_fiat(Decimal::new(200, 0)));
+
+        // tx_meta mirrors wallet indices for the transactions
+        let tx_meta = vec![
+            TxMeta { wallet_index: 0 },
+            TxMeta { wallet_index: 0 },
+        ];
+
+        let mut fifo = FIFO::with_tracking(CostBasisTracking::Universal);
+        let gains = fifo.process(&mut txs, &tx_meta);
+
+        // We expect a single capital gain event for the sale
+        assert_eq!(gains.len(), 1, "Expected exactly one CapitalGain entry");
+        let gain = &gains[0];
+
+        // Verify the gain details
+        assert_eq!(gain.amount.currency, "BTC");
+        assert_eq!(gain.amount.quantity, Decimal::new(1, 0));
+        assert_eq!(gain.cost, Decimal::new(50, 0), "Cost basis should be 50 EUR (half of 100 EUR for 2 BTC)");
+        assert_eq!(gain.proceeds, Decimal::new(200, 0), "Proceeds should be 200 EUR");
+        assert_eq!(gain.profit(), Decimal::new(150, 0), "Profit should be 200 - 50 = 150 EUR");
+
+        // Also verify the transaction gain recorded on the Sell transaction
+        assert!(txs[1].gain.is_some(), "Sell transaction should have a gain recorded");
+        assert_eq!(
+            txs[1].gain.as_ref().unwrap().as_ref().unwrap(),
+            &Decimal::new(150, 0),
+            "Recorded gain on transaction should be 150 EUR"
+        );
+
+        // Verify remaining holdings: should be 1 BTC with a cost base of 50 EUR
+        let remaining_holdings = fifo.holdings();
+        assert_eq!(
+            remaining_holdings.currency_balance("BTC"),
+            Decimal::new(1, 0),
+            "Remaining balance should be 1 BTC"
+        );
+        assert_eq!(
+            remaining_holdings.currency_cost_base("BTC"),
+            Decimal::new(50, 0),
+            "Remaining cost base should be 50 EUR"
+        );
+    }
+
+    #[test]
+    fn fifo_per_wallet_with_transfer() {
+        // Scenario:
+        // - Buy 1 BTC into wallet 0 (tx 0)
+        // - Buy 1 BTC into wallet 0 (tx 1)
+        // - Transfer 1 BTC from wallet 0 to wallet 1 (matched send/receive) (tx 2/3)
+        // - Sell 1 BTC from wallet 0 (tx 4)
+        // Expectation: the sale should consume tx 1 (since tx 0 was transferred out), so bought_tx_index == 1
+
+        let mut txs = vec![
+            // tx 0: Buy 1 BTC @ 100 EUR in wallet 0
+            Transaction::new(
+                dt("2021-01-01 00:00:00"),
+                Operation::Buy(Amount::new(Decimal::ONE, "BTC".to_string())),
+            ),
+            // tx 1: Buy 1 BTC @ 100 EUR in wallet 0 (later)
+            Transaction::new(
+                dt("2021-02-01 00:00:00"),
+                Operation::Buy(Amount::new(Decimal::ONE, "BTC".to_string())),
+            ),
+            // tx 2: Send 1 BTC from wallet 0
+            Transaction::send(
+                dt("2021-03-01 00:00:00"),
+                Amount::new(Decimal::ONE, "BTC".to_string()),
+            ),
+            // tx 3: Receive 1 BTC to wallet 1 (matched with tx 2)
+            Transaction::receive(
+                dt("2021-03-01 00:10:00"),
+                Amount::new(Decimal::ONE, "BTC".to_string()),
+            ),
+            // tx 4: Sell 1 BTC from wallet 0 @ 300 EUR
+            Transaction::new(
+                dt("2021-04-01 00:00:00"),
+                Operation::Sell(Amount::new(Decimal::ONE, "BTC".to_string())),
+            ),
+        ];
+
+        // Set fiat values for buys and the sell to establish cost basis and proceeds
+        txs[0].value = Some(Amount::from_fiat(Decimal::new(100, 0)));
+        txs[1].value = Some(Amount::from_fiat(Decimal::new(100, 0)));
+        txs[4].value = Some(Amount::from_fiat(Decimal::new(300, 0)));
+
+        // Assign wallet indices
+        txs[0].wallet_index = 0;
+        txs[1].wallet_index = 0;
+        txs[2].wallet_index = 0; // send from wallet 0
+        txs[3].wallet_index = 1; // receive into wallet 1
+        txs[4].wallet_index = 0;
+
+        // Link the matched send/receive
+        txs[2].matching_tx = Some(3); // send knows its matching receive (only asserted to be Some)
+        txs[3].matching_tx = Some(2); // receive points to the send index
+
+        // Ensure transaction indexes are set
+        for (i, tx) in txs.iter_mut().enumerate() {
+            tx.index = i;
+        }
+
+        // tx_meta provides the sender wallet index for the matched send (used during Receive processing)
+        let tx_meta: Vec<TxMeta> = txs.iter().map(|t| TxMeta { wallet_index: t.wallet_index }).collect();
+
+        let mut fifo = FIFO::with_tracking(CostBasisTracking::PerWallet);
+        let gains = fifo.process(&mut txs, &tx_meta);
+
+        // We expect a single capital gain event for the sale
+        assert_eq!(gains.len(), 1, "Expected exactly one CapitalGain entry");
+        let gain = &gains[0];
+        assert_eq!(gain.bought_tx_index, 1, "Sale should have used the second buy (tx index 1) as cost basis since the first was transferred out");
     }
 }
