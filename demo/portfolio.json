@@ -34,5 +34,7 @@
       ]
     }
   ],
-  "ignored_currencies": []
+  "ignored_currencies": [],
+  "merge_consecutive_trades": false,
+  "cost_basis_tracking": "PerWallet"
 }

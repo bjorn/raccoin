@@ -3,6 +3,7 @@ import {
     UiBalanceForWallet,
     UiCapitalGain,
     UiNotification,
+    UiCostBasisTracking,
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
@@ -34,6 +35,9 @@ export global Facade {
     callback new-portfolio();
     callback load-portfolio();
     callback close-portfolio();
+
+    callback set-merge-consecutive-trades(bool);
+    callback set-cost-basis-tracking(UiCostBasisTracking);
 
     callback add-wallet(string);
     callback remove-wallet(int);

@@ -1,4 +1,4 @@
-import { GroupBox, VerticalBox, HorizontalBox, ListView, Button } from "std-widgets.slint";
+import { GroupBox, VerticalBox, HorizontalBox, ListView, Button, CheckBox } from "std-widgets.slint";
 import {
     Cell,
     CurrencyCell,
@@ -11,6 +11,7 @@ import {
     TextCell,
     TouchCell
 } from "common.slint";
+import { UiCostBasisTracking } from "structs.slint";
 import { Facade } from "global.slint";
 
 export component Portfolio inherits Rectangle {
@@ -42,15 +43,35 @@ export component Portfolio inherits Rectangle {
                     text: Facade.portfolio.unrealized-gains;
                 }
             }
-            HorizontalBox {
-                Button {
-                    text: "Load";
-                    clicked => { Facade.load-portfolio(); }
+            VerticalBox {
+                HorizontalBox {
+                    padding: 0;
+                    Button {
+                        text: "Load";
+                        clicked => { Facade.load-portfolio(); }
+                    }
+                    Button {
+                        text: "Close";
+                        clicked => { Facade.close-portfolio(); }
+                    }
                 }
-                Button {
-                    text: "Close";
-                    clicked => { Facade.close-portfolio(); }
+                CheckBox {
+                    text: "Per-wallet cost basis tracking";
+                    checked: Facade.portfolio.cost-basis-tracking == UiCostBasisTracking.per-wallet;
+                    toggled => {
+                        Facade.set-cost-basis-tracking(self.checked ? UiCostBasisTracking.per-wallet
+                                                                    : UiCostBasisTracking.universal);
+                    }
                 }
+                CheckBox {
+                    text: "Merge consecutive trades";
+                    checked: Facade.portfolio.merge-consecutive-trades;
+                    toggled => {
+                        Facade.set-merge-consecutive-trades(self.checked);
+                    }
+                }
+
+                // Avoid stretching these controls
                 height: self.preferred-height;
                 width: self.preferred-width;
             }
