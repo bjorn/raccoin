@@ -238,8 +238,8 @@ pub(crate) enum Operation {
     // Borrow,
     // LoanRepayment,
     // Liquidate,
-    // RealizedProfit,
-    // RealizedLoss,
+    RealizedProfit(Amount),
+    RealizedLoss(Amount),
     // MarginFee,
     // BridgeIn,
     // BridgeOut,
@@ -366,6 +366,7 @@ impl Transaction {
             Operation::Staking(amount) |
             Operation::Cashback(amount) |
             Operation::IncomingGift(amount) |
+            Operation::RealizedProfit(amount) |
             Operation::Spam(amount) => {
                 (Some(amount), None)
             }
@@ -377,7 +378,8 @@ impl Transaction {
             Operation::Stolen(amount) |
             Operation::Lost(amount) |
             Operation::Burn(amount) |
-            Operation::OutgoingGift(amount) => {
+            Operation::OutgoingGift(amount) |
+            Operation::RealizedLoss(amount) => {
                 (None, Some(amount))
             }
             Operation::Trade { incoming, outgoing } |
