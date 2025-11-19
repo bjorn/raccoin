@@ -293,7 +293,7 @@ impl FIFO {
                 Operation::ChainSplit(amount) => {
                     if !amount.is_fiat() {
                         // Staking reward and Chain splits are treated as a zero-cost buy
-                        tx_gain = Some(self.add_holdings(transaction, amount, Some(&Amount::new(Decimal::ZERO, "EUR".to_owned()))));
+                        self.add_holdings(transaction, amount, Some(&Amount::new(Decimal::ZERO, "EUR".to_owned())));
                     }
                 }
                 Operation::IncomingGift(amount) |
@@ -303,7 +303,7 @@ impl FIFO {
                 Operation::Income(amount) |     // todo: track income total
                 Operation::Spam(amount) => {
                     if !amount.is_fiat() {
-                        tx_gain = Some(self.add_holdings(transaction, amount, transaction.value.as_ref()));
+                        self.add_holdings(transaction, amount, transaction.value.as_ref());
                     }
                 }
                 Operation::Trade{incoming, outgoing} => {
@@ -327,10 +327,7 @@ impl FIFO {
                     }
 
                     if !incoming.is_fiat() {
-                        let result = self.add_holdings(transaction, incoming, value.as_ref());
-                        if result.is_err() && tx_gain.is_none() {
-                            tx_gain = Some(result);
-                        }
+                        self.add_holdings(transaction, incoming, value.as_ref());
                     }
                 }
                 Operation::Swap { incoming, outgoing } => {
@@ -476,14 +473,14 @@ impl FIFO {
         }
     }
 
-    fn add_holdings(&mut self, tx: &Transaction, amount: &Amount, value: Option<&Amount>) -> Result<Decimal, GainError> {
+    fn add_holdings(&mut self, tx: &Transaction, amount: &Amount, value: Option<&Amount>) {
         self.add_holdings_with_timestamp(tx, amount, value, tx.timestamp)
     }
 
-    fn add_holdings_with_timestamp(&mut self, tx: &Transaction, amount: &Amount, value: Option<&Amount>, timestamp: NaiveDateTime) -> Result<Decimal, GainError> {
+    fn add_holdings_with_timestamp(&mut self, tx: &Transaction, amount: &Amount, value: Option<&Amount>, timestamp: NaiveDateTime) {
         // Refuse to add zero balances (and protect against division by zero)
         if amount.quantity.is_zero() {
-            return Ok(Decimal::ZERO);
+            return;
         }
 
         let unit_price = fiat_value(value).map(|value| value / amount.quantity);
@@ -494,8 +491,6 @@ impl FIFO {
             unit_price,
             quantity: amount.quantity,
         });
-
-        Ok(Decimal::ZERO)
     }
 
     fn dispose_holdings(&mut self, capital_gains: &mut Vec<CapitalGain>, transaction: &Transaction, outgoing: &Amount, value: Option<&Amount>) -> Result<Decimal, GainError> {
@@ -523,14 +518,20 @@ impl FIFO {
 
         match self.gains(transaction, outgoing, Decimal::ZERO) {
             Ok(gains) => {
-                // Transfer the original acquisition cost and timestamp to the newly acquired currency
+                // Transfer the original acquisition costs and timestamps to the
+                // newly acquired currency
                 for gain in gains {
                     let amount = Amount::new(ratio * gain.amount.quantity, incoming.currency.clone());
-                    self.add_holdings_with_timestamp(transaction, &amount, Some(&Amount::from_fiat(gain.cost)), gain.bought)?;
+                    self.add_holdings_with_timestamp(transaction, &amount, Some(&Amount::from_fiat(gain.cost)), gain.bought);
                 }
                 Ok(Decimal::ZERO)
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                // There was some error calculating gains, but we still want to
+                // add the holdings to avoid causing further errors
+                self.add_holdings(transaction, incoming, transaction.value.as_ref());
+                Err(e)
+            }
         }
     }
 

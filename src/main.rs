@@ -1333,6 +1333,7 @@ fn ui_set_transactions(app: &App) {
         let mut description = transaction.description.clone();
         let mut tx_hash = transaction.tx_hash.as_ref();
         let mut blockchain = transaction.blockchain.as_ref();
+        let mut gain = transaction.gain.clone();
 
         let (tx_type, sent, received, from, to) = match &transaction.operation {
             Operation::Buy(amount) => (UiTransactionType::Buy, None, Some(amount), None, wallet_name),
@@ -1363,6 +1364,22 @@ fn ui_set_transactions(app: &App) {
                         (Some(s), Some(r)) => Some(s + ", " + r),
                         (Some(s), None) => Some(s),
                         (None, Some(r)) => Some(r.to_owned()),
+                        (None, None) => None,
+                    };
+
+                    // When either size of the transfer has an error, make sure the error is visible
+                    gain = match (gain, &matching_receive.gain) {
+                        // Display sum of gains (though this currently can't happen)
+                        (Some(Ok(a)), Some(Ok(b))) => Some(Ok(a + *b)),
+
+                        // Error overrides any gains
+                        (Some(Err(e)), _) => Some(Err(e)),
+                        (_, Some(Err(e))) => Some(Err(e.clone())),
+
+                        // If one is None, return the other
+                        (Some(g), None) => Some(g),
+                        (None, Some(g)) => Some(g.clone()),
+
                         (None, None) => None,
                     };
 
@@ -1414,8 +1431,8 @@ fn ui_set_transactions(app: &App) {
             }
         };
 
-        let (gain, gain_error) = match &transaction.gain {
-            Some(Ok(gain)) => (*gain, None),
+        let (gain, gain_error) = match gain {
+            Some(Ok(gain)) => (gain, None),
             Some(Err(e)) => (Decimal::ZERO, Some(e.to_string())),
             None => (Decimal::ZERO, None),
         };
