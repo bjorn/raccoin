@@ -34,8 +34,8 @@ rust_decimal_macros = "1.33"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 slice-group-by = "0.3.1"
-stellar-base = { version = "0.6", default-features = false }
-stellar-horizon = "0.7"
+stellar-base = { version = "0.7", default-features = false }
+stellar-horizon = { version = "0.8" }
 strum = { version = "0.27", features = ["derive"] }
 tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
 
