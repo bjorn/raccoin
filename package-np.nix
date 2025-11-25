@@ -1,5 +1,3 @@
-# nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix {}'
-# nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix { useLatest = true; }'
 {
   lib,
   rustPlatform,
@@ -16,10 +14,8 @@
   libxkbcommon,
   pkg-config,
   makeWrapper,
-  patchelf,
   xorg,
   wayland,
-  useLatest ? false,
 }:
 
 let
@@ -52,35 +48,20 @@ let
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "raccoin";
-  version = "0.2.0"; # last release
-  NIX_REBUILD_TIMESTAMP = "2025-11-25T23:42";
+  version = "0.2.0";
 
-  src =
-    if useLatest then
-      fetchGit {
-        url = "https://github.com/bjorn/raccoin.git";
-        ref = "master";
-      }
-    else
-      fetchFromGitHub {
-        owner = "bjorn";
-        repo = "raccoin";
-        rev = "v${finalAttrs.version}";
-        hash = "sha256-6BwRFU8qU6K0KqKdK+soKcWU2LPxkKKPOcn2gupunGg=";
-      };
+  src = fetchFromGitHub {
+    owner = "bjorn";
+    repo = "raccoin";
+    rev = "v${finalAttrs.version}";
+    hash = "sha256-6BwRFU8qU6K0KqKdK+soKcWU2LPxkKKPOcn2gupunGg=";
+  };
 
-  cargoHash =
-    if useLatest then
-      "sha256-K7y8RHk+S+hY0j3QX6o82AYDU2WrthSn1NCeb+Es8u8=" # for new hash use ""
-    # v0.2.0
-    else
-      "sha256-pz3dwIIBQZIwTammiI/UQwM0Iy1ZgC9ntK+qNGv3s24=";
-  #~ cargoHash = "";
+  cargoHash = "sha256-pz3dwIIBQZIwTammiI/UQwM0Iy1ZgC9ntK+qNGv3s24=";
 
   nativeBuildInputs = [
     pkg-config
     makeWrapper
-    patchelf
   ];
 
   buildInputs = [
@@ -100,7 +81,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
     xorg.libXrandr
   ];
 
-  # upstream has no tests
   doCheck = false;
 
   preBuild = ''
@@ -146,7 +126,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
             fi
   '';
 
-  # better use wrapProgram than patchelf
   postFixup = ''
     wrapProgram "$out/bin/raccoin" \
       --set-default SLINT_BACKEND winit \
@@ -159,21 +138,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
         ]
       }
   '';
-  #~ postFixup = ''
-  #~ patchelf --set-rpath "${
-  #~ lib.makeLibraryPath (
-  #~ [
-  #~ fontconfig
-  #~ libxkbcommon
-  #~ openssl
-  #~ xorg.libX11
-  #~ ]
-  #~ )
-  #~ }" \
-  #~ $out/bin/raccoin
-  #~ '';
 
-  #~ passthru.updateScript = nix-update-script { };
+  passthru.updateScript = nix-update-script { };
 
   meta = {
     description = "Crypto portfolio & capital-gains reporting tool (Rust + Slint)";
@@ -184,8 +150,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
       reports on their holdings.
     '';
     homepage = "https://raccoin.org";
-    changelog =
-      if !useLatest then "https://github.com/bjorn/raccoin/releases/tag/v${finalAttrs.version}" else "";
+    changelog = "https://github.com/bjorn/raccoin/releases/tag/v${finalAttrs.version}";
     license = lib.licenses.gpl3Plus;
     mainProgram = "raccoin";
     platforms = [

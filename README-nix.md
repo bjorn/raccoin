@@ -5,18 +5,34 @@ usable both for **developers** and for **nixpkgs integration**.
 
 * Developers get **fast, reproducible builds** with flakes & direnv.
 * Non-flake users can still build and hack.
+* Local `package.nix` for building the release or optionally latest from master
 * Upstream (nixpkgs) gets a **minimal, clean `package.nix`** without extra noise.
 
 This was written assuming you are using NixOS 25.05 or later.
-Not tested on earlier versions or system using nixpkgs only yet.
 
 ---
 
 ## ⚡ Quickstart
 
+### Build release and install with package.nix
+
+```sh
+nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix {}'
+nix profile add ./result
+nix profile list # to list the installed package
+```
+
+### Build latest and replace installation with package.nix
+
+```sh
+nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix { useLatest = true; }'
+nix profile remove raccoin
+nix profile add ./result
+```
+
 ### With Flakes (recommended)
 
-```bash
+```sh
 # enter dev environment (Rust toolchain, dependencies, etc.)
 nix develop
 
@@ -29,7 +45,7 @@ nix run
 
 ### Without Flakes
 
-```bash
+```sh
 # enter dev environment
 nix-shell
 
@@ -62,15 +78,16 @@ To enable it in your configuration.nix
 
 Tree for this repository 
 
-```
+```tree
 raccoin-nix/
 ├── README.text       # documentation
-├── package.nix       # upstreamable derivation (for nixpkgs)
+├── package.nix       # local derivation (not for nixpkgs)
+├── package-np.nix    # upstream derivation (for nixpkgs only)
 ├── flake.nix         # flake entrypoint for local development
 ├── flake.lock        # pin for reproducible builds
 ├── default.nix       # flake-compat bridge (non-flake builds)
 ├── shell.nix         # flake-compat bridge (non-flake dev env)
-├── flake-compat.nix  # shim for legacy nix commands
+├── flake4default.nix # shim for legacy nix commands
 ├── .envrc            # direnv integration
 └── src/              # optional: Rust sources for raccoin
 ```
