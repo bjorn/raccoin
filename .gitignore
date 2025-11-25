@@ -9,3 +9,10 @@
 /docs/.jekyll-cache
 /docs/.jekyll-metadata
 /docs/vendor
+
+# direnv
+.direnv/*
+.envrc
+
+# nix
+result
