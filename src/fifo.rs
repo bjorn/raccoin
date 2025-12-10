@@ -37,7 +37,7 @@ use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_d
 /// how much of the original amount remains to be disposed of. Each entry
 /// represents a "lot" of cryptocurrency that will be consumed in FIFO order
 /// when calculating capital gains for disposals.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Lot {
     /// The timestamp when this cryptocurrency was acquired
     timestamp: NaiveDateTime,
@@ -72,7 +72,7 @@ impl Lot {
 ///
 /// When disposing of holdings, the oldest entries are processed first to comply
 /// with FIFO accounting rules for capital gains calculations.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct LotQueue {
     /// Queue of lots ordered by acquisition time (oldest first)
     lots: VecDeque<Lot>,
@@ -138,7 +138,7 @@ impl LotQueue {
 }
 
 /// A collection of cryptocurrency holdings organized by currency.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct Holdings {
     lots_by_currency: HashMap<String, LotQueue>,
 }
@@ -290,14 +290,15 @@ impl FIFO {
 
             match &transaction.operation {
                 Operation::Staking(amount) |
-                Operation::ChainSplit(amount) => {
+                Operation::ChainSplit(amount) |
+                Operation::Airdrop(amount) => {
                     if !amount.is_fiat() {
-                        // Staking reward and Chain splits are treated as a zero-cost buy
+                        // Staking reward, Chain splits and Airdrops are treated as a zero-cost buy
+                        // (todo: option to treat airdrops as income with cost base of market value)
                         self.add_holdings(transaction, amount, Some(&Amount::new(Decimal::ZERO, "EUR".to_owned())));
                     }
                 }
                 Operation::IncomingGift(amount) |
-                Operation::Airdrop(amount) |
                 Operation::Buy(amount) |
                 Operation::Cashback(amount) |
                 Operation::Income(amount) |     // todo: track income total
@@ -555,7 +556,8 @@ impl FIFO {
             receiver_holdings.add_lot(&currency, lot);
         }
 
-        // If some quantity is missing, synthesize a lot with cost basis from the receive transaction and warn
+        // If some quantity is missing, synthesize a lot with cost basis from the receive
+        // transaction and warn.
         if missing_quantity > Decimal::ZERO {
             println!("warning: at {} a remaining transferred amount of {} {} was not found in the sender holdings", receive_tx.timestamp, missing_quantity, &currency);
             let unit_price = fiat_value(receive_tx.value.as_ref()).map(|value| value / quantity);
