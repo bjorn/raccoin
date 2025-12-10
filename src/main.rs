@@ -1315,14 +1315,12 @@ fn ui_set_transactions(app: &App) {
     let mut ui_transactions = Vec::new();
 
     for transaction in transactions {
-        let filters_match = |transaction: &Transaction| {
-            filters.iter().all(|filter| filter.matches(transaction))
+        let matching_tx = transaction.matching_tx.map(|index| &transactions[index]);
+        let filter_matches = |filter: &TransactionFilter| {
+            filter.matches(transaction) || matching_tx.is_some_and(|tx| filter.matches(tx))
         };
 
-        if !filters_match(transaction) &&
-            (!transaction.operation.is_send() ||
-             !transaction.matching_tx.map(|index| filters_match(&transactions[index])).unwrap_or(false))
-        {
+        if !(filters.iter().all(filter_matches)) {
             continue;
         }
 

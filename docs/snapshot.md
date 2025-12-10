@@ -20,6 +20,7 @@ post_url 2024-01-04-raccoin-0-2 %}).
 * Added support for per-wallet cost basis tracking ([#29](https://github.com/bjorn/raccoin/issues/29))
 * Fixed handling of currencies that contain numbers ([#17](https://github.com/bjorn/raccoin/issues/17))
 * Fixed handling of leap years in holding period calculation ([#32](https://github.com/bjorn/raccoin/issues/32))
+* Fixed filtering on multiple conditions for transfers ([#54](https://github.com/bjorn/raccoin/pull/54))
 * Adjust to bitcoin.de CSV format changes ([#31](https://github.com/bjorn/raccoin/issues/31))
 * Show new wallets expanded by default
 * Made the merging of consecutive trades optional
