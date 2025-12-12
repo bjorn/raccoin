@@ -1,4 +1,4 @@
-import { GroupBox, VerticalBox, HorizontalBox, ListView, Button, CheckBox } from "std-widgets.slint";
+import { GroupBox, VerticalBox, HorizontalBox, ListView, Button, CheckBox, Spinner } from "std-widgets.slint";
 import {
     Cell,
     CurrencyCell,
@@ -55,8 +55,18 @@ export component Portfolio inherits Rectangle {
                         clicked => { Facade.close-portfolio(); }
                     }
                     Button {
-                        text: "Update Price History";
-                        clicked => { Facade.update-price-history(); }
+                        text: Facade.updating-price-history ? "Updating..." : "Update Price History";
+                        clicked => {
+                            if (!Facade.updating-price-history) {
+                                Facade.update-price-history();
+                            } else {
+                                Facade.stop-update-price-history();
+                            }
+                        }
+                    }
+                    Spinner {
+                        indeterminate: true;
+                        visible: Facade.updating-price-history;
                     }
                 }
                 CheckBox {

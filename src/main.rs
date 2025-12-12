@@ -29,6 +29,7 @@ mod trezor;
 mod wallet_of_satoshi;
 
 use anyhow::{anyhow, Context, Result};
+use coinmarketcap::CmcInterval;
 use base::{cmc_id, Amount, Operation, Transaction};
 use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use directories::ProjectDirs;
@@ -329,6 +330,7 @@ struct App {
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
     price_history: PriceHistory,
+    stop_update_price_history: bool,
 
     transaction_filters: Vec<TransactionFilter>,
 
@@ -364,6 +366,7 @@ impl App {
             transactions: Vec::new(),
             reports: Vec::new(),
             price_history,
+            stop_update_price_history: false,
 
             transaction_filters: Vec::default(),
 
@@ -984,7 +987,7 @@ async fn download_price_history(requirements: PriceRequirements, mut price_histo
         let price_data = price_history.price_data(currency.to_owned());
         for range in ranges {
             println!("Downloading price points for {:} from {:} to {:}", currency, range.start, range.end);
-            let price_points = coinmarketcap::download_price_points(range.start, range.end, currency.as_str()).await;
+            let price_points = coinmarketcap::download_price_points(range.start, range.end, currency.as_str(), CmcInterval::Hourly).await;
             match price_points {
                 Ok(price_points) => {
                     if let Err(e) = price_data.add_points(price_points) {
@@ -992,7 +995,7 @@ async fn download_price_history(requirements: PriceRequirements, mut price_histo
                     }
                 }
                 Err(e) => {
-                    println!("warning: failed to download price points for {:}: {:?} foo", currency, e);
+                    println!("warning: failed to download price points for {:}: {:?}", currency, e);
                 }
             }
         }
@@ -1957,8 +1960,11 @@ async fn main() -> Result<()> {
             slint::spawn_local(async move {
                 // Determine which price points we need to know for our transactions and clone the
                 // available price history so that it can be extended in a thread.
-                let (requirements, price_history) = {
+                let (requirements, mut price_history) = {
+                    app.borrow_mut().stop_update_price_history = false;
                     let app = app.borrow();
+                    app.ui().global::<Facade>().set_updating_price_history(true);
+
                     let mut requirements = PriceRequirements::new();
 
                     for tx in app.transactions.iter() {
@@ -1997,33 +2003,83 @@ async fn main() -> Result<()> {
                 };
 
                 // Spawn a task to download the missing price history
-                let price_history = tokio::task::spawn(download_price_history(requirements, price_history)).await.unwrap();
+                price_history.debug_dump();
 
-                // On success, update the app's price history and refresh the UI
-                match price_history {
-                    Ok(price_history) => {
-                        let mut app = app.borrow_mut();
-                        app.price_history = price_history;
-                        app.refresh_transactions();
-                        app.refresh_ui();
-                        app.save_portfolio(None);
+                // price_history.debug_dump();
+                let padding = Duration::days(7);
+                let missing_ranges = requirements.missing_ranges(&price_history, padding);
+                let mut save = false;
+                dbg!(&missing_ranges);
 
-                        if let Some(dirs) = app.project_dirs.as_ref() {
-                            let data_dir = dirs.data_local_dir();
-                            if let Err(e) = app.price_history.save_to_dir(&data_dir) {
-                                eprintln!("Error saving price history: {}", e);
+                // Download missing price points
+                for (currency, ranges) in missing_ranges {
+                    if cmc_id(&currency) == -1 {
+                        continue;
+                    }
+                    if currency != "BTC" {
+                        continue;
+                    }
+
+                    for range in ranges {
+                        println!("Downloading price points for {:} from {:} to {:}", currency, range.start, range.end);
+                        let currency_for_task = currency.clone();
+                        let price_points = tokio::task::spawn(async move {
+                            coinmarketcap::download_price_points(range.start, range.end, currency_for_task.as_str(), CmcInterval::Hourly).await
+                        }).await.unwrap();
+
+                        match price_points {
+                            Ok(price_points) => {
+                                if let Err(e) = price_history.price_data(currency.to_owned()).add_points(price_points) {
+                                    println!("warning: failed to add price points for {:}: {:}", currency, e);
+                                } else {
+                                    let mut app = app.borrow_mut();
+                                    app.price_history = price_history.clone();
+                                    app.refresh_transactions();
+                                    app.refresh_ui();
+                                    save = true;
+                                }
                             }
-                            if let Err(e) = app.price_history.save_to_dir_as_json(&data_dir) {
-                                eprintln!("Error saving price history: {}", e);
+                            Err(e) => {
+                                println!("warning: failed to download price points for {:}: {:?}", currency, e);
                             }
                         }
+
+                        if app.borrow().stop_update_price_history {
+                            break;
+                        }
                     }
-                    Err(e) => {
-                        // todo: show error in UI
-                        println!("Error downloading price history: {}", e);
-                    },
+
+                    if app.borrow().stop_update_price_history {
+                        break;
+                    }
                 }
+
+                // On success, update the app's price history and refresh the UI
+                if save {
+                    let mut app = app.borrow_mut();
+                    app.save_portfolio(None);
+
+                    if let Some(dirs) = app.project_dirs.as_ref() {
+                        let data_dir = dirs.data_local_dir();
+                        if let Err(e) = app.price_history.save_to_dir(&data_dir) {
+                            eprintln!("Error saving price history: {}", e);
+                        }
+                        if let Err(e) = app.price_history.save_to_dir_as_json(&data_dir) {
+                            eprintln!("Error saving price history: {}", e);
+                        }
+                    }
+                }
+
+                app.borrow().ui().global::<Facade>().set_updating_price_history(false);
             }).unwrap();
+        }
+    });
+
+    facade.on_stop_update_price_history({
+        let app = app.clone();
+
+        move || {
+            app.borrow_mut().stop_update_price_history = true;
         }
     });
 

@@ -55,7 +55,23 @@ struct Quote {
     // timestamp: DateTime<FixedOffset>,
 }
 
-pub(crate) async fn download_price_points(time_start: NaiveDateTime, time_end: NaiveDateTime, currency: &str) -> Result<Vec<PricePoint>> {
+pub(crate) enum CmcInterval {
+    Hourly,
+    Daily,
+    Weekly,
+}
+
+impl CmcInterval {
+    fn as_str(&self) -> &str {
+        match self {
+            CmcInterval::Hourly => "1h",
+            CmcInterval::Daily => "1d",
+            CmcInterval::Weekly => "7d",
+        }
+    }
+}
+
+pub(crate) async fn download_price_points(time_start: NaiveDateTime, time_end: NaiveDateTime, currency: &str, interval: CmcInterval) -> Result<Vec<PricePoint>> {
     let id = cmc_id(currency);
     if id == -1 {
         bail!("Unsupported currency (cmc id not known): {}", currency);
@@ -68,7 +84,7 @@ pub(crate) async fn download_price_points(time_start: NaiveDateTime, time_end: N
     if time_end > Utc::now().timestamp() {
         time_end = Utc::now().timestamp();
     }
-    let url = format!("https://api.coinmarketcap.com/data-api/v3.3/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval=1h", id, convert_id, time_start, time_end);
+    let url = format!("https://api.coinmarketcap.com/data-api/v3.3/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval={}", id, convert_id, time_start, time_end, interval.as_str());
     println!("Downloading {}", url);
 
     let response: CmcHistoricalDataResponse = reqwest::Client::builder()

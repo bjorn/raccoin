@@ -30,6 +30,8 @@ export global Facade {
     out property <string> text-filter: "";
     out property <bool> warnings-filter: false;
 
+    in-out property <bool> updating-price-history: false;
+
     // ACTIONS
 
     callback new-portfolio();
@@ -47,6 +49,7 @@ export global Facade {
     callback remove-source(int,int);
 
     callback update-price-history();
+    callback stop-update-price-history();
 
     callback ignore-currency(string);
 
