@@ -191,7 +191,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::BitcoinDeCsv => "bitcoin.de (CSV)".to_owned(),
             TransactionsSourceType::BitonicCsv => "Bitonic (CSV)".to_owned(),
             TransactionsSourceType::BitstampCsv => "Bitstamp Old (CSV)".to_owned(),
-            TransactionsSourceType::BitstampCsvNew => "Bitstamp New (CSV)".to_owned(),
+            TransactionsSourceType::BitstampCsvNew => "Bitstamp RFC 4180 (CSV)".to_owned(),
             TransactionsSourceType::BittrexOrderHistoryCsv => "Bittrex Order History (CSV)".to_owned(),
             TransactionsSourceType::BittrexTransactionHistoryCsv => "Bittrex Transaction History (CSV)".to_owned(),
             TransactionsSourceType::ElectrumCsv => "Electrum (CSV)".to_owned(),

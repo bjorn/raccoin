@@ -27,7 +27,10 @@ fn deserialize_date_time<'de, D: Deserializer<'de>>(
     d: D,
 ) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
-    Ok(NaiveDateTime::parse_from_str(raw, "%b. %d, %Y, %I:%M %p").unwrap())
+    NaiveDateTime::parse_from_str(raw, "%b. %d, %Y, %I:%M %p")
+        .map_err(|e| serde::de::Error::custom(format!(
+            "Failed to parse datetime '{}': {} (expected format: %b. %d, %Y, %I:%M %p)", raw, e
+        )))
 }
 
 fn deserialize_amount_opt<'de, D: Deserializer<'de>>(
@@ -188,7 +191,7 @@ struct BitstampTransactionsConverter {
 
 impl BitstampTransactionsConverter {
     fn new() -> Self {
-        use chrono::NaiveDate;
+
 
         BitstampTransactionsConverter {
             transactions: Vec::new(),
@@ -250,7 +253,7 @@ impl BitstampTransactionsConverter {
                     airdrop.currency == receive.currency && airdrop.date == tx_date
                 }) {
                     println!(
-                        "Bitstamp: Detected airdrop of {:} at {:}",
+                        "Bitstamp: Detected airdrop of {} at {}",
                         receive, tx.timestamp
                     );
                     self.airdrops.remove(airdrop_idx);
