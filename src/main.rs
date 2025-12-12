@@ -987,7 +987,9 @@ async fn download_price_history(requirements: PriceRequirements, mut price_histo
             let price_points = coinmarketcap::download_price_points(range.start, range.end, currency.as_str()).await;
             match price_points {
                 Ok(price_points) => {
-                    price_data.add_points(price_points);
+                    if let Err(e) = price_data.add_points(price_points) {
+                        println!("warning: failed to add price points for {:}: {:}", currency, e);
+                    }
                 }
                 Err(e) => {
                     println!("warning: failed to download price points for {:}: {:?} foo", currency, e);
