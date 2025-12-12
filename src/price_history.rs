@@ -143,25 +143,25 @@ impl PriceRange {
         }
     }
 
-    /// Create a price range from a vector of price points.
+    /// Create one or more price ranges from a vector of price points.
     ///
     /// The interval is determined from the time between the first two points.
-    /// All points must be evenly spaced at this interval, otherwise returns an error
-    /// describing where the gap was detected.
+    /// If there are gaps in the data, multiple ranges are returned.
     ///
     /// Points are sorted by timestamp before processing.
-    pub fn from_points(mut points: Vec<PricePoint>) -> Result<Self, String> {
+    /// Returns an empty vector if points is empty.
+    pub fn from_points(mut points: Vec<PricePoint>) -> Vec<PriceRange> {
         if points.is_empty() {
-            return Err("Cannot create PriceRange from empty points".to_string());
+            return Vec::new();
         }
 
         if points.len() == 1 {
             // Single point: use default interval
-            return Ok(Self {
+            return vec![Self {
                 interval_secs: DEFAULT_INTERVAL_SECS,
                 start: points[0].timestamp,
                 prices: vec![points[0].price],
-            });
+            }];
         }
 
         points.sort();
@@ -169,32 +169,56 @@ impl PriceRange {
         // Determine interval from first two points
         let interval_secs = (points[1].timestamp - points[0].timestamp).num_seconds();
         if interval_secs <= 0 {
-            return Err(format!(
-                "Invalid interval: points at {} and {} have non-positive time difference",
-                points[0].timestamp, points[1].timestamp
-            ));
+            // Invalid interval, treat each point as a separate range
+            return points
+                .into_iter()
+                .map(|p| Self {
+                    interval_secs: DEFAULT_INTERVAL_SECS,
+                    start: p.timestamp,
+                    prices: vec![p.price],
+                })
+                .collect();
         }
 
-        let start = points[0].timestamp;
-        let mut prices = Vec::with_capacity(points.len());
-        let mut expected_time = start;
+        let mut ranges = Vec::new();
+        let mut iter = points.into_iter();
 
-        for point in points {
-            if point.timestamp != expected_time {
-                return Err(format!(
-                    "Gap detected: expected point at {}, found point at {}",
-                    expected_time, point.timestamp
-                ));
+        let first_point = iter.next().unwrap();
+        let mut current_start = first_point.timestamp;
+        let mut current_prices = vec![first_point.price];
+        let mut expected_time = first_point.timestamp + Duration::seconds(interval_secs);
+
+        for point in iter {
+            if point.timestamp == expected_time {
+                // Point matches expected time, continue current range
+                current_prices.push(point.price);
+                expected_time = point.timestamp + Duration::seconds(interval_secs);
+            } else {
+                // Gap detected - save current range and start a new one
+                if !current_prices.is_empty() {
+                    ranges.push(Self {
+                        interval_secs,
+                        start: current_start,
+                        prices: current_prices,
+                    });
+                }
+
+                current_start = point.timestamp;
+                current_prices = vec![point.price];
+                expected_time = point.timestamp + Duration::seconds(interval_secs);
             }
-            prices.push(point.price);
-            expected_time = expected_time + Duration::seconds(interval_secs);
         }
 
-        Ok(Self {
-            interval_secs,
-            start,
-            prices,
-        })
+        // Don't forget the last range
+        if !current_prices.is_empty() {
+            ranges.push(Self {
+                interval_secs,
+                start: current_start,
+                prices: current_prices,
+            });
+        }
+
+        ranges
     }
 
     /// Check if this range is empty.
@@ -528,16 +552,14 @@ impl CurrencyPriceData {
         }
     }
 
-    /// Add price points, creating a range and merging as needed.
+    /// Add price points, creating ranges and merging as needed.
     ///
-    /// The points must be evenly spaced (interval is determined from the data).
-    /// Returns an error if the points have gaps or inconsistent spacing.
-    pub fn add_points(&mut self, points: Vec<PricePoint>) -> Result<(), String> {
-        if points.is_empty() {
-            return Ok(());
+    /// The interval is determined from the data. If there are gaps,
+    /// multiple ranges are created.
+    pub fn add_points(&mut self, points: Vec<PricePoint>) {
+        for range in PriceRange::from_points(points) {
+            self.add_range(range);
         }
-        self.add_range(PriceRange::from_points(points)?);
-        Ok(())
     }
 
     /// Find the range needed to cover a specific timestamp.
@@ -952,8 +974,8 @@ mod tests {
         let start1 = make_datetime(2024, 1, 1, 0);
         let start2 = make_datetime(2024, 1, 1, 5);
 
-        data.add_points(make_price_points(start1, 10)).unwrap(); // hours 0-9
-        data.add_points(make_price_points(start2, 10)).unwrap(); // hours 5-14
+        data.add_points(make_price_points(start1, 10)); // hours 0-9
+        data.add_points(make_price_points(start2, 10)); // hours 5-14
 
         assert_eq!(data.ranges.len(), 1);
         let time_range = data.ranges[0].time_range();
@@ -968,8 +990,8 @@ mod tests {
         let start1 = make_datetime(2024, 1, 1, 0);
         let start2 = make_datetime(2024, 1, 1, 10);
 
-        data.add_points(make_price_points(start1, 10)).unwrap(); // hours 0-9
-        data.add_points(make_price_points(start2, 10)).unwrap(); // hours 10-19
+        data.add_points(make_price_points(start1, 10)); // hours 0-9
+        data.add_points(make_price_points(start2, 10)); // hours 10-19
 
         // Should merge because they're adjacent (within 1 hour tolerance)
         assert_eq!(data.ranges.len(), 1);
@@ -982,8 +1004,8 @@ mod tests {
         let start1 = make_datetime(2024, 1, 1, 0);
         let start2 = make_datetime(2024, 1, 2, 0); // Next day
 
-        data.add_points(make_price_points(start1, 10)).unwrap(); // hours 0-9 on day 1
-        data.add_points(make_price_points(start2, 10)).unwrap(); // hours 0-9 on day 2
+        data.add_points(make_price_points(start1, 10)); // hours 0-9 on day 1
+        data.add_points(make_price_points(start2, 10)); // hours 0-9 on day 2
 
         // Should not merge because there's a gap
         assert_eq!(data.ranges.len(), 2);
@@ -994,7 +1016,7 @@ mod tests {
         let mut data = CurrencyPriceData::new();
 
         let start = make_datetime(2024, 1, 1, 10);
-        data.add_points(make_price_points(start, 10)).unwrap(); // hours 10-19
+        data.add_points(make_price_points(start, 10)); // hours 10-19
 
         // Request at hour 5 (before range) - should be missing
         let missing = data.missing_range_for_timestamp(make_datetime(2024, 1, 1, 5), Duration::hours(2));
@@ -1017,7 +1039,7 @@ mod tests {
                 price: Decimal::from(100 + i as i64 * 10),
             })
             .collect();
-        data.add_points(points).unwrap();
+        data.add_points(points);
 
         // Price at hour 5 should be exactly 150 (at a data point)
         let (price, _) = data.estimate_price(make_datetime(2024, 1, 1, 5)).unwrap();
@@ -1042,7 +1064,7 @@ mod tests {
                 price: Decimal::from(100 + i as i64 * 10),
             })
             .collect();
-        data.add_points(points).unwrap();
+        data.add_points(points);
 
         // Test: estimate before all ranges (hour 5)
         // Should return the first known price (100) with accuracy = 5 hours
@@ -1091,7 +1113,7 @@ mod tests {
                 price: Decimal::from(100 + i as i64 * 10),
             })
             .collect();
-        data.add_points(points1).unwrap();
+        data.add_points(points1);
 
         let points2: Vec<PricePoint> = (0..5)
             .map(|i| PricePoint {
@@ -1099,7 +1121,7 @@ mod tests {
                 price: Decimal::from(200 + i as i64 * 10),
             })
             .collect();
-        data.add_points(points2).unwrap();
+        data.add_points(points2);
 
         assert_eq!(data.ranges.len(), 2, "Should have two separate ranges");
 
@@ -1125,7 +1147,7 @@ mod tests {
         let mut history = PriceHistory::new();
 
         let start = make_datetime(2024, 1, 1, 10);
-        history.price_data("ETH".to_owned()).add_points(make_price_points(start, 10)).unwrap();
+        history.price_data("ETH".to_owned()).add_points(make_price_points(start, 10));
 
         let mut requirements = HashMap::new();
         requirements.insert(
@@ -1209,8 +1231,8 @@ mod tests {
         // Gap: hours 10-19
         let start1 = make_datetime(2024, 1, 1, 0);
         let start2 = make_datetime(2024, 1, 1, 20);
-        data.add_points(make_price_points(start1, 10)).unwrap(); // hours 0-9
-        data.add_points(make_price_points(start2, 10)).unwrap(); // hours 20-29
+        data.add_points(make_price_points(start1, 10)); // hours 0-9
+        data.add_points(make_price_points(start2, 10)); // hours 20-29
 
         assert_eq!(data.ranges.len(), 2);
 
@@ -1249,7 +1271,7 @@ mod tests {
                 price: Decimal::from(200 + i as i64 * 10), // hours 2-6 with different prices
             })
             .collect();
-        data.add_points(high_res_points).unwrap();
+        data.add_points(high_res_points);
 
         // Should have 3 ranges now:
         // - hours 0 (low res, not replaced)
@@ -1283,7 +1305,7 @@ mod tests {
                 price: Decimal::from(100 + i as i64),
             })
             .collect();
-        data.add_points(high_res_points).unwrap();
+        data.add_points(high_res_points);
 
         assert_eq!(data.ranges.len(), 1);
 
@@ -1328,7 +1350,7 @@ mod tests {
                 price: Decimal::from(100 + i as i64),
             })
             .collect();
-        data.add_points(points1).unwrap();
+        data.add_points(points1);
 
         // Add second range: hours 5-14 with different prices (200-209)
         let points2: Vec<PricePoint> = (5..15)
@@ -1337,7 +1359,7 @@ mod tests {
                 price: Decimal::from(200 + i as i64),
             })
             .collect();
-        data.add_points(points2).unwrap();
+        data.add_points(points2);
 
         // Should be merged into one range
         assert_eq!(data.ranges.len(), 1);
@@ -1377,10 +1399,19 @@ mod tests {
             });
         }
 
-        // from_points should detect the gap and return an error
-        let result = PriceRange::from_points(points);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Gap detected"));
+        // from_points should detect the gap and return multiple ranges
+        let ranges = PriceRange::from_points(points);
+        assert_eq!(ranges.len(), 2, "Should detect two separate ranges");
+
+        // First range
+        assert_eq!(ranges[0].time_range().start, make_datetime(2024, 1, 1, 0));
+        assert_eq!(ranges[0].time_range().end, make_datetime(2024, 1, 1, 4));
+        assert_eq!(ranges[0].len(), 5);
+
+        // Second range
+        assert_eq!(ranges[1].time_range().start, make_datetime(2024, 1, 1, 10));
+        assert_eq!(ranges[1].time_range().end, make_datetime(2024, 1, 1, 14));
+        assert_eq!(ranges[1].len(), 5);
     }
 
     #[test]
@@ -1393,8 +1424,10 @@ mod tests {
             })
             .collect();
 
-        let range = PriceRange::from_points(points).unwrap();
+        let ranges = PriceRange::from_points(points);
+        assert_eq!(ranges.len(), 1);
 
+        let range = &ranges[0];
         assert_eq!(range.len(), 5);
         assert_eq!(range.interval(), Duration::hours(2));
         assert_eq!(range.start(), make_datetime(2024, 1, 1, 0));
@@ -1407,8 +1440,10 @@ mod tests {
             price: dec!(123),
         }];
 
-        let range = PriceRange::from_points(points).unwrap();
+        let ranges = PriceRange::from_points(points);
+        assert_eq!(ranges.len(), 1);
 
+        let range = &ranges[0];
         assert_eq!(range.len(), 1);
         assert_eq!(range.start(), make_datetime(2024, 1, 1, 5));
     }
@@ -1416,7 +1451,7 @@ mod tests {
     #[test]
     fn test_from_points_empty() {
         let points: Vec<PricePoint> = Vec::new();
-        let result = PriceRange::from_points(points);
-        assert!(result.is_err());
+        let ranges = PriceRange::from_points(points);
+        assert!(ranges.is_empty());
     }
 }
