@@ -98,11 +98,12 @@ const DEFAULT_INTERVAL_SECS: i64 = 3600;
 
 /// A contiguous range of price data for a single currency.
 ///
-/// Stores prices efficiently by only keeping the start time,
-/// with timestamps derived from index position and the interval
-/// stored in the parent CurrencyPriceData.
+/// Stores prices efficiently by only keeping the start time and interval,
+/// with timestamps derived from index position.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PriceRange {
+    /// The interval between consecutive price points in seconds.
+    interval_secs: i64,
     /// The start time of this price range.
     start: NaiveDateTime,
     /// The price values, where prices[i] corresponds to start + interval * i.
@@ -110,22 +111,134 @@ pub(crate) struct PriceRange {
 }
 
 impl PriceRange {
-    /// Create a new price range directly from start and prices.
+    /// Create a new price range with the default interval (1 hour).
+    #[allow(dead_code)]
     pub fn new(start: NaiveDateTime, prices: Vec<Decimal>) -> Self {
-        Self { start, prices }
+        Self {
+            interval_secs: DEFAULT_INTERVAL_SECS,
+            start,
+            prices,
+        }
+    }
+
+    /// Create a new price range with a custom interval.
+    #[allow(dead_code)]
+    pub fn with_interval(interval: Duration, start: NaiveDateTime, prices: Vec<Decimal>) -> Self {
+        Self {
+            interval_secs: interval.num_seconds(),
+            start,
+            prices,
+        }
+    }
+
+    /// Create a price range from a vector of price points.
+    ///
+    /// The interval is determined from the time between the first two points.
+    /// All points must be evenly spaced at this interval, otherwise returns an error
+    /// describing where the gap was detected.
+    ///
+    /// Points are sorted by timestamp before processing.
+    pub fn from_points(mut points: Vec<PricePoint>) -> Result<Self, String> {
+        if points.is_empty() {
+            return Err("Cannot create PriceRange from empty points".to_string());
+        }
+
+        if points.len() == 1 {
+            // Single point: use default interval
+            return Ok(Self {
+                interval_secs: DEFAULT_INTERVAL_SECS,
+                start: points[0].timestamp,
+                prices: vec![points[0].price],
+            });
+        }
+
+        points.sort();
+
+        // Determine interval from first two points
+        let interval_secs = (points[1].timestamp - points[0].timestamp).num_seconds();
+        if interval_secs <= 0 {
+            return Err(format!(
+                "Invalid interval: points at {} and {} have non-positive time difference",
+                points[0].timestamp, points[1].timestamp
+            ));
+        }
+
+        let start = points[0].timestamp;
+        let mut prices = Vec::with_capacity(points.len());
+        let mut expected_time = start;
+
+        for point in points {
+            if point.timestamp != expected_time {
+                return Err(format!(
+                    "Gap detected: expected point at {}, found point at {}",
+                    expected_time, point.timestamp
+                ));
+            }
+            prices.push(point.price);
+            expected_time = expected_time + Duration::seconds(interval_secs);
+        }
+
+        Ok(Self {
+            interval_secs,
+            start,
+            prices,
+        })
     }
 
     /// Check if this range is empty.
     pub fn is_empty(&self) -> bool {
         self.prices.is_empty()
     }
+
+    /// Get the interval as a Duration.
+    pub fn interval(&self) -> Duration {
+        Duration::seconds(self.interval_secs)
+    }
+
+    /// Get the interval in seconds.
+    #[allow(dead_code)]
+    pub fn interval_secs(&self) -> i64 {
+        self.interval_secs
+    }
+
+    /// Get the start timestamp.
+    #[allow(dead_code)]
+    pub fn start(&self) -> NaiveDateTime {
+        self.start
+    }
+
+    /// Get the timestamp for a given index.
+    pub fn timestamp_at(&self, index: usize) -> NaiveDateTime {
+        self.start + Duration::seconds(self.interval_secs * index as i64)
+    }
+
+    /// Get the time range covered by this price range.
+    ///
+    /// The range covers exactly from the first data point to the last data point.
+    /// Interpolation is possible for any timestamp between these two points.
+    pub fn time_range(&self) -> TimeRange {
+        let end = self.start + Duration::seconds(self.interval_secs * (self.prices.len().saturating_sub(1)) as i64);
+        TimeRange::new(self.start, end)
+    }
+
+    /// Get all price points as (timestamp, price) pairs.
+    pub fn points(&self) -> impl Iterator<Item = PricePoint> + '_ {
+        self.prices.iter().enumerate().map(|(i, &price)| PricePoint {
+            timestamp: self.timestamp_at(i),
+            price,
+        })
+    }
+
+    /// Get the number of price points in this range.
+    #[allow(dead_code)]
+    pub fn len(&self) -> usize {
+        self.prices.len()
+    }
 }
 
 /// Price data for a single currency, stored as multiple ranges.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CurrencyPriceData {
-    /// The interval between consecutive price points in seconds.
-    interval_secs: i64,
     /// Sorted list of non-overlapping price ranges.
     ranges: Vec<PriceRange>,
 }
@@ -133,7 +246,6 @@ pub(crate) struct CurrencyPriceData {
 impl Default for CurrencyPriceData {
     fn default() -> Self {
         Self {
-            interval_secs: DEFAULT_INTERVAL_SECS,
             ranges: Vec::new(),
         }
     }
@@ -144,87 +256,11 @@ impl CurrencyPriceData {
         Self::default()
     }
 
-    /// Create with a specific interval.
-    #[allow(dead_code)]
-    pub fn with_interval(interval: Duration) -> Self {
-        Self {
-            interval_secs: interval.num_seconds(),
-            ranges: Vec::new(),
-        }
-    }
-
-    /// Get the interval for this currency's price data as a Duration.
-    #[allow(dead_code)]
-    pub fn interval(&self) -> Duration {
-        Duration::seconds(self.interval_secs)
-    }
-
-    /// Get the timestamp for a given index within a range.
-    fn timestamp_at(&self, range: &PriceRange, index: usize) -> NaiveDateTime {
-        range.start + Duration::seconds(self.interval_secs * index as i64)
-    }
-
-    /// Get the time range for a price range.
-    ///
-    /// The range covers exactly from the first data point to the last data point.
-    /// Interpolation is possible for any timestamp between these two points.
-    fn time_range(&self, range: &PriceRange) -> TimeRange {
-        let end = range.start + Duration::seconds(self.interval_secs * (range.prices.len().saturating_sub(1)) as i64);
-        TimeRange::new(range.start, end)
-    }
-
-    /// Parse price points into one or more contiguous price ranges.
-    ///
-    /// Points are grouped by detecting gaps based on this currency's interval.
-    /// Returns a vector of ranges, each containing contiguous price data.
-    pub fn parse_points(&self, mut points: Vec<PricePoint>) -> Vec<PriceRange> {
-        if points.is_empty() {
-            return Vec::new();
-        }
-
-        if points.len() == 1 {
-            return vec![PriceRange::new(points[0].timestamp, vec![points[0].price])];
-        }
-
-        points.sort();
-
-        let mut ranges = Vec::new();
-        let mut iter = points.into_iter();
-
-        let first_point = iter.next().unwrap();
-        let mut current_start = first_point.timestamp;
-        let mut current_prices = vec![first_point.price];
-        let mut expected_next_time = first_point.timestamp + Duration::seconds(self.interval_secs);
-
-        for point in iter {
-            if point.timestamp == expected_next_time {
-                // Point matches expected time, continue current range
-                current_prices.push(point.price);
-                expected_next_time = point.timestamp + Duration::seconds(self.interval_secs);
-            } else {
-                // Gap detected - save current range and start a new one
-                if !current_prices.is_empty() {
-                    ranges.push(PriceRange::new(current_start, current_prices));
-                }
-
-                current_start = point.timestamp;
-                current_prices = vec![point.price];
-                expected_next_time = point.timestamp + Duration::seconds(self.interval_secs);
-            }
-        }
-
-        // Don't forget the last range
-        if !current_prices.is_empty() {
-            ranges.push(PriceRange::new(current_start, current_prices));
-        }
-
-        ranges
-    }
-
     /// Merge two price ranges into one.
     fn merge_ranges(&self, range: &mut PriceRange, other: PriceRange) {
-        let self_range = self.time_range(range);
-        let other_range = self.time_range(&other);
+        let self_range = range.time_range();
+        let other_range = other.time_range();
+        let interval_secs = range.interval_secs;
 
         // Determine the new combined range
         let new_start = range.start.min(other.start);
@@ -232,19 +268,19 @@ impl CurrencyPriceData {
 
         // Calculate new size
         let new_duration = new_end - new_start;
-        let new_len = (new_duration.num_seconds() / self.interval_secs) as usize + 1;
+        let new_len = (new_duration.num_seconds() / interval_secs) as usize + 1;
 
         // Create new prices vector
         let mut new_prices = vec![Decimal::ZERO; new_len];
 
         // Copy prices from self
-        let self_offset = ((range.start - new_start).num_seconds() / self.interval_secs) as usize;
+        let self_offset = ((range.start - new_start).num_seconds() / interval_secs) as usize;
         for (i, &price) in range.prices.iter().enumerate() {
             new_prices[self_offset + i] = price;
         }
 
         // Copy/overwrite prices from other (other takes precedence for overlaps)
-        let other_offset = ((other.start - new_start).num_seconds() / self.interval_secs) as usize;
+        let other_offset = ((other.start - new_start).num_seconds() / interval_secs) as usize;
         for (i, price) in other.prices.into_iter().enumerate() {
             new_prices[other_offset + i] = price;
         }
@@ -259,14 +295,14 @@ impl CurrencyPriceData {
             return;
         }
 
-        // Tolerance for considering ranges as adjacent (same as interval)
-        let tolerance = Duration::seconds(self.interval_secs);
-        let new_time_range = self.time_range(&new_range);
+        // Tolerance for considering ranges as adjacent (same as the range's interval)
+        let tolerance = new_range.interval();
+        let new_time_range = new_range.time_range();
 
         // Find all ranges that overlap or are adjacent to the new range
         let mut to_merge: Vec<usize> = Vec::new();
         for (i, existing) in self.ranges.iter().enumerate() {
-            if self.time_range(existing).overlaps_or_adjacent(&new_time_range, tolerance) {
+            if existing.time_range().overlaps_or_adjacent(&new_time_range, tolerance) {
                 to_merge.push(i);
             }
         }
@@ -299,11 +335,17 @@ impl CurrencyPriceData {
         }
     }
 
-    /// Add price points, creating ranges and merging as needed.
-    pub fn add_points(&mut self, points: Vec<PricePoint>) {
-        for new_range in self.parse_points(points) {
-            self.add_range(new_range);
+    /// Add price points, creating a range and merging as needed.
+    ///
+    /// The points must be evenly spaced (interval is determined from the data).
+    /// Returns an error if the points have gaps or inconsistent spacing.
+    pub fn add_points(&mut self, points: Vec<PricePoint>) -> Result<(), String> {
+        if points.is_empty() {
+            return Ok(());
         }
+        let new_range = PriceRange::from_points(points)?;
+        self.add_range(new_range);
+        Ok(())
     }
 
     /// Find the range needed to cover a specific timestamp.
@@ -315,7 +357,7 @@ impl CurrencyPriceData {
     ) -> Option<TimeRange> {
         // Check if any existing range covers this timestamp
         for range in &self.ranges {
-            if self.time_range(range).contains(timestamp) {
+            if range.time_range().contains(timestamp) {
                 return None;
             }
         }
@@ -333,7 +375,10 @@ impl CurrencyPriceData {
         padding: Duration,
     ) -> Vec<TimeRange> {
         let mut missing: Vec<TimeRange> = Vec::new();
-        let tolerance = Duration::seconds(self.interval_secs);
+        // Use the interval from the first range, or default to 1 hour if no ranges exist
+        let tolerance = self.ranges.first()
+            .map(|r| r.interval())
+            .unwrap_or_else(|| Duration::seconds(DEFAULT_INTERVAL_SECS));
 
         for &ts in timestamps {
             if let Some(needed) = self.missing_range_for_timestamp(ts, padding) {
@@ -366,7 +411,7 @@ impl CurrencyPriceData {
         }
 
         // Subtract already-covered ranges from the missing ranges
-        let covered: Vec<TimeRange> = self.ranges.iter().map(|r| self.time_range(r)).collect();
+        let covered: Vec<TimeRange> = self.ranges.iter().map(|r| r.time_range()).collect();
         let mut result: Vec<TimeRange> = Vec::new();
 
         for missing_range in merged {
@@ -390,33 +435,31 @@ impl CurrencyPriceData {
     pub fn estimate_price(&self, timestamp: NaiveDateTime) -> Option<(Decimal, Duration)> {
         // Find the range containing this timestamp
         for range in &self.ranges {
-            if self.time_range(range).contains(timestamp) {
+            if range.time_range().contains(timestamp) {
                 return self.estimate_price_in_range(range, timestamp);
             }
         }
 
-        None
-
         // If not in any range, try to extrapolate from the nearest range
         // (but with lower confidence)
-        // let mut nearest_range: Option<&PriceRange> = None;
-        // let mut nearest_distance = Duration::MAX;
+        let mut nearest_range: Option<&PriceRange> = None;
+        let mut nearest_distance = Duration::MAX;
 
-        // for range in &self.ranges {
-        //     let time_range = self.time_range(range);
-        //     let distance = if timestamp < time_range.start {
-        //         time_range.start - timestamp
-        //     } else {
-        //         timestamp - time_range.end
-        //     };
+        for range in &self.ranges {
+            let time_range = range.time_range();
+            let distance = if timestamp < time_range.start {
+                time_range.start - timestamp
+            } else {
+                timestamp - time_range.end
+            };
 
-        //     if distance < nearest_distance {
-        //         nearest_distance = distance;
-        //         nearest_range = Some(range);
-        //     }
-        // }
+            if distance < nearest_distance {
+                nearest_distance = distance;
+                nearest_range = Some(range);
+            }
+        }
 
-        // nearest_range.and_then(|r| self.estimate_price_in_range(r, timestamp))
+        nearest_range.and_then(|r| self.estimate_price_in_range(r, timestamp))
     }
 
     /// Estimate the price at a given timestamp within a specific range.
@@ -425,7 +468,7 @@ impl CurrencyPriceData {
             return None;
         }
 
-        let time_range = self.time_range(range);
+        let time_range = range.time_range();
 
         // Handle timestamps outside the range
         if timestamp < range.start {
@@ -443,7 +486,7 @@ impl CurrencyPriceData {
         let elapsed = timestamp - range.start;
         let elapsed_secs = elapsed.num_seconds();
 
-        let prev_idx = (elapsed_secs / self.interval_secs) as usize;
+        let prev_idx = (elapsed_secs / range.interval_secs) as usize;
         let next_idx = (prev_idx + 1).min(last_idx);
 
         if prev_idx >= range.prices.len() {
@@ -451,7 +494,7 @@ impl CurrencyPriceData {
         }
 
         let prev_price = range.prices[prev_idx];
-        let prev_time = self.timestamp_at(range, prev_idx);
+        let prev_time = range.timestamp_at(prev_idx);
 
         if prev_idx == next_idx || next_idx >= range.prices.len() {
             let accuracy = (timestamp - prev_time).abs();
@@ -459,7 +502,7 @@ impl CurrencyPriceData {
         }
 
         let next_price = range.prices[next_idx];
-        let next_time = self.timestamp_at(range, next_idx);
+        let next_time = range.timestamp_at(next_idx);
 
         // Linear interpolation
         let total_duration: Decimal = (next_time - prev_time).num_seconds().into();
@@ -481,19 +524,14 @@ impl CurrencyPriceData {
     pub fn all_points(&self) -> Vec<PricePoint> {
         self.ranges
             .iter()
-            .flat_map(|r| {
-                r.prices.iter().enumerate().map(|(i, &price)| PricePoint {
-                    timestamp: self.timestamp_at(r, i),
-                    price,
-                })
-            })
+            .flat_map(|r| r.points())
             .collect()
     }
 
     /// Get the covered time ranges.
     #[allow(dead_code)]
     pub fn covered_ranges(&self) -> Vec<TimeRange> {
-        self.ranges.iter().map(|r| self.time_range(r)).collect()
+        self.ranges.iter().map(|r| r.time_range()).collect()
     }
 }
 
@@ -638,10 +676,11 @@ impl PriceHistory {
         eprintln!("=== PriceHistory Debug Dump ===");
         eprintln!("Currencies: {}", self.currencies.len());
         for (currency, data) in &self.currencies {
-            eprintln!("  {}: {} ranges, interval={}s", currency, data.ranges.len(), data.interval_secs);
+            eprintln!("  {}: {} ranges", currency, data.ranges.len());
             for (i, range) in data.ranges.iter().enumerate() {
-                let end = range.start + Duration::seconds(data.interval_secs * (range.prices.len().saturating_sub(1)) as i64);
-                eprintln!("    Range {}: {} to {} ({} points)", i, range.start, end, range.prices.len());
+                let time_range = range.time_range();
+                eprintln!("    Range {}: {} to {} ({} points, interval={}s)",
+                    i, time_range.start, time_range.end, range.len(), range.interval_secs());
             }
         }
         eprintln!("=== End Debug Dump ===");
@@ -728,6 +767,8 @@ mod tests {
             .collect()
     }
 
+
+
     #[test]
     fn test_time_range_overlaps() {
         let r1 = TimeRange::new(make_datetime(2024, 1, 1, 0), make_datetime(2024, 1, 1, 10));
@@ -757,11 +798,11 @@ mod tests {
         let start1 = make_datetime(2024, 1, 1, 0);
         let start2 = make_datetime(2024, 1, 1, 5);
 
-        data.add_points(make_price_points(start1, 10)); // hours 0-9
-        data.add_points(make_price_points(start2, 10)); // hours 5-14
+        data.add_points(make_price_points(start1, 10)).unwrap(); // hours 0-9
+        data.add_points(make_price_points(start2, 10)).unwrap(); // hours 5-14
 
         assert_eq!(data.ranges.len(), 1);
-        let time_range = data.time_range(&data.ranges[0]);
+        let time_range = data.ranges[0].time_range();
         assert_eq!(time_range.start, make_datetime(2024, 1, 1, 0));
         assert_eq!(time_range.end, make_datetime(2024, 1, 1, 14));
     }
@@ -773,8 +814,8 @@ mod tests {
         let start1 = make_datetime(2024, 1, 1, 0);
         let start2 = make_datetime(2024, 1, 1, 10);
 
-        data.add_points(make_price_points(start1, 10)); // hours 0-9
-        data.add_points(make_price_points(start2, 10)); // hours 10-19
+        data.add_points(make_price_points(start1, 10)).unwrap(); // hours 0-9
+        data.add_points(make_price_points(start2, 10)).unwrap(); // hours 10-19
 
         // Should merge because they're adjacent (within 1 hour tolerance)
         assert_eq!(data.ranges.len(), 1);
@@ -787,8 +828,8 @@ mod tests {
         let start1 = make_datetime(2024, 1, 1, 0);
         let start2 = make_datetime(2024, 1, 2, 0); // Next day
 
-        data.add_points(make_price_points(start1, 10)); // hours 0-9 on day 1
-        data.add_points(make_price_points(start2, 10)); // hours 0-9 on day 2
+        data.add_points(make_price_points(start1, 10)).unwrap(); // hours 0-9 on day 1
+        data.add_points(make_price_points(start2, 10)).unwrap(); // hours 0-9 on day 2
 
         // Should not merge because there's a gap
         assert_eq!(data.ranges.len(), 2);
@@ -799,7 +840,7 @@ mod tests {
         let mut data = CurrencyPriceData::new();
 
         let start = make_datetime(2024, 1, 1, 10);
-        data.add_points(make_price_points(start, 10)); // hours 10-19
+        data.add_points(make_price_points(start, 10)).unwrap(); // hours 10-19
 
         // Request at hour 5 (before range) - should be missing
         let missing = data.missing_range_for_timestamp(make_datetime(2024, 1, 1, 5), Duration::hours(2));
@@ -822,7 +863,7 @@ mod tests {
                 price: Decimal::from(100 + i as i64 * 10),
             })
             .collect();
-        data.add_points(points);
+        data.add_points(points).unwrap();
 
         // Price at hour 5 should be exactly 150 (at a data point)
         let (price, _) = data.estimate_price(make_datetime(2024, 1, 1, 5)).unwrap();
@@ -840,7 +881,7 @@ mod tests {
         let mut history = PriceHistory::new();
 
         let start = make_datetime(2024, 1, 1, 10);
-        history.price_data("ETH".to_owned()).add_points(make_price_points(start, 10));
+        history.price_data("ETH".to_owned()).add_points(make_price_points(start, 10)).unwrap();
 
         let mut requirements = HashMap::new();
         requirements.insert(
@@ -924,8 +965,8 @@ mod tests {
         // Gap: hours 10-19
         let start1 = make_datetime(2024, 1, 1, 0);
         let start2 = make_datetime(2024, 1, 1, 20);
-        data.add_points(make_price_points(start1, 10)); // hours 0-9
-        data.add_points(make_price_points(start2, 10)); // hours 20-29
+        data.add_points(make_price_points(start1, 10)).unwrap(); // hours 0-9
+        data.add_points(make_price_points(start2, 10)).unwrap(); // hours 20-29
 
         assert_eq!(data.ranges.len(), 2);
 
@@ -943,9 +984,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_points_detects_gaps() {
-        let data = CurrencyPriceData::new();
-
+    fn test_from_points_detects_gaps() {
         // Create points with a gap in the middle
         let mut points = Vec::new();
 
@@ -967,28 +1006,15 @@ mod tests {
             });
         }
 
-        let ranges = data.parse_points(points);
-
-        assert_eq!(ranges.len(), 2, "Should detect two separate ranges");
-
-        // First range
-        let r1 = &ranges[0];
-        assert_eq!(data.time_range(r1).start, make_datetime(2024, 1, 1, 0));
-        assert_eq!(data.time_range(r1).end, make_datetime(2024, 1, 1, 4));
-        assert_eq!(r1.prices.len(), 5);
-
-        // Second range
-        let r2 = &ranges[1];
-        assert_eq!(data.time_range(r2).start, make_datetime(2024, 1, 1, 10));
-        assert_eq!(data.time_range(r2).end, make_datetime(2024, 1, 1, 14));
-        assert_eq!(r2.prices.len(), 5);
+        // from_points should detect the gap and return an error
+        let result = PriceRange::from_points(points);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Gap detected"));
     }
 
     #[test]
-    fn test_parse_points_with_custom_interval() {
-        // Create data with 2-hour interval
-        let data = CurrencyPriceData::with_interval(Duration::hours(2));
-
+    fn test_from_points_with_custom_interval() {
+        // Create points with 2-hour interval
         let points: Vec<PricePoint> = (0..5)
             .map(|i| PricePoint {
                 timestamp: make_datetime(2024, 1, 1, 0) + Duration::hours(i * 2),
@@ -996,33 +1022,30 @@ mod tests {
             })
             .collect();
 
-        let ranges = data.parse_points(points);
+        let range = PriceRange::from_points(points).unwrap();
 
-        assert_eq!(ranges.len(), 1);
-        assert_eq!(ranges[0].prices.len(), 5);
+        assert_eq!(range.len(), 5);
+        assert_eq!(range.interval(), Duration::hours(2));
+        assert_eq!(range.start(), make_datetime(2024, 1, 1, 0));
     }
 
     #[test]
-    fn test_parse_points_single_point() {
-        let data = CurrencyPriceData::new();
-
+    fn test_from_points_single_point() {
         let points = vec![PricePoint {
             timestamp: make_datetime(2024, 1, 1, 5),
             price: dec!(123),
         }];
 
-        let ranges = data.parse_points(points);
+        let range = PriceRange::from_points(points).unwrap();
 
-        assert_eq!(ranges.len(), 1);
-        assert_eq!(ranges[0].prices.len(), 1);
-        assert_eq!(ranges[0].prices[0], dec!(123));
+        assert_eq!(range.len(), 1);
+        assert_eq!(range.start(), make_datetime(2024, 1, 1, 5));
     }
 
     #[test]
-    fn test_parse_points_empty() {
-        let data = CurrencyPriceData::new();
+    fn test_from_points_empty() {
         let points: Vec<PricePoint> = Vec::new();
-        let ranges = data.parse_points(points);
-        assert!(ranges.is_empty());
+        let result = PriceRange::from_points(points);
+        assert!(result.is_err());
     }
 }
