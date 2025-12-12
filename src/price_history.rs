@@ -69,6 +69,18 @@ impl TimeRange {
         }
     }
 
+    /// Find the intersection of this range with another.
+    /// Returns None if the ranges don't overlap.
+    pub fn intersect(&self, other: &TimeRange) -> Option<TimeRange> {
+        let start = self.start.max(other.start);
+        let end = self.end.min(other.end);
+        if start <= end {
+            Some(TimeRange::new(start, end))
+        } else {
+            None
+        }
+    }
+
     /// Subtract another range from this one, returning the remaining parts.
     /// Returns 0, 1, or 2 ranges depending on the overlap.
     pub fn subtract(&self, other: &TimeRange) -> Vec<TimeRange> {
@@ -217,8 +229,8 @@ impl PriceRange {
     /// The range covers exactly from the first data point to the last data point.
     /// Interpolation is possible for any timestamp between these two points.
     pub fn time_range(&self) -> TimeRange {
-        let end = self.start + Duration::seconds(self.interval_secs * (self.prices.len().saturating_sub(1)) as i64);
-        TimeRange::new(self.start, end)
+        let duration = Duration::seconds(self.interval_secs * (self.prices.len().saturating_sub(1)) as i64);
+        TimeRange::new(self.start, self.start + duration)
     }
 
     /// Get all price points as (timestamp, price) pairs.
@@ -279,6 +291,127 @@ impl PriceRange {
             price: self.prices[index],
         })
     }
+
+    /// Extract a slice of this range covering the given time range.
+    ///
+    /// The slice will include all points that fall within the given time range.
+    /// Returns None if there's no overlap or the overlap contains no points.
+    pub fn slice(&self, time_range: &TimeRange) -> Option<PriceRange> {
+        let self_range = self.time_range();
+
+        // Find intersection
+        let intersection = self_range.intersect(time_range)?;
+
+        // Find the first index at or after intersection.start
+        let start_elapsed = (intersection.start - self.start).num_seconds();
+        let start_idx = if start_elapsed <= 0 {
+            0
+        } else {
+            // Round up to get first point within intersection
+            ((start_elapsed + self.interval_secs - 1) / self.interval_secs) as usize
+        };
+
+        // Find the last index at or before intersection.end
+        let end_elapsed = (intersection.end - self.start).num_seconds();
+        let end_idx = (end_elapsed / self.interval_secs) as usize;
+
+        if start_idx >= self.prices.len() || end_idx < start_idx {
+            return None;
+        }
+
+        let end_idx = end_idx.min(self.prices.len() - 1);
+
+        let new_start = self.timestamp_at(start_idx);
+        let new_prices = self.prices[start_idx..=end_idx].to_vec();
+
+        if new_prices.is_empty() {
+            return None;
+        }
+
+        Some(PriceRange {
+            interval_secs: self.interval_secs,
+            start: new_start,
+            prices: new_prices,
+        })
+    }
+
+    /// Subtract a time range from this price range.
+    ///
+    /// Returns 0, 1, or 2 price ranges depending on the overlap:
+    /// - 0 ranges if this range is fully covered by the subtracted range
+    /// - 1 range if the subtracted range overlaps at the start or end
+    /// - 2 ranges if the subtracted range is in the middle (splits this range)
+    pub fn subtract(&self, time_range: &TimeRange) -> Vec<PriceRange> {
+        let self_range = self.time_range();
+
+        // No overlap - return self unchanged
+        if time_range.end < self_range.start || time_range.start > self_range.end {
+            return vec![self.clone()];
+        }
+
+        let mut result = Vec::new();
+
+        // Left remainder (part before time_range starts)
+        if self_range.start < time_range.start {
+            let left_range = TimeRange::new(self_range.start, time_range.start - Duration::seconds(1));
+            if let Some(left) = self.slice(&left_range) {
+                result.push(left);
+            }
+        }
+
+        // Right remainder (part after time_range ends)
+        if self_range.end > time_range.end {
+            let right_range = TimeRange::new(time_range.end + Duration::seconds(1), self_range.end);
+            if let Some(right) = self.slice(&right_range) {
+                result.push(right);
+            }
+        }
+
+        result
+    }
+
+    /// Check if this range can be merged with another range.
+    ///
+    /// Ranges can be merged if they have the same interval and are adjacent
+    /// (the end of one is exactly one interval before the start of the other).
+    pub fn can_merge_with(&self, other: &PriceRange) -> bool {
+        if self.interval_secs != other.interval_secs {
+            return false;
+        }
+
+        let self_range = self.time_range();
+        let other_range = other.time_range();
+        let interval = Duration::seconds(self.interval_secs);
+
+        // Check if other starts exactly one interval after self ends
+        // or self starts exactly one interval after other ends
+        self_range.end + interval == other_range.start ||
+        other_range.end + interval == self_range.start
+    }
+
+    /// Merge this range with another adjacent range.
+    ///
+    /// Assumes can_merge_with() returned true. The ranges must have the same
+    /// interval and be adjacent.
+    pub fn merge_with(&self, other: &PriceRange) -> PriceRange {
+        debug_assert!(self.can_merge_with(other), "Ranges must be mergeable");
+
+        // Determine which range comes first
+        let (first, second) = if self.start < other.start {
+            (self, other)
+        } else {
+            (other, self)
+        };
+
+        let mut prices = first.prices.clone();
+        prices.extend(second.prices.iter().copied());
+
+        PriceRange {
+            interval_secs: self.interval_secs,
+            start: first.start,
+            prices,
+        }
+    }
 }
 
 /// Price data for a single currency, stored as multiple ranges.
@@ -301,82 +434,103 @@ impl CurrencyPriceData {
         Self::default()
     }
 
-    /// Merge two price ranges into one.
-    fn merge_ranges(&self, range: &mut PriceRange, other: PriceRange) {
-        let self_range = range.time_range();
-        let other_range = other.time_range();
-        let interval_secs = range.interval_secs;
-
-        // Determine the new combined range
-        let new_start = range.start.min(other.start);
-        let new_end = self_range.end.max(other_range.end);
-
-        // Calculate new size
-        let new_duration = new_end - new_start;
-        let new_len = (new_duration.num_seconds() / interval_secs) as usize + 1;
-
-        // Create new prices vector
-        let mut new_prices = vec![Decimal::ZERO; new_len];
-
-        // Copy prices from self
-        let self_offset = ((range.start - new_start).num_seconds() / interval_secs) as usize;
-        for (i, &price) in range.prices.iter().enumerate() {
-            new_prices[self_offset + i] = price;
-        }
-
-        // Copy/overwrite prices from other (other takes precedence for overlaps)
-        let other_offset = ((other.start - new_start).num_seconds() / interval_secs) as usize;
-        for (i, price) in other.prices.into_iter().enumerate() {
-            new_prices[other_offset + i] = price;
-        }
-
-        range.start = new_start;
-        range.prices = new_prices;
-    }
-
-    /// Add a new price range, merging with existing ranges if they overlap or connect.
+    /// Add a new price range, respecting interval-based priority.
+    ///
+    /// Ranges with smaller intervals (higher resolution) take priority over
+    /// ranges with larger intervals. When intervals are equal, existing data
+    /// is preserved.
+    ///
+    /// The new range may be split to fill gaps between existing higher-priority ranges.
     pub fn add_range(&mut self, new_range: PriceRange) {
         if new_range.is_empty() {
             return;
         }
 
-        // Tolerance for considering ranges as adjacent (same as the range's interval)
-        let tolerance = new_range.interval();
         let new_time_range = new_range.time_range();
+        let new_interval = new_range.interval_secs;
 
-        // Find all ranges that overlap or are adjacent to the new range
-        let mut to_merge: Vec<usize> = Vec::new();
-        for (i, existing) in self.ranges.iter().enumerate() {
-            if existing.time_range().overlaps_or_adjacent(&new_time_range, tolerance) {
-                to_merge.push(i);
+        // Step 1: Find gaps where the new range should be inserted
+        // (subtract all existing ranges with equal or smaller intervals)
+        let mut gaps = vec![new_time_range];
+
+        for existing in &self.ranges {
+            if existing.interval_secs <= new_interval {
+                // This existing range has equal or better resolution - subtract it
+                // Expand the existing range by one interval on each side to ensure
+                // we don't create overlapping points at boundaries
+                let existing_time_range = existing.time_range();
+                let expanded = TimeRange::new(
+                    existing_time_range.start - Duration::seconds(existing.interval_secs - 1),
+                    existing_time_range.end + Duration::seconds(existing.interval_secs - 1),
+                );
+                gaps = gaps
+                    .into_iter()
+                    .flat_map(|gap| gap.subtract(&expanded))
+                    .collect();
             }
         }
 
-        if to_merge.is_empty() {
-            // No overlapping ranges, just insert in sorted order
-            let insert_pos = self
-                .ranges
-                .iter()
-                .position(|r| r.start > new_range.start)
-                .unwrap_or(self.ranges.len());
-            self.ranges.insert(insert_pos, new_range);
-        } else {
-            // Merge all overlapping ranges into one
-            let mut merged = new_range;
-
-            // Remove ranges in reverse order to maintain indices
-            for &i in to_merge.iter().rev() {
-                let removed = self.ranges.remove(i);
-                self.merge_ranges(&mut merged, removed);
+        // Step 2: Remove or trim existing ranges with larger intervals that overlap
+        let mut i = 0;
+        while i < self.ranges.len() {
+            let existing = &self.ranges[i];
+            if existing.interval_secs > new_interval {
+                let existing_time_range = existing.time_range();
+                if let Some(_intersection) = existing_time_range.intersect(&new_time_range) {
+                    // This existing range has lower resolution and overlaps - trim or remove it
+                    let remaining = existing.subtract(&new_time_range);
+                    self.ranges.remove(i);
+                    // Insert remaining pieces (in reverse to maintain order)
+                    for piece in remaining.into_iter().rev() {
+                        self.ranges.insert(i, piece);
+                    }
+                    // Don't increment i - we need to check the newly inserted pieces
+                    // or the next original element
+                    continue;
+                }
             }
+            i += 1;
+        }
 
-            // Insert the merged range in sorted order
-            let insert_pos = self
-                .ranges
-                .iter()
-                .position(|r| r.start > merged.start)
-                .unwrap_or(self.ranges.len());
-            self.ranges.insert(insert_pos, merged);
+        // Step 3: Slice the new range to fill only the gaps and insert pieces
+        for gap in gaps {
+            if let Some(piece) = new_range.slice(&gap) {
+                self.insert_range_sorted(piece);
+            }
+        }
+    }
+
+    /// Insert a range in sorted order, merging with adjacent ranges if possible.
+    fn insert_range_sorted(&mut self, range: PriceRange) {
+        if range.is_empty() {
+            return;
+        }
+
+        // Find insertion position
+        let insert_pos = self
+            .ranges
+            .iter()
+            .position(|r| r.start > range.start)
+            .unwrap_or(self.ranges.len());
+
+        self.ranges.insert(insert_pos, range);
+
+        // Try to merge with next range
+        if insert_pos + 1 < self.ranges.len() {
+            if self.ranges[insert_pos].can_merge_with(&self.ranges[insert_pos + 1]) {
+                let next = self.ranges.remove(insert_pos + 1);
+                let merged = self.ranges[insert_pos].merge_with(&next);
+                self.ranges[insert_pos] = merged;
+            }
+        }
+
+        // Try to merge with previous range
+        if insert_pos > 0 {
+            if self.ranges[insert_pos - 1].can_merge_with(&self.ranges[insert_pos]) {
+                let current = self.ranges.remove(insert_pos);
+                let merged = self.ranges[insert_pos - 1].merge_with(&current);
+                self.ranges[insert_pos - 1] = merged;
+            }
         }
     }
 
@@ -388,8 +542,7 @@ impl CurrencyPriceData {
         if points.is_empty() {
             return Ok(());
         }
-        let new_range = PriceRange::from_points(points)?;
-        self.add_range(new_range);
+        self.add_range(PriceRange::from_points(points)?);
         Ok(())
     }
 
@@ -1078,6 +1231,133 @@ mod tests {
         // Should start after range 1 ends (hour 9) and end before range 2 starts (hour 20)
         assert_eq!(missing[0].start, make_datetime(2024, 1, 1, 9));
         assert_eq!(missing[0].end, make_datetime(2024, 1, 1, 20));
+    }
+
+    #[test]
+    fn test_add_range_higher_resolution_replaces_lower() {
+        let mut data = CurrencyPriceData::new();
+
+        // Add a range with 2-hour interval (lower resolution)
+        let low_res_range = PriceRange::with_interval(
+            Duration::hours(2),
+            make_datetime(2024, 1, 1, 0),
+            vec![dec!(100), dec!(120), dec!(140), dec!(160), dec!(180)], // hours 0, 2, 4, 6, 8
+        );
+        data.add_range(low_res_range);
+
+        assert_eq!(data.ranges.len(), 1);
+        assert_eq!(data.ranges[0].interval(), Duration::hours(2));
+
+        // Add a range with 1-hour interval (higher resolution) that overlaps
+        let high_res_points: Vec<PricePoint> = (2..7)
+            .map(|i| PricePoint {
+                timestamp: make_datetime(2024, 1, 1, i),
+                price: Decimal::from(200 + i as i64 * 10), // hours 2-6 with different prices
+            })
+            .collect();
+        data.add_points(high_res_points).unwrap();
+
+        // Should have 3 ranges now:
+        // - hours 0 (low res, not replaced)
+        // - hours 2-6 (high res, replaced the overlapping part)
+        // - hour 8 (low res, not replaced)
+        assert_eq!(data.ranges.len(), 3, "Should have 3 ranges after partial replacement");
+
+        // First range should be the remaining low-res start
+        assert_eq!(data.ranges[0].interval(), Duration::hours(2));
+        assert_eq!(data.ranges[0].time_range().start, make_datetime(2024, 1, 1, 0));
+        assert_eq!(data.ranges[0].time_range().end, make_datetime(2024, 1, 1, 0));
+
+        // Second range should be the high-res replacement
+        assert_eq!(data.ranges[1].interval(), Duration::hours(1));
+        assert_eq!(data.ranges[1].time_range().start, make_datetime(2024, 1, 1, 2));
+        assert_eq!(data.ranges[1].time_range().end, make_datetime(2024, 1, 1, 6));
+
+        // Third range should be the remaining low-res end
+        assert_eq!(data.ranges[2].interval(), Duration::hours(2));
+        assert_eq!(data.ranges[2].time_range().start, make_datetime(2024, 1, 1, 8));
+    }
+
+    #[test]
+    fn test_add_range_lower_resolution_fills_gaps() {
+        let mut data = CurrencyPriceData::new();
+
+        // Add high-resolution data for hours 5-9
+        let high_res_points: Vec<PricePoint> = (5..10)
+            .map(|i| PricePoint {
+                timestamp: make_datetime(2024, 1, 1, i),
+                price: Decimal::from(100 + i as i64),
+            })
+            .collect();
+        data.add_points(high_res_points).unwrap();
+
+        assert_eq!(data.ranges.len(), 1);
+
+        // Add low-resolution data that spans hours 0-14 (overlapping the high-res data)
+        let low_res_range = PriceRange::with_interval(
+            Duration::hours(2),
+            make_datetime(2024, 1, 1, 0),
+            vec![dec!(10), dec!(12), dec!(14), dec!(16), dec!(18), dec!(20), dec!(22), dec!(24)], // hours 0, 2, 4, 6, 8, 10, 12, 14
+        );
+        data.add_range(low_res_range);
+
+        // Should have 3 ranges:
+        // - hours 0-4 (low res, fills gap before high res)
+        // - hours 5-9 (high res, preserved)
+        // - hours 10-14 (low res, fills gap after high res)
+        assert_eq!(data.ranges.len(), 3, "Should have 3 ranges");
+
+        // First range: low-res filling gap before
+        assert_eq!(data.ranges[0].interval(), Duration::hours(2));
+        assert_eq!(data.ranges[0].time_range().start, make_datetime(2024, 1, 1, 0));
+        assert_eq!(data.ranges[0].time_range().end, make_datetime(2024, 1, 1, 4));
+
+        // Second range: high-res preserved
+        assert_eq!(data.ranges[1].interval(), Duration::hours(1));
+        assert_eq!(data.ranges[1].time_range().start, make_datetime(2024, 1, 1, 5));
+        assert_eq!(data.ranges[1].time_range().end, make_datetime(2024, 1, 1, 9));
+
+        // Third range: low-res filling gap after
+        assert_eq!(data.ranges[2].interval(), Duration::hours(2));
+        assert_eq!(data.ranges[2].time_range().start, make_datetime(2024, 1, 1, 10));
+        assert_eq!(data.ranges[2].time_range().end, make_datetime(2024, 1, 1, 14));
+    }
+
+    #[test]
+    fn test_add_range_same_interval_preserves_existing() {
+        let mut data = CurrencyPriceData::new();
+
+        // Add first range: hours 0-9 with prices 100-109
+        let points1: Vec<PricePoint> = (0..10)
+            .map(|i| PricePoint {
+                timestamp: make_datetime(2024, 1, 1, i),
+                price: Decimal::from(100 + i as i64),
+            })
+            .collect();
+        data.add_points(points1).unwrap();
+
+        // Add second range: hours 5-14 with different prices (200-209)
+        let points2: Vec<PricePoint> = (5..15)
+            .map(|i| PricePoint {
+                timestamp: make_datetime(2024, 1, 1, i),
+                price: Decimal::from(200 + i as i64),
+            })
+            .collect();
+        data.add_points(points2).unwrap();
+
+        // Should be merged into one range
+        assert_eq!(data.ranges.len(), 1);
+
+        // Check that the overlapping portion (hours 5-9) kept the ORIGINAL prices
+        let (price_at_5, _) = data.estimate_price(make_datetime(2024, 1, 1, 5)).unwrap();
+        assert_eq!(price_at_5, dec!(105), "Hour 5 should have original price 105, not 205");
+
+        let (price_at_9, _) = data.estimate_price(make_datetime(2024, 1, 1, 9)).unwrap();
+        assert_eq!(price_at_9, dec!(109), "Hour 9 should have original price 109, not 209");
+
+        // Check that the new portion (hours 10-14) has the new prices
+        let (price_at_10, _) = data.estimate_price(make_datetime(2024, 1, 1, 10)).unwrap();
+        assert_eq!(price_at_10, dec!(210), "Hour 10 should have new price 210");
     }
 
     #[test]
