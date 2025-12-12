@@ -381,7 +381,7 @@ impl PriceRange {
 
         let self_range = self.time_range();
         let other_range = other.time_range();
-        let interval = Duration::seconds(self.interval_secs);
+        let interval = self.interval();
 
         // Check if other starts exactly one interval after self ends
         // or self starts exactly one interval after other ends
@@ -393,24 +393,18 @@ impl PriceRange {
     ///
     /// Assumes can_merge_with() returned true. The ranges must have the same
     /// interval and be adjacent.
-    pub fn merge_with(&self, other: &PriceRange) -> PriceRange {
-        debug_assert!(self.can_merge_with(other), "Ranges must be mergeable");
+    pub fn merge_with(self, other: PriceRange) -> PriceRange {
+        debug_assert!(self.can_merge_with(&other), "Ranges must be mergeable");
 
         // Determine which range comes first
-        let (first, second) = if self.start < other.start {
+        let (mut first, second) = if self.start < other.start {
             (self, other)
         } else {
             (other, self)
         };
 
-        let mut prices = first.prices.clone();
-        prices.extend(second.prices.iter().copied());
-
-        PriceRange {
-            interval_secs: self.interval_secs,
-            start: first.start,
-            prices,
-        }
+        first.prices.extend(second.prices);
+        first
     }
 }
 
@@ -518,18 +512,18 @@ impl CurrencyPriceData {
         // Try to merge with next range
         if insert_pos + 1 < self.ranges.len() {
             if self.ranges[insert_pos].can_merge_with(&self.ranges[insert_pos + 1]) {
-                let next = self.ranges.remove(insert_pos + 1);
-                let merged = self.ranges[insert_pos].merge_with(&next);
-                self.ranges[insert_pos] = merged;
+                let current = self.ranges.remove(insert_pos);
+                let next = self.ranges.remove(insert_pos);
+                self.ranges.insert(insert_pos, current.merge_with(next));
             }
         }
 
         // Try to merge with previous range
         if insert_pos > 0 {
             if self.ranges[insert_pos - 1].can_merge_with(&self.ranges[insert_pos]) {
-                let current = self.ranges.remove(insert_pos);
-                let merged = self.ranges[insert_pos - 1].merge_with(&current);
-                self.ranges[insert_pos - 1] = merged;
+                let prev = self.ranges.remove(insert_pos - 1);
+                let current = self.ranges.remove(insert_pos - 1);
+                self.ranges.insert(insert_pos - 1, prev.merge_with(current));
             }
         }
     }
