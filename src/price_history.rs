@@ -16,10 +16,23 @@ use serde::{Deserialize, Serialize};
 use crate::base::Amount;
 
 /// A single price point with timestamp and price.
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[serde(from = "(NaiveDateTime, Decimal)", into = "(NaiveDateTime, Decimal)")]
 pub(crate) struct PricePoint {
     pub timestamp: NaiveDateTime,
     pub price: Decimal,
+}
+
+impl From<(NaiveDateTime, Decimal)> for PricePoint {
+    fn from((timestamp, price): (NaiveDateTime, Decimal)) -> Self {
+        Self { timestamp, price }
+    }
+}
+
+impl From<PricePoint> for (NaiveDateTime, Decimal) {
+    fn from(point: PricePoint) -> Self {
+        (point.timestamp, point.price)
+    }
 }
 
 impl PartialOrd for PricePoint {
