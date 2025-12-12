@@ -41,7 +41,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
-use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
+use slint::{Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 use linkme::distributed_slice;
 use std::{
     cell::RefCell,
@@ -446,13 +446,24 @@ impl App {
         self.ui_weak.unwrap()
     }
 
-    fn report_error(&self, message: &str) {
+    fn push_notification(&self, notification_type: UiNotificationType, message: &str) {
         let notifications_rc = self.ui().global::<Facade>().get_notifications();
         let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
         notifications.push(UiNotification {
-            notification_type: UiNotificationType::Error,
+            notification_type,
             message: message.into(),
         });
+        if notifications.row_count() > 10 {
+            notifications.remove(0);
+        }
+    }
+
+    fn report_info(&self, message: &str) {
+        self.push_notification(UiNotificationType::Info, message);
+    }
+
+    fn report_error(&self, message: &str) {
+        self.push_notification(UiNotificationType::Error, message);
     }
 
     fn remove_notification(&self, index: usize) {
@@ -2016,9 +2027,6 @@ async fn main() -> Result<()> {
                     if cmc_id(&currency) == -1 {
                         continue;
                     }
-                    if currency != "BTC" {
-                        continue;
-                    }
 
                     for range in ranges {
                         println!("Downloading price points for {:} from {:} to {:}", currency, range.start, range.end);
@@ -2029,11 +2037,13 @@ async fn main() -> Result<()> {
 
                         match price_points {
                             Ok(price_points) => {
+                                let count = price_points.len();
                                 price_history.price_data(currency.to_owned()).add_points(price_points);
                                 let mut app = app.borrow_mut();
                                 app.price_history = price_history.clone();
                                 app.refresh_transactions();
                                 app.refresh_ui();
+                                app.report_info(&format!("Price history updated for {:} from {:} to {:} ({:} points)", currency, range.start, range.end, count));
                                 save = true;
                             }
                             Err(e) => {

@@ -260,41 +260,6 @@ impl PriceHistory {
             .map(|price| Amount::new(price * amount.quantity, "EUR".to_owned()))
     }
 
-    /// Get the missing price ranges needed for a set of timestamps per currency.
-    ///
-    /// - `tolerance`: maximum acceptable accuracy for price estimation (ranges are this wide)
-    /// - `padding`: how close ranges need to be to merge them together
-    pub fn missing_ranges(
-        &self,
-        requirements: &HashMap<String, Vec<NaiveDateTime>>,
-        tolerance: Duration,
-        padding: Duration,
-    ) -> HashMap<String, Vec<TimeRange>> {
-        let mut result = HashMap::new();
-
-        for (currency, timestamps) in requirements {
-            if currency == "EUR" {
-                continue; // No price data needed for base currency
-            }
-
-            let missing = self
-                .currencies
-                .get(currency)
-                .map(|data| data.missing_ranges_for_timestamps(timestamps, tolerance, padding))
-                .unwrap_or_else(|| {
-                    // No data for this currency, need ranges for all timestamps
-                    let temp = CurrencyPriceData::new();
-                    temp.missing_ranges_for_timestamps(timestamps, tolerance, padding)
-                });
-
-            if !missing.is_empty() {
-                result.insert(currency.clone(), missing);
-            }
-        }
-
-        result
-    }
-
     /// Print debug info about the price history coverage.
     #[allow(dead_code)]
     pub fn debug_dump(&self) {
@@ -341,7 +306,29 @@ impl PriceRequirements {
         tolerance: Duration,
         padding: Duration,
     ) -> HashMap<String, Vec<TimeRange>> {
-        price_history.missing_ranges(&self.requirements, tolerance, padding)
+        let mut result = HashMap::new();
+
+        for (currency, timestamps) in &self.requirements {
+            if currency == "EUR" {
+                continue; // No price data needed for base currency
+            }
+
+            let missing = price_history
+                .currencies
+                .get(currency)
+                .map(|data| data.missing_ranges_for_timestamps(timestamps, tolerance, padding))
+                .unwrap_or_else(|| {
+                    // No data for this currency, need ranges for all timestamps
+                    let temp = CurrencyPriceData::new();
+                    temp.missing_ranges_for_timestamps(timestamps, tolerance, padding)
+                });
+
+            if !missing.is_empty() {
+                result.insert(currency.clone(), missing);
+            }
+        }
+
+        result
     }
 }
 
@@ -608,23 +595,15 @@ mod tests {
         let start = make_datetime(2024, 1, 1, 10);
         history.price_data("ETH".to_owned()).add_points(make_price_points(start, 10));
 
-        let mut requirements = HashMap::new();
-        requirements.insert(
-            "ETH".to_owned(),
-            vec![
-                make_datetime(2024, 1, 1, 5),  // Before range
-                make_datetime(2024, 1, 1, 15), // Within range
-                make_datetime(2024, 1, 2, 5),  // After range (next day)
-            ],
-        );
-        requirements.insert(
-            "BNB".to_owned(), // No data for this currency
-            vec![make_datetime(2024, 1, 1, 12)],
-        );
+        let mut requirements = PriceRequirements::new();
+        requirements.add("ETH", make_datetime(2024, 1, 1, 5));  // Before range
+        requirements.add("ETH", make_datetime(2024, 1, 1, 15)); // Within range
+        requirements.add("ETH", make_datetime(2024, 1, 2, 5));  // After range (next day)
+        requirements.add("BNB", make_datetime(2024, 1, 1, 12)); // No data for this currency
 
         let tolerance = Duration::hours(2);
         let padding = Duration::hours(1);
-        let missing = history.missing_ranges(&requirements, tolerance, padding);
+        let missing = requirements.missing_ranges(&history, tolerance, padding);
 
         // ETH should have missing ranges for timestamps outside coverage
         assert!(missing.contains_key("ETH"));
