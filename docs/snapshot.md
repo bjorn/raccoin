@@ -21,6 +21,7 @@ post_url 2024-01-04-raccoin-0-2 %}).
 * Fixed handling of currencies that contain numbers ([#17](https://github.com/bjorn/raccoin/issues/17))
 * Fixed handling of leap years in holding period calculation ([#32](https://github.com/bjorn/raccoin/issues/32))
 * Adjust to bitcoin.de CSV format changes ([#31](https://github.com/bjorn/raccoin/issues/31))
+* Added support for new Bitstamp CSV format and detect SGB and FLR airdrops ([#51](https://github.com/bjorn/raccoin/pull/51))
 * Show new wallets expanded by default
 * Made the merging of consecutive trades optional
 * Added BTC price history (EUR) for 2024 (by Òscar Casajuana)
