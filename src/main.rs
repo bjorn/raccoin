@@ -965,7 +965,7 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                 match &transactions[send_index].fee {
                     Some(existing_fee) => {
                         if existing_fee.currency != implied_fee.currency {
-                            println!("warning: send/receive amounts imply fee, but there's already a fee in a different currency ({:}) for transaction {:?}", existing_fee.currency, transactions[send_index]);
+                            println!("warning: send/receive amounts imply fee, but there's already a fee in a different currency ({}) for transaction {:?}", existing_fee.currency, transactions[send_index]);
                             MatchResult::AbortMatch
                         } else if existing_fee.quantity != implied_fee.quantity {
                             // This can happen for ETH deposits to Bitstamp, since they get rounded
@@ -975,19 +975,19 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                             // We set the receive fee to the implied fee to make sure this small
                             // loss is accounted for.
                             if transactions[receive_index].fee.is_none() {
-                                println!("warning: sent amount {:} different from received amount {:} and the fee {:} doesn't match, adjusting received amount to {:} and setting receive fee to {:}", sent, received, existing_fee, sent, implied_fee);
+                                println!("warning: sent amount {} different from received amount {} and the fee {} doesn't match, adjusting received amount to {} and setting receive fee to {}", sent, received, existing_fee, sent, implied_fee);
                                 MatchResult::AdjustReceive { amount: sent.clone(), fee: implied_fee }
                             } else {
-                                println!("warning: sent amount {:} different from received amount {:} and the fee {:} doesn't match, but there's already a receive fee as well", sent, received, existing_fee);
+                                println!("warning: sent amount {} different from received amount {} and the fee {} doesn't match, but there's already a receive fee as well", sent, received, existing_fee);
                                 MatchResult::NoAdjustment
                             }
                         } else {
-                            println!("warning: fee {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:}", existing_fee, sent, received);
+                            println!("warning: fee {} appears to have been included in the sent amount {}, adjusting sent amount to {}", existing_fee, sent, received);
                             MatchResult::AdjustSend { amount: received.clone(), fee: implied_fee }
                         }
                     }
                     None => {
-                        println!("warning: a fee of {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:} and setting fee", implied_fee, sent, received);
+                        println!("warning: a fee of {} appears to have been included in the sent amount {}, adjusting sent amount to {} and setting fee", implied_fee, sent, received);
                         MatchResult::AdjustSend { amount: received.clone(), fee: implied_fee }
                     }
                 }
