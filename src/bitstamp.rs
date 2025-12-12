@@ -227,9 +227,9 @@ impl BitstampTransactionsConverter {
                             let send_tx = self.inter_account_transfers.remove(send_idx);
                             if let Operation::Send(outgoing) = send_tx.operation {
                                 // Create a trade: received fiat in exchange for sent crypto
-                                println!("Bitstamp: Merging Inter Account Transfer at {:} as {:} traded for {:}", tx.timestamp, outgoing, incoming);
+                                println!("Bitstamp: Merging Inter Account Transfer at {} as {} traded for {}", tx.timestamp, outgoing, incoming);
                                 let mut trade = Transaction::trade(send_tx.timestamp, incoming.clone(), outgoing);
-                                trade.description = Some(format!("Merge of Inter Account Transfers at {:} and {:}", send_tx.timestamp, tx.timestamp));
+                                trade.description = Some(format!("Merge of Inter Account Transfers at {} and {}", send_tx.timestamp, tx.timestamp));
                                 self.transactions.push(trade);
                                 return;
                             }
@@ -256,7 +256,7 @@ impl BitstampTransactionsConverter {
                         "Bitstamp: Detected airdrop of {} at {}",
                         receive, tx.timestamp
                     );
-                    self.airdrops.remove(airdrop_idx);
+                    self.airdrops.remove(airdrop_idx);  // Only one airdrop expected per currency
                     Operation::Airdrop(receive)
                 } else {
                     Operation::Receive(receive)
