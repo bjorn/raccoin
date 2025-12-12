@@ -1392,11 +1392,11 @@ fn ui_set_transactions(app: &App) {
 
                     // If both sides have a fee, try to add them together
                     fee = match (fee, matching_send.fee.as_ref()) {
-                        (Some(send_fee), Some(receive_fee)) => {
-                            send_fee.try_add(receive_fee).or(Some(send_fee))
+                        (Some(receive_fee), Some(send_fee)) => {
+                            receive_fee.try_add(send_fee).or(Some(receive_fee))
                         }
-                        (None, Some(receive_fee)) => Some(receive_fee.clone()),
-                        (Some(send_fee), None) => Some(send_fee),
+                        (None, Some(send_fee)) => Some(send_fee.clone()),
+                        (Some(receive_fee), None) => Some(receive_fee),
                         _ => None,
                     };
 
@@ -1407,7 +1407,7 @@ fn ui_set_transactions(app: &App) {
                         (None, None) => None,
                     };
 
-                    // When either size of the transfer has an error, make sure the error is visible
+                    // When either side of the transfer has an error, make sure the error is visible
                     gain = match (gain, &matching_send.gain) {
                         // Display sum of gains (can happen due to "receiving fee")
                         (Some(Ok(a)), Some(Ok(b))) => Some(Ok(a + *b)),
