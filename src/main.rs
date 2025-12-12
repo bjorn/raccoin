@@ -990,9 +990,7 @@ async fn download_price_history(requirements: PriceRequirements, mut price_histo
             let price_points = coinmarketcap::download_price_points(range.start, range.end, currency.as_str(), CmcInterval::Hourly).await;
             match price_points {
                 Ok(price_points) => {
-                    if let Err(e) = price_data.add_points(price_points) {
-                        println!("warning: failed to add price points for {:}: {:}", currency, e);
-                    }
+                    price_data.add_points(price_points);
                 }
                 Err(e) => {
                     println!("warning: failed to download price points for {:}: {:?}", currency, e);
@@ -2029,15 +2027,12 @@ async fn main() -> Result<()> {
 
                         match price_points {
                             Ok(price_points) => {
-                                if let Err(e) = price_history.price_data(currency.to_owned()).add_points(price_points) {
-                                    println!("warning: failed to add price points for {:}: {:}", currency, e);
-                                } else {
-                                    let mut app = app.borrow_mut();
-                                    app.price_history = price_history.clone();
-                                    app.refresh_transactions();
-                                    app.refresh_ui();
-                                    save = true;
-                                }
+                                price_history.price_data(currency.to_owned()).add_points(price_points);
+                                let mut app = app.borrow_mut();
+                                app.price_history = price_history.clone();
+                                app.refresh_transactions();
+                                app.refresh_ui();
+                                save = true;
                             }
                             Err(e) => {
                                 println!("warning: failed to download price points for {:}: {:?}", currency, e);
