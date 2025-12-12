@@ -24,6 +24,7 @@ post_url 2024-01-04-raccoin-0-2 %}).
 * Show new wallets expanded by default
 * Made the merging of consecutive trades optional
 * Added BTC price history (EUR) for 2024 (by Òscar Casajuana)
+* Bittrex CSV: Add 0.001 fee to BTC withdrawals (as with BCH)
 * macOS: Added universal binary support
 * macOS: Fixed app icon
 * Updated dependencies (Slint 1.13)
