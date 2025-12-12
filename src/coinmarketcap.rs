@@ -1,9 +1,9 @@
 use anyhow::{Result, bail};
-use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{cmc_id, PricePoint, save_price_history_data};
+use crate::{base::cmc_id, price_history::PricePoint};
 
 // struct to deserialize the following json data:
 // {"data":{"id":1,"name":"Bitcoin","symbol":"BTC","timeEnd":"1259279999","quotes":[{"timeOpen":"2010-07-13T00:00:00.000Z","timeClose":"2010-07-13T23:59:59.999Z","timeHigh":"2010-07-13T02:30:00.000Z","timeLow":"2010-07-13T18:06:00.000Z","quote":{"open":0.0487103725,"high":0.0609408726,"low":0.0483279245,"close":0.0534224523,"volume":59.4135378071,"marketCap":153229.6094699791,"timestamp":"2010-07-13T23:59:59.999Z"}},{"timeOpen":"2010-07-14T00:00:00.000Z","timeClose":"2010-07-14T23:59:59.999Z","timeHigh":"2010-07-14T00:34:00.000Z","timeLow":"2010-07-14T19:24:00.000Z","quote":{"open":0.0534167944,"high":0.0565679556,"low":0.0446813119,"close":0.0518047635,"volume":240.2216130600,"marketCap":174751.3956688508,"timestamp":"2010-07-14T23:59:59.999Z"}},{"timeOpen":"2010-07-15T00:00:00.000Z","timeClose":"2010-07-15T23:59:59.999Z","timeHigh":"2010-07-15T11:39:00.000Z","timeLow":"2010-07-15T00:41:00.000Z","quote":{"open":0.0518051769,"high":0.0624153413,"low":0.0495701257,"close":0.0528756482,"volume":409.4623962000,"marketCap":180007.4397864608,"timestamp":"2010-07-15T23:59:59.999Z"}},{"timeOpen":"2010-07-16T00:00:00.000Z","timeClose":"2010-07-16T23:59:59.999Z","timeHigh":"2010-07-16T02:11:00.000Z","timeLow":"2010-07-16T00:24:00.000Z"}}]},"status":{"timestamp":"2023-08-30T09:28:02.491Z","error_code":"0","error_message":"SUCCESS","elapsed":"74","credit_count":0}}
@@ -55,16 +55,20 @@ struct Quote {
     // timestamp: DateTime<FixedOffset>,
 }
 
-#[allow(dead_code)]
-pub(crate) async fn download_price_points(time_end: NaiveDateTime, currency: &str) -> Result<Vec<PricePoint>> {
+pub(crate) async fn download_price_points(time_start: NaiveDateTime, time_end: NaiveDateTime, currency: &str) -> Result<Vec<PricePoint>> {
     let id = cmc_id(currency);
     if id == -1 {
         bail!("Unsupported currency (cmc id not known): {}", currency);
     }
 
     let convert_id = cmc_id("EUR");
-    let time_end: i64 = time_end.timestamp();
-    let url = format!("https://api.coinmarketcap.com/data-api/v3.1/cryptocurrency/historical?id={}&convertId={}&timeEnd={}&interval=1h", id, convert_id, time_end);
+    let time_start: i64 = time_start.and_utc().timestamp();
+    let mut time_end: i64 = time_end.and_utc().timestamp();
+    // make sure time_end isn't in the future
+    if time_end > Utc::now().timestamp() {
+        time_end = Utc::now().timestamp();
+    }
+    let url = format!("https://api.coinmarketcap.com/data-api/v3.3/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval=1h", id, convert_id, time_start, time_end);
     println!("Downloading {}", url);
 
     let response: CmcHistoricalDataResponse = reqwest::Client::builder()
@@ -90,7 +94,7 @@ pub(crate) async fn download_price_points(time_end: NaiveDateTime, currency: &st
     //     });
     // }
 
-    println!("Loaded {} price points from {}", prices.len(), url);
+    println!("Loaded {} price points", prices.len());
     Ok(prices)
 }
 
@@ -130,7 +134,7 @@ pub(crate) async fn download_price_history(currency: &str) -> Result<()> {
 
     let path = format!("src/data/{}-price-history-eur.csv", currency.to_lowercase());
     println!("Saving {} price points to {}", prices.len(), path);
-    save_price_history_data(&prices, path.as_ref())?;
+    crate::price_history::save_price_history_data(&prices, path.as_ref())?;
 
     Ok(())
 }
