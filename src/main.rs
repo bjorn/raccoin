@@ -971,8 +971,9 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
 
 async fn download_price_history(requirements: PriceRequirements, mut price_history: PriceHistory) -> Result<PriceHistory> {
     // price_history.debug_dump();
+    let tolerance = Duration::hours(1);
     let padding = Duration::days(7);
-    let missing_ranges = requirements.missing_ranges(&price_history, padding);
+    let missing_ranges = requirements.missing_ranges(&price_history, tolerance, padding);
     dbg!(&missing_ranges);
 
     // Download missing price points
@@ -2004,8 +2005,9 @@ async fn main() -> Result<()> {
                 price_history.debug_dump();
 
                 // price_history.debug_dump();
+                let tolerance = Duration::hours(1);
                 let padding = Duration::days(7);
-                let missing_ranges = requirements.missing_ranges(&price_history, padding);
+                let missing_ranges = requirements.missing_ranges(&price_history, tolerance, padding);
                 let mut save = false;
                 dbg!(&missing_ranges);
 
