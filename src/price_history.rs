@@ -234,6 +234,51 @@ impl PriceRange {
     pub fn len(&self) -> usize {
         self.prices.len()
     }
+
+    /// Get the first price point in this range.
+    pub fn first_point(&self) -> Option<PricePoint> {
+        self.prices.first().map(|&price| PricePoint {
+            timestamp: self.start,
+            price,
+        })
+    }
+
+    /// Get the last price point at or before the given timestamp.
+    /// Returns None if the timestamp is before the start of this range.
+    pub fn last_point_at_or_before(&self, timestamp: NaiveDateTime) -> Option<PricePoint> {
+        if timestamp < self.start {
+            return None;
+        }
+        let elapsed_secs = (timestamp - self.start).num_seconds();
+        let index = (elapsed_secs / self.interval_secs) as usize;
+        let index = index.min(self.prices.len() - 1);
+        Some(PricePoint {
+            timestamp: self.timestamp_at(index),
+            price: self.prices[index],
+        })
+    }
+
+    /// Get the first price point at or after the given timestamp.
+    /// Returns None if the timestamp is after the end of this range.
+    pub fn first_point_at_or_after(&self, timestamp: NaiveDateTime) -> Option<PricePoint> {
+        let time_range = self.time_range();
+        if timestamp > time_range.end {
+            return None;
+        }
+        if timestamp <= self.start {
+            return self.first_point();
+        }
+        let elapsed_secs = (timestamp - self.start).num_seconds();
+        // Round up to get the next point
+        let index = ((elapsed_secs + self.interval_secs - 1) / self.interval_secs) as usize;
+        if index >= self.prices.len() {
+            return None;
+        }
+        Some(PricePoint {
+            timestamp: self.timestamp_at(index),
+            price: self.prices[index],
+        })
+    }
 }
 
 /// Price data for a single currency, stored as multiple ranges.
@@ -432,90 +477,52 @@ impl CurrencyPriceData {
     }
 
     /// Estimate the price at a given timestamp using linear interpolation.
+    ///
+    /// Finds the nearest price points before and after the timestamp and
+    /// performs linear interpolation. If only one side is available,
+    /// uses that price with appropriate accuracy.
     pub fn estimate_price(&self, timestamp: NaiveDateTime) -> Option<(Decimal, Duration)> {
-        // Find the range containing this timestamp
-        for range in &self.ranges {
-            if range.time_range().contains(timestamp) {
-                return self.estimate_price_in_range(range, timestamp);
-            }
-        }
-
-        // If not in any range, try to extrapolate from the nearest range
-        // (but with lower confidence)
-        let mut nearest_range: Option<&PriceRange> = None;
-        let mut nearest_distance = Duration::MAX;
-
-        for range in &self.ranges {
-            let time_range = range.time_range();
-            let distance = if timestamp < time_range.start {
-                time_range.start - timestamp
-            } else {
-                timestamp - time_range.end
-            };
-
-            if distance < nearest_distance {
-                nearest_distance = distance;
-                nearest_range = Some(range);
-            }
-        }
-
-        nearest_range.and_then(|r| self.estimate_price_in_range(r, timestamp))
-    }
-
-    /// Estimate the price at a given timestamp within a specific range.
-    fn estimate_price_in_range(&self, range: &PriceRange, timestamp: NaiveDateTime) -> Option<(Decimal, Duration)> {
-        if range.prices.is_empty() {
+        if self.ranges.is_empty() {
             return None;
         }
 
-        let time_range = range.time_range();
+        // Use partition_point to find the first range that starts after the timestamp
+        let index = self.ranges.partition_point(|r| r.start() <= timestamp);
 
-        // Handle timestamps outside the range
-        if timestamp < range.start {
-            let accuracy = range.start - timestamp;
-            return Some((range.prices[0], accuracy));
-        }
+        // The previous range (if any) might contain or precede the timestamp
+        // The next range follows the timestamp
+        let prev_range = if index > 0 { self.ranges.get(index - 1) } else { None };
+        let next_range = self.ranges.get(index);
 
-        let last_idx = range.prices.len() - 1;
-        if timestamp > time_range.end {
-            let accuracy = timestamp - time_range.end;
-            return Some((range.prices[last_idx], accuracy));
-        }
+        let prev_price_point = prev_range
+            .and_then(|r| r.last_point_at_or_before(timestamp));
 
-        // Find the surrounding indices for interpolation
-        let elapsed = timestamp - range.start;
-        let elapsed_secs = elapsed.num_seconds();
+        let next_price_point = prev_range
+            .and_then(|r| r.first_point_at_or_after(timestamp))
+            .or_else(|| next_range.and_then(|r| r.first_point()));
 
-        let prev_idx = (elapsed_secs / range.interval_secs) as usize;
-        let next_idx = (prev_idx + 1).min(last_idx);
+        match (prev_price_point, next_price_point) {
+            (Some(prev_price), Some(next_price)) => {
+                let price_difference = next_price.price - prev_price.price;
+                let total_duration: Decimal = (next_price.timestamp - prev_price.timestamp).num_seconds().into();
 
-        if prev_idx >= range.prices.len() {
-            return Some((range.prices[last_idx], Duration::zero()));
-        }
+                // The accuracy is the minimum time difference between the requested time and a price point
+                let accuracy = (timestamp - prev_price.timestamp).abs().min((next_price.timestamp - timestamp).abs());
 
-        let prev_price = range.prices[prev_idx];
-        let prev_time = range.timestamp_at(prev_idx);
+                if total_duration > Decimal::ZERO {
+                    let time_since_prev: Decimal = (timestamp - prev_price.timestamp).num_seconds().into();
+                    let time_ratio = time_since_prev / total_duration;
 
-        if prev_idx == next_idx || next_idx >= range.prices.len() {
-            let accuracy = (timestamp - prev_time).abs();
-            return Some((prev_price, accuracy));
-        }
-
-        let next_price = range.prices[next_idx];
-        let next_time = range.timestamp_at(next_idx);
-
-        // Linear interpolation
-        let total_duration: Decimal = (next_time - prev_time).num_seconds().into();
-        let time_since_prev: Decimal = (timestamp - prev_time).num_seconds().into();
-
-        let accuracy = (timestamp - prev_time).abs().min((next_time - timestamp).abs());
-
-        if total_duration > Decimal::ZERO {
-            let ratio = time_since_prev / total_duration;
-            let price = prev_price + ratio * (next_price - prev_price);
-            Some((price, accuracy))
-        } else {
-            Some((prev_price, accuracy))
+                    Some((prev_price.price + time_ratio * price_difference, accuracy))
+                } else {
+                    Some((next_price.price, accuracy))
+                }
+            },
+            (Some(price), None) |
+            (None, Some(price)) => {
+                Some((price.price, (price.timestamp - timestamp).abs()))
+            },
+            (None, None) => None
         }
     }
 
@@ -874,6 +881,96 @@ mod tests {
             make_datetime(2024, 1, 1, 5) + Duration::minutes(30)
         ).unwrap();
         assert_eq!(price, dec!(155));
+    }
+
+    #[test]
+    fn test_price_estimation_edge_cases() {
+        let mut data = CurrencyPriceData::new();
+
+        // Create a range from hour 10 to hour 19 (10 points)
+        // hour 10 = 100, hour 11 = 110, ..., hour 19 = 190
+        let points: Vec<PricePoint> = (0..10)
+            .map(|i| PricePoint {
+                timestamp: make_datetime(2024, 1, 1, 10 + i),
+                price: Decimal::from(100 + i as i64 * 10),
+            })
+            .collect();
+        data.add_points(points).unwrap();
+
+        // Test: estimate before all ranges (hour 5)
+        // Should return the first known price (100) with accuracy = 5 hours
+        let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 5)).unwrap();
+        assert_eq!(price, dec!(100), "Before range: should use first price");
+        assert_eq!(accuracy, Duration::hours(5), "Before range: accuracy should be distance to first point");
+
+        // Test: estimate after all ranges (hour 22)
+        // Should return the last known price (190) with accuracy = 3 hours
+        let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 22)).unwrap();
+        assert_eq!(price, dec!(190), "After range: should use last price");
+        assert_eq!(accuracy, Duration::hours(3), "After range: accuracy should be distance to last point");
+
+        // Test: estimate exactly at beginning of range (hour 10)
+        // Should return exactly 100 with accuracy = 0
+        let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 10)).unwrap();
+        assert_eq!(price, dec!(100), "At start: should return exact price");
+        assert_eq!(accuracy, Duration::zero(), "At start: accuracy should be zero");
+
+        // Test: estimate exactly at end of range (hour 19)
+        // Should return exactly 190 with accuracy = 0
+        let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 19)).unwrap();
+        assert_eq!(price, dec!(190), "At end: should return exact price");
+        assert_eq!(accuracy, Duration::zero(), "At end: accuracy should be zero");
+
+        // Test: estimate within range (hour 14:30)
+        // Should interpolate between hour 14 (140) and hour 15 (150) -> 145
+        let (price, accuracy) = data.estimate_price(
+            make_datetime(2024, 1, 1, 14) + Duration::minutes(30)
+        ).unwrap();
+        assert_eq!(price, dec!(145), "Within range: should interpolate");
+        assert_eq!(accuracy, Duration::minutes(30), "Within range: accuracy should be distance to nearest point");
+    }
+
+    #[test]
+    fn test_price_estimation_gap_between_ranges() {
+        let mut data = CurrencyPriceData::new();
+
+        // Create two ranges with a gap:
+        // Range 1: hours 0-4, prices 100-140
+        // Gap: hours 5-9
+        // Range 2: hours 10-14, prices 200-240
+        let points1: Vec<PricePoint> = (0..5)
+            .map(|i| PricePoint {
+                timestamp: make_datetime(2024, 1, 1, i),
+                price: Decimal::from(100 + i as i64 * 10),
+            })
+            .collect();
+        data.add_points(points1).unwrap();
+
+        let points2: Vec<PricePoint> = (0..5)
+            .map(|i| PricePoint {
+                timestamp: make_datetime(2024, 1, 1, 10 + i),
+                price: Decimal::from(200 + i as i64 * 10),
+            })
+            .collect();
+        data.add_points(points2).unwrap();
+
+        assert_eq!(data.ranges.len(), 2, "Should have two separate ranges");
+
+        // Test: estimate in the gap (hour 7)
+        // Should interpolate between hour 4 (140) and hour 10 (200)
+        // Gap is 6 hours, hour 7 is 3 hours in -> halfway -> (140 + 200) / 2 = 170
+        let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 7)).unwrap();
+        assert_eq!(price, dec!(170), "In gap: should interpolate between ranges");
+        assert_eq!(accuracy, Duration::hours(3), "In gap: accuracy should be distance to nearest point");
+    }
+
+    #[test]
+    fn test_price_estimation_empty() {
+        let data = CurrencyPriceData::new();
+
+        // No ranges at all - should return None
+        let result = data.estimate_price(make_datetime(2024, 1, 1, 12));
+        assert!(result.is_none(), "Empty data: should return None");
     }
 
     #[test]
