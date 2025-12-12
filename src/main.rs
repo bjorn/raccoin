@@ -462,6 +462,10 @@ impl App {
         self.push_notification(UiNotificationType::Info, message);
     }
 
+    fn report_warning(&self, message: &str) {
+        self.push_notification(UiNotificationType::Warning, message);
+    }
+
     fn report_error(&self, message: &str) {
         self.push_notification(UiNotificationType::Error, message);
     }
@@ -2047,7 +2051,7 @@ async fn main() -> Result<()> {
                                 save = true;
                             }
                             Err(e) => {
-                                println!("warning: failed to download price points for {:}: {:?}", currency, e);
+                                app.borrow().report_warning(&format!("Failed to download price points for {:}: {:}", currency, e));
                             }
                         }
 

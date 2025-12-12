@@ -99,18 +99,7 @@ pub(crate) async fn download_price_points(time_start: NaiveDateTime, time_end: N
         })
         .collect();
 
-    // Fill the prices with hourly dummy data spanning two weeks before time_end
-    // let mut prices: Vec<PricePoint> = Vec::new();
-    // let time_start = time_end - 2 * 7 * 24 * 3600;
-    // for hour in 0..(2 * 7 * 24) {
-    //     let time = time_start + hour * 3600;
-    //     prices.push(PricePoint {
-    //         timestamp: NaiveDateTime::from_timestamp_opt(time, 0).unwrap(),
-    //         price: Decimal::ZERO,
-    //     });
-    // }
-
-    println!("Loaded {} price points", prices.len());
+    println!("Downloaded {} price points", prices.len());
     Ok(prices)
 }
 
