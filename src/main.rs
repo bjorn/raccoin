@@ -19,15 +19,17 @@ mod horizon;
 mod liquid;
 mod mycelium;
 mod poloniex;
+mod price_history;
 mod time;
 mod trezor;
 
 use anyhow::{Context, Result, anyhow};
-use base::{Operation, Amount, Transaction, cmc_id, PriceHistory};
-use chrono::{Duration, Datelike, Utc, TimeZone, Local, NaiveDateTime};
+use base::{Operation, Amount, Transaction, cmc_id};
+use chrono::{Duration, Datelike, Utc, TimeZone, Local};
 use directories::ProjectDirs;
 use raccoin_ui::*;
 use fifo::{FIFO, CapitalGain, CostBasisTracking};
+use price_history::{PriceHistory, PriceRequirements};
 use regex::{Regex, RegexBuilder};
 use rust_decimal_macros::dec;
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -286,8 +288,6 @@ struct Portfolio {
     #[serde(default)]
     wallets: Vec<Wallet>,
     #[serde(default)]
-    price_history: PriceHistory,
-    #[serde(default)]
     ignored_currencies: Vec<String>,
     #[serde(default)]
     merge_consecutive_trades: bool,
@@ -398,6 +398,7 @@ struct App {
     portfolio: Portfolio,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
+    price_history: PriceHistory,
 
     transaction_filters: Vec<TransactionFilter>,
 
@@ -411,11 +412,19 @@ struct App {
 impl App {
     fn new() -> Self {
         let project_dirs = ProjectDirs::from("org", "raccoin",  "Raccoin");
+
+        // Try to restore application state
         let state = project_dirs.as_ref().and_then(|dirs| {
             let config_dir = dirs.config_local_dir();
             std::fs::create_dir_all(config_dir).map(|_| config_dir.join("state.json")).ok()
         }).and_then(|state_file| std::fs::read_to_string(state_file).ok()).and_then(|json| {
             serde_json::from_str::<AppState>(&json).ok()
+        }).unwrap_or_default();
+
+        // Try to load available price history
+        let price_history = project_dirs.as_ref().map(|dirs| {
+            let data_dir = dirs.data_local_dir();
+            PriceHistory::load_from_dir(&data_dir).unwrap_or_default()
         }).unwrap_or_default();
 
         Self {
@@ -424,6 +433,7 @@ impl App {
             portfolio: Portfolio::default(),
             transactions: Vec::new(),
             reports: Vec::new(),
+            price_history,
 
             transaction_filters: Vec::default(),
 
@@ -503,6 +513,7 @@ impl App {
 
     fn refresh_transactions(&mut self) {
         self.transactions = load_transactions(&mut self.portfolio).unwrap_or_default();
+        estimate_transaction_values(&mut self.transactions, &self.price_history);
         self.reports = calculate_tax_reports(&mut self.transactions, self.portfolio.cost_basis_tracking);
     }
 
@@ -823,7 +834,6 @@ fn load_transactions(portfolio: &mut Portfolio) -> Result<Vec<Transaction>> {
     }
 
     match_send_receive(&mut transactions);
-    estimate_transaction_values(&mut transactions, &portfolio.price_history);
 
     Ok(transactions)
 }
@@ -1086,53 +1096,34 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
     transactions.iter_mut().for_each(estimate_transaction_value);
 }
 
-async fn download_price_history(transactions: Vec<Transaction>) -> Result<PriceHistory> {
-    let mut price_history = PriceHistory::empty();
+async fn download_price_history(requirements: PriceRequirements, mut price_history: PriceHistory) -> Result<PriceHistory> {
+    // price_history.debug_dump();
+    let padding = Duration::days(7);
+    let missing_ranges = requirements.missing_ranges(&price_history, padding);
+    dbg!(&missing_ranges);
 
-    async fn ensure_price_point(price_history: &mut PriceHistory, timestamp: NaiveDateTime, currency: &str) {
-        // If there is already a price point within 1 hour, we don't need to download new price points
-        if let Some((_, accuracy)) = price_history.estimate_price_with_accuracy(timestamp, currency) {
-            if accuracy <= Duration::hours(1) {
-                return;
-            }
+    // Download missing price points
+    for (currency, ranges) in missing_ranges {
+        if cmc_id(&currency) == -1 {
+            continue;
+        }
+        if currency != "BTC" {
+            continue;
         }
 
-        let price_points = coinmarketcap::download_price_points(timestamp, currency).await;
-        match price_points {
-            Ok(price_points) => {
-                price_history.add_price_points(currency.into(), price_points);
-            }
-            Err(e) => {
-                println!("warning: failed to download price points for {:}: {:?}", currency, e);
+        let price_data = price_history.price_data(currency.to_owned());
+        for range in ranges {
+            println!("Downloading price points for {:} from {:} to {:}", currency, range.start, range.end);
+            let price_points = coinmarketcap::download_price_points(range.start, range.end, currency.as_str()).await;
+            match price_points {
+                Ok(price_points) => {
+                    price_data.add_points(price_points);
+                }
+                Err(e) => {
+                    println!("warning: failed to download price points for {:}: {:?} foo", currency, e);
+                }
             }
         }
-    }
-
-    for tx in transactions.iter().rev() {
-        match tx.incoming_outgoing() {
-            (Some(incoming), Some(outgoing)) => {
-                if !incoming.is_fiat() {
-                    ensure_price_point(&mut price_history, tx.timestamp, &incoming.currency).await;
-                }
-                if !outgoing.is_fiat() {
-                    ensure_price_point(&mut price_history, tx.timestamp, &outgoing.currency).await;
-                }
-            }
-            (Some(amount), None) |
-            (None, Some(amount)) => {
-                if !amount.is_fiat() {
-                    ensure_price_point(&mut price_history, tx.timestamp, &amount.currency).await;
-                }
-            }
-            (None, None) => {}
-        };
-
-        match &tx.fee {
-            Some(amount) => {
-                ensure_price_point(&mut price_history, tx.timestamp, &amount.currency).await;
-            }
-            None => {}
-        };
     }
 
     Ok(price_history)
@@ -1639,7 +1630,7 @@ fn ui_set_portfolio(app: &App) {
                 return None
             }
 
-            let current_price = app.portfolio.price_history.estimate_price(now, &currency.currency);
+            let current_price = app.price_history.estimate_price(now, &currency.currency);
             let current_value = current_price.map(|price| currency.balance_end * price).unwrap_or(Decimal::ZERO);
             let unrealized_gain = current_value - currency.cost_end;
             let roi = if currency.cost_end > Decimal::ZERO { Some(unrealized_gain / currency.cost_end * Decimal::ONE_HUNDRED) } else { None };
@@ -1685,9 +1676,6 @@ fn ui_set_portfolio(app: &App) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // coinmarketcap::download_price_history("ETH").await?;
-    // coinmarketcap::download_price_history("BTC").await?;
-
     let mut app = App::new();
 
     // Load portfolio from command-line or from previous application state
@@ -2053,21 +2041,72 @@ async fn main() -> Result<()> {
             let app = app.clone();
 
             slint::spawn_local(async move {
-                let transactions = app.borrow().transactions.clone();
-                let price_history = tokio::task::spawn(download_price_history(transactions)).await.unwrap();
+                // Determine which price points we need to know for our transactions and clone the
+                // available price history so that it can be extended in a thread.
+                let (requirements, price_history) = {
+                    let app = app.borrow();
+                    let mut requirements = PriceRequirements::new();
 
-                let mut app = app.borrow_mut();
+                    for tx in app.transactions.iter() {
+                        // For transactions to or from fiat, we know the value exactly and don't
+                        // need to estimate the value.
+                        match tx.incoming_outgoing() {
+                            (None, None) => {}
+                            (None, Some(amount)) |
+                            (Some(amount), None) => {
+                                if !amount.is_fiat() {
+                                    requirements.add(&amount.currency, tx.timestamp);
+                                }
+                            }
+                            (Some(incoming), Some(outgoing)) => {
+                                if !incoming.is_fiat() && !outgoing.is_fiat() {
+                                    // In case neither side is fiat, we want to know the price of both
+                                    // currencies, since it can give a better value estimate.
+                                    requirements.add(&incoming.currency, tx.timestamp);
+                                    requirements.add(&outgoing.currency, tx.timestamp);
+                                }
+                            }
+                        }
 
+                        // We may also need to know the price of the fee currency.
+                        match &tx.fee {
+                            Some(amount) => {
+                                if !amount.is_fiat() {
+                                    requirements.add(&amount.currency, tx.timestamp);
+                                }
+                            }
+                            None => {}
+                        };
+                    }
+
+                    (requirements, app.price_history.clone())
+                };
+
+                // Spawn a task to download the missing price history
+                let price_history = tokio::task::spawn(download_price_history(requirements, price_history)).await.unwrap();
+
+                // On success, update the app's price history and refresh the UI
                 match price_history {
                     Ok(price_history) => {
-                        app.portfolio.price_history = price_history;
+                        let mut app = app.borrow_mut();
+                        app.price_history = price_history;
                         app.refresh_transactions();
                         app.refresh_ui();
                         app.save_portfolio(None);
+
+                        if let Some(dirs) = app.project_dirs.as_ref() {
+                            let data_dir = dirs.data_local_dir();
+                            if let Err(e) = app.price_history.save_to_dir(&data_dir) {
+                                eprintln!("Error saving price history: {}", e);
+                            }
+                            if let Err(e) = app.price_history.save_to_dir_as_json(&data_dir) {
+                                eprintln!("Error saving price history: {}", e);
+                            }
+                        }
                     }
                     Err(e) => {
                         // todo: show error in UI
-                        println!("Error updating price history: {}", e);
+                        println!("Error downloading price history: {}", e);
                     },
                 }
             }).unwrap();

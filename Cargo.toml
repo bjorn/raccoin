@@ -14,6 +14,7 @@ include = ["src/**/*", "LICENSE", "README.md", "build.rs"]
 
 [dependencies]
 anyhow = "1.0.75"
+ciborium = "0.2"
 bitcoin = "0.32"
 chrono = { version = "0.4.31", features = ["serde"] }
 chrono-tz = "0.10"
