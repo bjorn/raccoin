@@ -951,7 +951,8 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
         // Derive the fee based on received amount and sent amount
         enum MatchResult {
             NoAdjustment,
-            AdjustFee(Amount, Amount), // (adjusted_send_amount, adjusted_fee)
+            AdjustSend { amount: Amount, fee: Amount },
+            AdjustReceive { amount: Amount, fee: Amount },
             AbortMatch,
         }
 
@@ -960,22 +961,34 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                 assert!(sent.currency == received.currency);
 
                 let implied_fee = Amount::new(sent.quantity - received.quantity, sent.currency.clone());
+
                 match &transactions[send_index].fee {
                     Some(existing_fee) => {
                         if existing_fee.currency != implied_fee.currency {
-                            println!("warning: send/receive amounts imply fee, but existing fee is set in a different currency for transaction {:?}", transactions[send_index]);
+                            println!("warning: send/receive amounts imply fee, but there's already a fee in a different currency ({}) for transaction {:?}", existing_fee.currency, transactions[send_index]);
                             MatchResult::AbortMatch
                         } else if existing_fee.quantity != implied_fee.quantity {
-                            println!("warning: replacing existing fee {:} with implied fee of {:} and adjusting sent amount to {:}", existing_fee, implied_fee, received);
-                            MatchResult::AdjustFee(received.clone(), implied_fee)
+                            // This can happen for ETH deposits to Bitstamp, since they get rounded
+                            // down to 8 decimal places even though ETH tokens can have up to 18
+                            // decimal places. In this case a small amount of ETH seems to get lost.
+                            //
+                            // We set the receive fee to the implied fee to make sure this small
+                            // loss is accounted for.
+                            if transactions[receive_index].fee.is_none() {
+                                println!("warning: sent amount {} different from received amount {} and the fee {} doesn't match, adjusting received amount to {} and setting receive fee to {}", sent, received, existing_fee, sent, implied_fee);
+                                MatchResult::AdjustReceive { amount: sent.clone(), fee: implied_fee }
+                            } else {
+                                println!("warning: sent amount {} different from received amount {} and the fee {} doesn't match, but there's already a receive fee as well", sent, received, existing_fee);
+                                MatchResult::NoAdjustment
+                            }
                         } else {
-                            println!("warning: fee {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:}", existing_fee, sent, received);
-                            MatchResult::AdjustFee(received.clone(), implied_fee)
+                            println!("warning: fee {} appears to have been included in the sent amount {}, adjusting sent amount to {}", existing_fee, sent, received);
+                            MatchResult::AdjustSend { amount: received.clone(), fee: implied_fee }
                         }
                     }
                     None => {
-                        println!("warning: a fee of {:} appears to have been included in the sent amount {:}, adjusting sent amount to {:} and setting fee", implied_fee, sent, received);
-                        MatchResult::AdjustFee(received.clone(), implied_fee)
+                        println!("warning: a fee of {} appears to have been included in the sent amount {}, adjusting sent amount to {} and setting fee", implied_fee, sent, received);
+                        MatchResult::AdjustSend { amount: received.clone(), fee: implied_fee }
                     }
                 }
             }
@@ -989,11 +1002,18 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                 unmatched_sends_receives.push(receive_index);
                 continue;
             }
-            MatchResult::AdjustFee(adjusted_send_amount, adjusted_fee) => {
+            MatchResult::AdjustSend { amount, fee } => {
                 let tx = &mut transactions[send_index];
-                tx.fee = Some(adjusted_fee);
+                tx.fee = Some(fee);
                 if let Operation::Send(send_amount) = &mut tx.operation {
-                    *send_amount = adjusted_send_amount;
+                    *send_amount = amount;
+                }
+            }
+            MatchResult::AdjustReceive { amount, fee } => {
+                let tx = &mut transactions[receive_index];
+                tx.fee = Some(fee);
+                if let Operation::Receive(receive_amount) = &mut tx.operation {
+                    *receive_amount = amount;
                 }
             }
             MatchResult::NoAdjustment => {}
@@ -1337,6 +1357,7 @@ fn ui_set_transactions(app: &App) {
         let mut description = transaction.description.clone();
         let mut tx_hash = transaction.tx_hash.as_ref();
         let mut blockchain = transaction.blockchain.as_ref();
+        let mut fee = transaction.fee.clone();
         let mut gain = transaction.gain.clone();
 
         let (tx_type, sent, received, from, to) = match &transaction.operation {
@@ -1354,26 +1375,43 @@ fn ui_set_transactions(app: &App) {
             Operation::FiatWithdrawal(amount) => {
                 (UiTransactionType::Withdrawal, Some(amount), None, wallet_name, None)
             }
-            Operation::Send(send_amount) => {
-                // matching_tx has to be set at this point, otherwise it should have been a Sell
-                let matching_receive = &transactions[transaction.matching_tx.expect("Send should have matched a Receive transaction")];
-                if let Operation::Receive(receive_amount) = &matching_receive.operation {
-                    let receive_wallet = wallets.get(matching_receive.wallet_index);
-                    let receive_wallet_name = receive_wallet.map(|source| source.name.clone().into());
+            Operation::Send(_) => {
+                assert!(transaction.matching_tx.is_some(), "Unmatched Send should have been changed to Sell");
+                continue;   // added as a Transfer when handling the Receive
+            }
+            Operation::Receive(receive_amount) => {
+                // matching_tx has to be set at this point, otherwise it should have been a Buy
+                let matching_send = &transactions[transaction.matching_tx.expect("Receive should have matched a Send transaction")];
+                if let Operation::Send(send_amount) = &matching_send.operation {
+                    let send_wallet = wallets.get(matching_send.wallet_index);
+                    let send_wallet_name = send_wallet.map(|source| source.name.clone().into());
 
-                    value = value.or(matching_receive.value.as_ref());
-                    tx_hash = tx_hash.or(matching_receive.tx_hash.as_ref());
-                    blockchain = blockchain.or(matching_receive.blockchain.as_ref());
-                    description = match (description, &matching_receive.description) {
-                        (Some(s), Some(r)) => Some(s + ", " + r),
-                        (Some(s), None) => Some(s),
-                        (None, Some(r)) => Some(r.to_owned()),
+                    value = value.or(matching_send.value.as_ref());
+                    tx_hash = tx_hash.or(matching_send.tx_hash.as_ref());
+                    blockchain = blockchain.or(matching_send.blockchain.as_ref());
+
+                    // If both sides have a fee, try to add them together
+                    fee = match (fee, matching_send.fee.as_ref()) {
+                        (Some(receive_fee), Some(send_fee)) => {
+                            receive_fee.try_add(send_fee).or(Some(receive_fee))
+                        }
+                        (None, Some(send_fee)) => Some(send_fee.clone()),
+                        (Some(receive_fee), None) => Some(receive_fee),
+                        _ => None,
+                    };
+
+                    description = match (description, &matching_send.description) {
+                        (Some(receive_description), Some(send_description)) => {
+                            Some(format!("{}, {}", send_description, receive_description))
+                        }
+                        (Some(receive_description), None) => Some(receive_description),
+                        (None, Some(send_description)) => Some(send_description.clone()),
                         (None, None) => None,
                     };
 
-                    // When either size of the transfer has an error, make sure the error is visible
-                    gain = match (gain, &matching_receive.gain) {
-                        // Display sum of gains (though this currently can't happen)
+                    // When either side of the transfer has an error, make sure the error is visible
+                    gain = match (gain, &matching_send.gain) {
+                        // Display sum of gains (can happen due to "receiving fee")
                         (Some(Ok(a)), Some(Ok(b))) => Some(Ok(a + *b)),
 
                         // Error overrides any gains
@@ -1387,14 +1425,10 @@ fn ui_set_transactions(app: &App) {
                         (None, None) => None,
                     };
 
-                    (UiTransactionType::Transfer, Some(send_amount), Some(receive_amount), wallet_name, receive_wallet_name)
+                    (UiTransactionType::Transfer, Some(send_amount), Some(receive_amount), send_wallet_name, wallet_name)
                 } else {
-                    unreachable!("Send was matched with a non-Receive transaction");
+                    unreachable!("Receive was matched with a non-Send transaction");
                 }
-            }
-            Operation::Receive(_) => {
-                assert!(transaction.matching_tx.is_some(), "Unmatched Receive should have been changed to Buy");
-                continue;   // added as a Transfer when handling the Send
             }
             Operation::Fee(amount) => {
                 (UiTransactionType::Fee, Some(amount), None, wallet_name, None)
@@ -1458,7 +1492,7 @@ fn ui_set_transactions(app: &App) {
             received: received.map_or_else(String::default, Amount::to_string).into(),
             sent_cmc_id: sent.map(Amount::cmc_id).unwrap_or(-1),
             sent: sent.map_or_else(String::default, Amount::to_string).into(),
-            fee: transaction.fee.as_ref().map_or_else(String::default, Amount::to_string).into(),
+            fee: fee.as_ref().map_or_else(String::default, Amount::to_string).into(),
             value: value.map_or_else(String::default, Amount::to_string).into(),
             gain: rounded_to_cent(gain).try_into().unwrap(),
             gain_error: gain_error.unwrap_or_default().into(),
