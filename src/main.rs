@@ -1401,9 +1401,11 @@ fn ui_set_transactions(app: &App) {
                     };
 
                     description = match (description, &matching_send.description) {
-                        (Some(s), Some(r)) => Some(s + ", " + r),
-                        (Some(s), None) => Some(s),
-                        (None, Some(r)) => Some(r.to_owned()),
+                        (Some(receive_description), Some(send_description)) => {
+                            Some(format!("{}, {}", send_description, receive_description))
+                        }
+                        (Some(receive_description), None) => Some(receive_description),
+                        (None, Some(send_description)) => Some(send_description.clone()),
                         (None, None) => None,
                     };
 
