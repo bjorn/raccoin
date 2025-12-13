@@ -142,6 +142,11 @@ impl Amount {
         }
     }
 
+    pub(crate) fn abs(mut self) -> Self {
+        self.quantity = self.quantity.abs();
+        self
+    }
+
     pub(crate) fn cmc_id(&self) -> i32 {
         cmc_id(&self.currency)
     }

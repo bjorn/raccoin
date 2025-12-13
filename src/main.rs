@@ -49,6 +49,7 @@ enum TransactionsSourceType {
     BitcoinDeCsv,
     BitonicCsv,     // todo: remove custom format
     BitstampCsv,
+    BitstampCsvNew,
     BittrexOrderHistoryCsv,
     BittrexTransactionHistoryCsv,
     CtcImportCsv,
@@ -156,6 +157,7 @@ impl TransactionsSourceType {
             TransactionsSourceType::ReddcoinCoreCsv => &["Confirmed", "Date", "Type", "Label", "Address", "Amount (RDD)", "ID"],
             TransactionsSourceType::BitonicCsv => &["Date", "Action", "Amount", "Price"],
             TransactionsSourceType::BitstampCsv => &["Type", "Datetime", "Account", "Amount", "Value", "Rate", "Fee", "Sub Type"],
+            TransactionsSourceType::BitstampCsvNew => &["ID", "Account", "Type", "Subtype", "Datetime", "Amount", "Amount currency", "Value", "Value currency", "Rate", "Rate currency", "Fee", "Fee currency", "Order ID"],
             TransactionsSourceType::BittrexOrderHistoryCsv => &["Date", "Market", "Side", "Type", "Price", "Quantity", "Total"],
             TransactionsSourceType::BittrexTransactionHistoryCsv => &["Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount"],
             TransactionsSourceType::CtcImportCsv => &["Timestamp (UTC)", "Type", "Base Currency", "Base Amount", "Quote Currency (Optional)", "Quote Amount (Optional)", "Fee Currency (Optional)", "Fee Amount (Optional)", "From (Optional)", "To (Optional)", "Blockchain (Optional)", "ID (Optional)", "Description (Optional)", "Reference Price Per Unit (Optional)", "Reference Price Currency (Optional)"],
@@ -188,7 +190,8 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::BitcoinCoreCsv => "Bitcoin Core (CSV)".to_owned(),
             TransactionsSourceType::BitcoinDeCsv => "bitcoin.de (CSV)".to_owned(),
             TransactionsSourceType::BitonicCsv => "Bitonic (CSV)".to_owned(),
-            TransactionsSourceType::BitstampCsv => "Bitstamp (CSV)".to_owned(),
+            TransactionsSourceType::BitstampCsv => "Bitstamp Old (CSV)".to_owned(),
+            TransactionsSourceType::BitstampCsvNew => "Bitstamp RFC 4180 (CSV)".to_owned(),
             TransactionsSourceType::BittrexOrderHistoryCsv => "Bittrex Order History (CSV)".to_owned(),
             TransactionsSourceType::BittrexTransactionHistoryCsv => "Bittrex Transaction History (CSV)".to_owned(),
             TransactionsSourceType::ElectrumCsv => "Electrum (CSV)".to_owned(),
@@ -673,6 +676,9 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
                     bitonic::load_bitonic_csv(&source.full_path)
                 }
                 TransactionsSourceType::BitstampCsv => {
+                    bitstamp::load_bitstamp_old_csv(&source.full_path)
+                }
+                TransactionsSourceType::BitstampCsvNew => {
                     bitstamp::load_bitstamp_csv(&source.full_path)
                 }
                 TransactionsSourceType::BittrexOrderHistoryCsv => {
