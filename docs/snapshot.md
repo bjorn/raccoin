@@ -22,6 +22,7 @@ post_url 2024-01-04-raccoin-0-2 %}).
 * Fixed handling of leap years in holding period calculation ([#32](https://github.com/bjorn/raccoin/issues/32))
 * Fixed filtering on multiple conditions for transfers ([#54](https://github.com/bjorn/raccoin/pull/54))
 * Handle loss of funds on arrival by setting a "receive fee" ([#52](https://github.com/bjorn/raccoin/pull/52))
+* Handle airdrops as zero cost basis transactions ([#53](https://github.com/bjorn/raccoin/pull/53))
 * Adjust to bitcoin.de CSV format changes ([#31](https://github.com/bjorn/raccoin/issues/31))
 * Added support for new Bitstamp CSV format and detect SGB and FLR airdrops ([#51](https://github.com/bjorn/raccoin/pull/51))
 * Show new wallets expanded by default

@@ -37,7 +37,7 @@ use crate::{base::{Operation, Transaction, Amount, GainError}, time::serialize_d
 /// how much of the original amount remains to be disposed of. Each entry
 /// represents a "lot" of cryptocurrency that will be consumed in FIFO order
 /// when calculating capital gains for disposals.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct Lot {
     /// The timestamp when this cryptocurrency was acquired
     timestamp: NaiveDateTime,
@@ -72,7 +72,7 @@ impl Lot {
 ///
 /// When disposing of holdings, the oldest entries are processed first to comply
 /// with FIFO accounting rules for capital gains calculations.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct LotQueue {
     /// Queue of lots ordered by acquisition time (oldest first)
     lots: VecDeque<Lot>,
@@ -138,7 +138,7 @@ impl LotQueue {
 }
 
 /// A collection of cryptocurrency holdings organized by currency.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct Holdings {
     lots_by_currency: HashMap<String, LotQueue>,
 }
@@ -290,14 +290,15 @@ impl FIFO {
 
             match &transaction.operation {
                 Operation::Staking(amount) |
-                Operation::ChainSplit(amount) => {
+                Operation::ChainSplit(amount) |
+                Operation::Airdrop(amount) => {
                     if !amount.is_fiat() {
-                        // Staking reward and Chain splits are treated as a zero-cost buy
+                        // Staking reward, Chain splits and Airdrops are treated as a zero-cost buy
+                        // (todo: option to treat airdrops as income with cost base of market value)
                         self.add_holdings(transaction, amount, Some(&Amount::new(Decimal::ZERO, "EUR".to_owned())));
                     }
                 }
                 Operation::IncomingGift(amount) |
-                Operation::Airdrop(amount) |
                 Operation::Buy(amount) |
                 Operation::Cashback(amount) |
                 Operation::Income(amount) |     // todo: track income total
@@ -555,7 +556,8 @@ impl FIFO {
             receiver_holdings.add_lot(&currency, lot);
         }
 
-        // If some quantity is missing, synthesize a lot with cost basis from the receive transaction and warn
+        // If some quantity is missing, synthesize a lot with cost basis from the receive
+        // transaction and warn.
         if missing_quantity > Decimal::ZERO {
             println!("warning: at {} a remaining transferred amount of {} {} was not found in the sender holdings", receive_tx.timestamp, missing_quantity, &currency);
             let unit_price = fiat_value(receive_tx.value.as_ref()).map(|value| value / quantity);
@@ -632,6 +634,12 @@ mod tests {
         }
     }
 
+    fn process_txs(fifo: &mut FIFO, txs: &mut [Transaction]) -> Vec<CapitalGain> {
+        // tx_meta provides the sender wallet index for the matched send (used during Receive processing)
+        let tx_meta: Vec<TxMeta> = txs.iter().map(|t| TxMeta { wallet_index: t.wallet_index }).collect();
+        fifo.process(txs, &tx_meta)
+    }
+
     #[test]
     fn long_term_exact_calendar_year_regular() {
         assert!(!gain("2021-01-01 00:00:00", "2021-12-31 23:59:59").long_term());
@@ -698,14 +706,8 @@ mod tests {
         txs[0].value = Some(Amount::from_fiat(Decimal::new(100, 0)));
         txs[1].value = Some(Amount::from_fiat(Decimal::new(200, 0)));
 
-        // tx_meta mirrors wallet indices for the transactions
-        let tx_meta = vec![
-            TxMeta { wallet_index: 0 },
-            TxMeta { wallet_index: 0 },
-        ];
-
         let mut fifo = FIFO::with_tracking(CostBasisTracking::Universal);
-        let gains = fifo.process(&mut txs, &tx_meta);
+        let gains = process_txs(&mut fifo, &mut txs);
 
         // We expect a single capital gain event for the sale
         assert_eq!(gains.len(), 1, "Expected exactly one CapitalGain entry");
@@ -798,15 +800,67 @@ mod tests {
             tx.index = i;
         }
 
-        // tx_meta provides the sender wallet index for the matched send (used during Receive processing)
-        let tx_meta: Vec<TxMeta> = txs.iter().map(|t| TxMeta { wallet_index: t.wallet_index }).collect();
-
         let mut fifo = FIFO::with_tracking(CostBasisTracking::PerWallet);
-        let gains = fifo.process(&mut txs, &tx_meta);
+        let gains = process_txs(&mut fifo, &mut txs);
 
         // We expect a single capital gain event for the sale
         assert_eq!(gains.len(), 1, "Expected exactly one CapitalGain entry");
         let gain = &gains[0];
         assert_eq!(gain.bought_tx_index, 1, "Sale should have used the second buy (tx index 1) as cost basis since the first was transferred out");
+    }
+
+    #[test]
+    fn fifo_airdrop_zero_cost_basis() {
+        // Create two transactions:
+        // 1) Airdrop 2 BTC (should have zero cost basis)
+        // 2) Sell 1 BTC for 200 EUR (months later)
+        let mut txs = vec![
+            Transaction::new(
+                dt("2021-01-01 00:00:00"),
+                Operation::Airdrop(Amount::new(Decimal::new(2, 0), "BTC".to_string())),
+            ),
+            Transaction::new(
+                dt("2021-06-01 00:00:00"),
+                Operation::Sell(Amount::new(Decimal::new(1, 0), "BTC".to_string())),
+            ),
+        ];
+        // Airdrop has no value (or could have market value for income purposes, but cost basis is zero)
+        txs[0].value = None;
+        txs[1].value = Some(Amount::from_fiat(Decimal::new(200, 0)));
+
+        let mut fifo = FIFO::with_tracking(CostBasisTracking::Universal);
+        let gains = process_txs(&mut fifo, &mut txs);
+
+        // We expect a single capital gain event for the sale
+        assert_eq!(gains.len(), 1, "Expected exactly one CapitalGain entry");
+        let gain = &gains[0];
+
+        // Verify the gain details - airdrop should have zero cost basis
+        assert_eq!(gain.amount.currency, "BTC");
+        assert_eq!(gain.amount.quantity, Decimal::new(1, 0));
+        assert_eq!(gain.cost, Decimal::ZERO, "Cost basis should be 0 EUR (airdrop is zero-cost acquisition)");
+        assert_eq!(gain.proceeds, Decimal::new(200, 0), "Proceeds should be 200 EUR");
+        assert_eq!(gain.profit(), Decimal::new(200, 0), "Profit should be 200 - 0 = 200 EUR (full proceeds are profit)");
+
+        // Also verify the transaction gain recorded on the Sell transaction
+        assert!(txs[1].gain.is_some(), "Sell transaction should have a gain recorded");
+        assert_eq!(
+            txs[1].gain.as_ref().unwrap().as_ref().unwrap(),
+            &Decimal::new(200, 0),
+            "Recorded gain on transaction should be 200 EUR"
+        );
+
+        // Verify remaining holdings: should be 1 BTC with zero cost base
+        let remaining_holdings = fifo.holdings();
+        assert_eq!(
+            remaining_holdings.currency_balance("BTC"),
+            Decimal::new(1, 0),
+            "Remaining balance should be 1 BTC"
+        );
+        assert_eq!(
+            remaining_holdings.currency_cost_base("BTC"),
+            Decimal::ZERO,
+            "Remaining cost base should be 0 EUR (from airdrop)"
+        );
     }
 }
