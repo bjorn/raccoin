@@ -25,6 +25,7 @@ post_url 2024-01-04-raccoin-0-2 %}).
 * Handle airdrops as zero cost basis transactions ([#53](https://github.com/bjorn/raccoin/pull/53))
 * Adjust to bitcoin.de CSV format changes ([#31](https://github.com/bjorn/raccoin/issues/31))
 * Added support for new Bitstamp CSV format and detect SGB and FLR airdrops ([#51](https://github.com/bjorn/raccoin/pull/51))
+* Added support for new Poloniex CSV format
 * Show new wallets expanded by default
 * Made the merging of consecutive trades optional
 * Added BTC price history (EUR) for 2024 (by Òscar Casajuana)

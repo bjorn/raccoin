@@ -22,37 +22,51 @@ pub(crate) fn deserialize_poloniex_timestamp<'de, D: Deserializer<'de>>(d: D) ->
     Ok(date_time)
 }
 
+// Exported from https://www.poloniex.com/activity/wallet/deposit:
+// Currency,Amount,Address,Date,Status
+//
+// Export requested through Support Ticket (2023):
 // ,timestamp,currency,amount,address,status
+//
+// Export requested through Support Ticket (2025):
+// f_created_at,currency,f_amount,f_address,f_status
 #[derive(Debug, Deserialize)]
 struct PoloniexDeposit {
     #[serde(alias = "Currency")]
     currency: String,
-    #[serde(alias = "Amount")]
+    #[serde(alias = "f_amount", alias = "Amount")]
     amount: Decimal,
-    #[serde(alias = "Address")]
+    #[serde(alias = "f_address", alias = "Address")]
     address: String,
-    #[serde(alias = "Date", deserialize_with = "deserialize_date_time")]
+    #[serde(alias = "f_created_at", alias = "Date", deserialize_with = "deserialize_date_time")]
     timestamp: NaiveDateTime,
-    // #[serde(alias = "Status")]
+    // #[serde(alias = "f_status", alias = "Status")]
     // status: String,
 }
 
+// Exported from https://www.poloniex.com/activity/wallet/withdraw:
+// Fee Deducted,Date,Currency,Amount,Amount-Fee,Address,Status
+//
+// Export requested through Support Ticket (2023):
 // ,timestamp,currency,amount,fee_deducted,status
+//
+// Export requested through Support Ticket (2025):
+// f_date,currency,f_amount,f_feededucted,f_status
 #[derive(Debug, Deserialize)]
 struct PoloniexWithdrawal {
-    #[serde(alias = "Fee Deducted")]
+    #[serde(alias = "f_feededucted", alias = "Fee Deducted")]
     fee_deducted: Decimal,
-    #[serde(alias = "Date", deserialize_with = "deserialize_date_time")]
+    #[serde(alias = "f_date", alias = "Date", deserialize_with = "deserialize_date_time")]
     timestamp: NaiveDateTime,
     #[serde(alias = "Currency")]
     currency: String,
-    #[serde(alias = "Amount")]
+    #[serde(alias = "f_amount", alias = "Amount")]
     amount: Decimal,
     // #[serde(rename = "Amount-Fee")]
     // amount_minus_fee: Decimal,
     #[serde(rename = "Address")]
     address: Option<String>,
-    #[serde(alias = "Status")]
+    #[serde(alias = "f_status", alias = "Status")]
     status: String,  // Can be "COMPLETED" or "COMPLETE: tx_hash"
 }
 
@@ -64,20 +78,30 @@ enum Operation {
     Sell,
 }
 
-// Format I got from the website somehow:
-// csv columns: Date,Market,Type,Side,Price,Amount,Total,Fee,Order Number,Fee Currency,Fee Total
+// Exported from https://www.poloniex.com/activity/spot/trades:
+// Date,Market,Type,Side,Price,Amount,Total,Fee,Order Number,Fee Currency,Fee Total
 //
-// Format I got when asking Poloniex support for an export:
-// csv columns: ,timestamp,trade_id,market,wallet,side,price,amount,fee,fee_currency,fee_total
+// Export requested through Support Ticket (2023):
+// ,timestamp,trade_id,market,wallet,side,price,amount,fee,fee_currency,fee_total
+//
+// Export requested through Support Ticket (2025):
+// order_id,activity,order_role,order_type,base_currency_name,quote_currency_name,fee_currency_name,price,amount,fee_amount,usd_amount,usd_fee_amount,utc_time
 #[derive(Debug, Deserialize)]
 struct PoloniexTrade {
-    #[serde(alias = "Date", deserialize_with = "deserialize_poloniex_timestamp")]
+    #[serde(alias = "utc_time", alias = "Date", deserialize_with = "deserialize_poloniex_timestamp")]
     timestamp: NaiveDateTime,
+
+    // Some formats have a "market" column while others have separate "base_currency_name" and
+    // "quote_currency_name" columns
     #[serde(alias = "Market")]
-    market: String,
+    market: Option<String>,
+
+    base_currency_name: Option<String>,
+    quote_currency_name: Option<String>,
+
     // #[serde(rename = "Type")]
     // type_: String,   // always LIMIT
-    #[serde(alias = "Side")]
+    #[serde(alias = "activity", alias = "Side")]
     side: Operation,
     #[serde(alias = "Price")]
     price: Decimal,
@@ -87,11 +111,11 @@ struct PoloniexTrade {
     total: Option<Decimal>,
     // #[serde(alias = "Fee")]
     // fee: Decimal,
-    #[serde(rename = "Order Number", alias = "trade_id")]
+    #[serde(rename = "Order Number", alias = "trade_id", alias = "order_id")]
     order_number: String,
-    #[serde(alias = "Fee Currency")]
+    #[serde(alias = "fee_currency_name", alias = "Fee Currency")]
     fee_currency: String,
-    #[serde(alias = "Fee Total")]
+    #[serde(alias = "fee_amount", alias = "Fee Total")]
     fee_total: Decimal,
 }
 
@@ -128,23 +152,31 @@ impl TryFrom<PoloniexTrade> for Transaction {
     type Error = &'static str;
 
     fn try_from(item: PoloniexTrade) -> Result<Self, Self::Error> {
-        // split record.market at the underscore or dash to obtain the base_currency and the quote_currency
-        let mut split = item.market.split('_');
-        let (base_currency, quote_currency) = match (split.next(), split.next()) {
-            (Some(base_currency), Some(quote_currency)) => Ok::<(&str, &str), &'static str>((base_currency, quote_currency)),
-            _ => {
-                let mut split = item.market.split('-');
+        let (base_currency, quote_currency) = match (&item.market, &item.base_currency_name, &item.quote_currency_name) {
+            (Some(market), _, _) => {
+                // split record.market at the underscore or dash to obtain the base_currency and the quote_currency
+                let mut split = market.split('_');
                 match (split.next(), split.next()) {
-                    (Some(quote_currency), Some(base_currency)) => Ok((base_currency, quote_currency)),
-                    _ => return Err("Invalid Poloniex market")
+                    (Some(base_currency), Some(quote_currency)) => Ok::<(&str, &str), &'static str>((base_currency, quote_currency)),
+                    _ => {
+                        let mut split = market.split('-');
+                        match (split.next(), split.next()) {
+                            (Some(quote_currency), Some(base_currency)) => Ok((base_currency, quote_currency)),
+                            _ => return Err("Invalid Poloniex market")
+                        }
+                    }
                 }
             }
+            (None, Some(base_currency), Some(quote_currency)) => Ok((base_currency.as_str(), quote_currency.as_str())),
+            _ => return Err("Could not determine base_currency and quote_currency")
         }?;
 
         let quote_currency = normalize_currency(quote_currency);
         let base_currency = normalize_currency(base_currency);
         let fee_currency = normalize_currency(&item.fee_currency);
 
+        // Poloniex does not provide the total amount, so we need to calculate it based on the price
+        // and amount. We truncate the result to 8 decimal places and hope it's accurate enough.
         let total = item.total.unwrap_or_else(|| (item.price * item.amount).round_dp_with_strategy(8, RoundingStrategy::ToZero));
 
         let mut tx = match item.side {
