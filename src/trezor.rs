@@ -1,11 +1,11 @@
-use std::path::Path;
+use std::{io::Seek, path::Path};
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use chrono::DateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount, Operation};
+use crate::base::{Amount, Operation, Transaction};
 
 #[derive(Debug, Clone, Deserialize)]
 enum TrezorTransactionType {
@@ -21,11 +21,15 @@ enum TrezorAmount {
     TokenId(String),
 }
 
-fn deserialize_amount<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<TrezorAmount, D::Error> {
+fn deserialize_amount<'de, D: Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<TrezorAmount, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
     match Decimal::try_from(raw) {
         Ok(quantity) => Ok(TrezorAmount::Quantity(quantity)),
-        Err(_) => Ok(TrezorAmount::TokenId(raw.trim_start_matches("ID ").to_owned())),
+        Err(_) => Ok(TrezorAmount::TokenId(
+            raw.trim_start_matches("ID ").to_owned(),
+        )),
     }
 }
 
@@ -64,21 +68,28 @@ struct TrezorTransactionCsv<'a> {
 impl<'a> From<TrezorTransactionCsv<'a>> for Transaction {
     // todo: translate address?
     fn from(item: TrezorTransactionCsv) -> Self {
-        let date_time = DateTime::from_timestamp(item.timestamp, 0).expect("valid timestamp").naive_utc();
+        let date_time = DateTime::from_timestamp(item.timestamp, 0)
+            .expect("valid timestamp")
+            .naive_utc();
         let amount = match item.amount {
             TrezorAmount::Quantity(quantity) => Amount::new(quantity, item.amount_unit.to_owned()),
-            TrezorAmount::TokenId(token_id) => Amount::new_token(token_id, item.amount_unit.to_owned()),
+            TrezorAmount::TokenId(token_id) => {
+                Amount::new_token(token_id, item.amount_unit.to_owned())
+            }
         };
         let mut tx = match item.type_ {
             TrezorTransactionType::Sent => Transaction::send(date_time, amount),
             TrezorTransactionType::Received => Transaction::receive(date_time, amount),
         };
-        tx.description = if item.label.is_empty() { None } else { Some(item.label.to_owned()) };
+        tx.description = if item.label.is_empty() {
+            None
+        } else {
+            Some(item.label.to_owned())
+        };
         tx.tx_hash = Some(item.id.to_owned());
         tx.blockchain = Some(item.amount_unit.to_owned());
         tx.fee = match (item.fee, item.fee_unit) {
-            (None, None) |
-            (None, Some(_)) => None,
+            (None, None) | (None, Some(_)) => None,
             (Some(fee), None) => {
                 println!("warning: ignoring fee of {}, missing fee unit", fee);
                 None
@@ -91,11 +102,25 @@ impl<'a> From<TrezorTransactionCsv<'a>> for Transaction {
 
 // loads a TREZOR Suite CSV file into a list of unified transactions
 pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
     let mut transactions = Vec::new();
 
-    let mut rdr = csv::ReaderBuilder::new()
-        .delimiter(b';')
-        .from_path(input_path)?;
+    let mut buf_reader = BufReader::new(File::open(input_path)?);
+
+    // Trezor Suite used to export with ';' delimiter, but now uses ','
+    let mut first_line = String::new();
+    buf_reader.read_line(&mut first_line)?;
+
+    let mut reader_builder = csv::ReaderBuilder::new();
+    if first_line.starts_with("Timestamp;") {
+        reader_builder.delimiter(b';');
+    }
+
+    buf_reader.rewind()?;
+    let mut rdr = reader_builder.from_reader(buf_reader);
+
     let mut raw_record = csv::StringRecord::new();
     let headers = rdr.headers()?.clone();
 
@@ -169,7 +194,9 @@ struct TrezorWallet {
 impl TrezorTransaction {
     fn extract_transactions(self, transactions: &mut Vec<Transaction>) -> Result<()> {
         let currency = self.symbol.to_uppercase();
-        let date_time = DateTime::from_timestamp(self.block_time as i64, 0).context("invalid timestamp")?.naive_utc();
+        let date_time = DateTime::from_timestamp(self.block_time as i64, 0)
+            .context("invalid timestamp")?
+            .naive_utc();
 
         // Fee is only paid for "sent" transactions
         let mut fee = if matches!(self.type_, TrezorTransactionType::Sent) && !self.fee.is_zero() {
@@ -232,7 +259,7 @@ impl TrezorTransaction {
                     } else {
                         Operation::Send(Amount::new(-change, currency.clone()))
                     }
-                },
+                }
                 _ => unreachable!(),
             }
         }
@@ -253,20 +280,22 @@ impl TrezorTransaction {
             };
 
             op = match (op, token_op) {
-                (Operation::Receive(amount_a), Operation::Receive(amount_b)) if amount_a.is_zero() => {
+                (Operation::Receive(amount_a), Operation::Receive(amount_b))
+                    if amount_a.is_zero() =>
+                {
                     Operation::Receive(amount_b)
                 }
-                (Operation::Receive(receive_amount), Operation::Send(send_amount)) |
-                (Operation::Send(send_amount), Operation::Receive(receive_amount)) => {
+                (Operation::Receive(receive_amount), Operation::Send(send_amount))
+                | (Operation::Send(send_amount), Operation::Receive(receive_amount)) => {
                     Operation::Trade {
                         incoming: receive_amount,
                         outgoing: send_amount,
                     }
-                },
+                }
                 (Operation::Fee(fee_amount), token_op) => {
                     fee = Some(fee_amount);
                     token_op
-                },
+                }
                 (op_orig, token_op) => {
                     // When we can't merge, create multiple transactions
                     push_transaction(op_orig, &mut fee);
