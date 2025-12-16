@@ -147,29 +147,38 @@ impl CurrencyPriceData {
     pub fn estimate_price(&self, time: NaiveDateTime) -> Option<(Decimal, Duration)> {
         let index = self.prices.partition_point(|p| p.timestamp < time);
         let next_price_point = self.prices.get(index).or_else(|| self.prices.last());
-        let prev_price_point = if index > 0 { self.prices.get(index - 1) } else { None };
+        let prev_price_point = if index > 0 {
+            self.prices.get(index - 1)
+        } else {
+            None
+        };
 
         match (prev_price_point, next_price_point) {
             (Some(prev_price), Some(next_price)) => {
                 // Calculate the most probable price by linear interpolation
                 let price_difference = next_price.price - prev_price.price;
-                let total_duration: Decimal = (next_price.timestamp - prev_price.timestamp).num_seconds().into();
+                let total_duration: Decimal = (next_price.timestamp - prev_price.timestamp)
+                    .num_seconds()
+                    .into();
 
                 // The accuracy is the minimum time difference between the requested time and a price point
-                let accuracy = (time - prev_price.timestamp).abs().min((next_price.timestamp - time).abs());
+                let accuracy = (time - prev_price.timestamp)
+                    .abs()
+                    .min((next_price.timestamp - time).abs());
 
                 if total_duration > Decimal::ZERO {
-                    let time_since_prev: Decimal = (time - prev_price.timestamp).num_seconds().into();
+                    let time_since_prev: Decimal =
+                        (time - prev_price.timestamp).num_seconds().into();
                     let time_ratio = time_since_prev / total_duration;
 
                     Some((prev_price.price + time_ratio * price_difference, accuracy))
                 } else {
                     Some((next_price.price, accuracy))
                 }
-            },
+            }
             (Some(price), None) | (None, Some(price)) => {
                 Some((price.price, (price.timestamp - time).abs()))
-            },
+            }
             (None, None) => None,
         }
     }
@@ -182,7 +191,7 @@ impl CurrencyPriceData {
 }
 
 /// The main price history storage.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PriceHistory {
     currencies: HashMap<String, CurrencyPriceData>,
 }
@@ -285,6 +294,20 @@ impl PriceHistory {
     }
 }
 
+impl Default for PriceHistory {
+    fn default() -> Self {
+        let mut history = Self::new();
+
+        if let Ok(price_points) = load_btc_price_history_data() {
+            history
+                .price_data("BTC".to_owned())
+                .add_points(price_points);
+        }
+
+        history
+    }
+}
+
 /// Helper to collect price requirements from transactions.
 #[derive(Debug, Default)]
 pub(crate) struct PriceRequirements {
@@ -347,25 +370,36 @@ impl PriceRequirements {
 
 #[allow(dead_code)]
 pub(crate) fn save_price_history_data(prices: &Vec<PricePoint>, path: &Path) -> Result<()> {
-    let mut wtr = csv::Writer::from_path(path)?;
+    let mut writer = csv::Writer::from_path(path)?;
     for price in prices {
-        wtr.serialize(price)?;
+        writer.serialize(price)?;
     }
 
     Ok(())
 }
 
+fn read_price_points_from_reader<R: std::io::Read>(
+    mut reader: csv::Reader<R>,
+) -> Result<Vec<PricePoint>> {
+    let mut prices: Vec<PricePoint> = Vec::new();
+    for result in reader.deserialize() {
+        prices.push(result?);
+    }
+    Ok(prices)
+}
+
 #[allow(dead_code)]
 pub(crate) fn load_price_history_data(path: &Path) -> Result<Vec<PricePoint>> {
-    let mut rdr = csv::ReaderBuilder::new().from_path(path)?;
+    let reader = csv::ReaderBuilder::new().from_path(path)?;
+    read_price_points_from_reader(reader)
+}
 
-    let mut prices: Vec<PricePoint> = Vec::new();
-    for result in rdr.deserialize() {
-        let record: PricePoint = result?;
-        prices.push(record);
-    }
-
-    Ok(prices)
+pub(crate) fn load_btc_price_history_data() -> Result<Vec<PricePoint>> {
+    // The following file was saved using the above function with data loaded
+    // from the CoinMarketCap API.
+    let btc_price_history_eur = include_bytes!("data/btc-price-history-eur.csv");
+    let reader = csv::Reader::from_reader(btc_price_history_eur.as_slice());
+    read_price_points_from_reader(reader)
 }
 
 #[cfg(test)]
@@ -417,9 +451,18 @@ mod tests {
 
         // Add points out of order
         data.add_points(vec![
-            PricePoint { timestamp: make_datetime(2024, 1, 1, 5), price: dec!(150) },
-            PricePoint { timestamp: make_datetime(2024, 1, 1, 0), price: dec!(100) },
-            PricePoint { timestamp: make_datetime(2024, 1, 1, 10), price: dec!(200) },
+            PricePoint {
+                timestamp: make_datetime(2024, 1, 1, 5),
+                price: dec!(150),
+            },
+            PricePoint {
+                timestamp: make_datetime(2024, 1, 1, 0),
+                price: dec!(100),
+            },
+            PricePoint {
+                timestamp: make_datetime(2024, 1, 1, 10),
+                price: dec!(200),
+            },
         ]);
 
         assert_eq!(data.prices.len(), 3);
@@ -432,11 +475,15 @@ mod tests {
     fn test_add_points_skips_duplicates() {
         let mut data = CurrencyPriceData::new();
 
+        data.add_points(vec![PricePoint {
+            timestamp: make_datetime(2024, 1, 1, 5),
+            price: dec!(150),
+        }]);
         data.add_points(vec![
-            PricePoint { timestamp: make_datetime(2024, 1, 1, 5), price: dec!(150) },
-        ]);
-        data.add_points(vec![
-            PricePoint { timestamp: make_datetime(2024, 1, 1, 5), price: dec!(999) }, // duplicate
+            PricePoint {
+                timestamp: make_datetime(2024, 1, 1, 5),
+                price: dec!(999),
+            }, // duplicate
         ]);
 
         assert_eq!(data.prices.len(), 1);
@@ -455,8 +502,14 @@ mod tests {
 
         // Should have 15 unique points (0-14)
         assert_eq!(data.prices.len(), 15);
-        assert_eq!(data.prices.first().unwrap().timestamp, make_datetime(2024, 1, 1, 0));
-        assert_eq!(data.prices.last().unwrap().timestamp, make_datetime(2024, 1, 1, 14));
+        assert_eq!(
+            data.prices.first().unwrap().timestamp,
+            make_datetime(2024, 1, 1, 0)
+        );
+        assert_eq!(
+            data.prices.last().unwrap().timestamp,
+            make_datetime(2024, 1, 1, 14)
+        );
     }
 
     #[test]
@@ -470,11 +523,8 @@ mod tests {
         let padding = Duration::hours(1);
 
         // Request at hour 5 (before range with low accuracy) - should be missing
-        let missing = data.missing_ranges_for_timestamps(
-            &[make_datetime(2024, 1, 1, 5)],
-            tolerance,
-            padding,
-        );
+        let missing =
+            data.missing_ranges_for_timestamps(&[make_datetime(2024, 1, 1, 5)], tolerance, padding);
         assert!(!missing.is_empty());
 
         // Request at hour 15 (within range with good accuracy) - should not be missing
@@ -505,9 +555,9 @@ mod tests {
         assert_eq!(price, dec!(150));
 
         // Price at hour 5:30 should be interpolated to 155 (halfway between 150 and 160)
-        let (price, _) = data.estimate_price(
-            make_datetime(2024, 1, 1, 5) + Duration::minutes(30)
-        ).unwrap();
+        let (price, _) = data
+            .estimate_price(make_datetime(2024, 1, 1, 5) + Duration::minutes(30))
+            .unwrap();
         assert_eq!(price, dec!(155));
     }
 
@@ -529,33 +579,53 @@ mod tests {
         // Should return the first known price (100) with accuracy = 5 hours
         let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 5)).unwrap();
         assert_eq!(price, dec!(100), "Before range: should use first price");
-        assert_eq!(accuracy, Duration::hours(5), "Before range: accuracy should be distance to first point");
+        assert_eq!(
+            accuracy,
+            Duration::hours(5),
+            "Before range: accuracy should be distance to first point"
+        );
 
         // Test: estimate after all points (hour 22)
         // Should return the last known price (190) with accuracy = 3 hours
         let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 22)).unwrap();
         assert_eq!(price, dec!(190), "After range: should use last price");
-        assert_eq!(accuracy, Duration::hours(3), "After range: accuracy should be distance to last point");
+        assert_eq!(
+            accuracy,
+            Duration::hours(3),
+            "After range: accuracy should be distance to last point"
+        );
 
         // Test: estimate exactly at beginning of range (hour 10)
         // Should return exactly 100 with accuracy = 0
         let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 10)).unwrap();
         assert_eq!(price, dec!(100), "At start: should return exact price");
-        assert_eq!(accuracy, Duration::zero(), "At start: accuracy should be zero");
+        assert_eq!(
+            accuracy,
+            Duration::zero(),
+            "At start: accuracy should be zero"
+        );
 
         // Test: estimate exactly at end of range (hour 19)
         // Should return exactly 190 with accuracy = 0
         let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 19)).unwrap();
         assert_eq!(price, dec!(190), "At end: should return exact price");
-        assert_eq!(accuracy, Duration::zero(), "At end: accuracy should be zero");
+        assert_eq!(
+            accuracy,
+            Duration::zero(),
+            "At end: accuracy should be zero"
+        );
 
         // Test: estimate within range (hour 14:30)
         // Should interpolate between hour 14 (140) and hour 15 (150) -> 145
-        let (price, accuracy) = data.estimate_price(
-            make_datetime(2024, 1, 1, 14) + Duration::minutes(30)
-        ).unwrap();
+        let (price, accuracy) = data
+            .estimate_price(make_datetime(2024, 1, 1, 14) + Duration::minutes(30))
+            .unwrap();
         assert_eq!(price, dec!(145), "Within range: should interpolate");
-        assert_eq!(accuracy, Duration::minutes(30), "Within range: accuracy should be distance to nearest point");
+        assert_eq!(
+            accuracy,
+            Duration::minutes(30),
+            "Within range: accuracy should be distance to nearest point"
+        );
     }
 
     #[test]
@@ -588,8 +658,16 @@ mod tests {
         // Should interpolate between hour 4 (140) and hour 10 (200)
         // Gap is 6 hours, hour 7 is 3 hours in -> halfway -> (140 + 200) / 2 = 170
         let (price, accuracy) = data.estimate_price(make_datetime(2024, 1, 1, 7)).unwrap();
-        assert_eq!(price, dec!(170), "In gap: should interpolate between points");
-        assert_eq!(accuracy, Duration::hours(3), "In gap: accuracy should be distance to nearest point");
+        assert_eq!(
+            price,
+            dec!(170),
+            "In gap: should interpolate between points"
+        );
+        assert_eq!(
+            accuracy,
+            Duration::hours(3),
+            "In gap: accuracy should be distance to nearest point"
+        );
     }
 
     #[test]
@@ -606,12 +684,14 @@ mod tests {
         let mut history = PriceHistory::new();
 
         let start = make_datetime(2024, 1, 1, 10);
-        history.price_data("ETH".to_owned()).add_points(make_price_points(start, 10));
+        history
+            .price_data("ETH".to_owned())
+            .add_points(make_price_points(start, 10));
 
         let mut requirements = PriceRequirements::new();
-        requirements.add("ETH", make_datetime(2024, 1, 1, 5));  // Before range
+        requirements.add("ETH", make_datetime(2024, 1, 1, 5)); // Before range
         requirements.add("ETH", make_datetime(2024, 1, 1, 15)); // Within range
-        requirements.add("ETH", make_datetime(2024, 1, 2, 5));  // After range (next day)
+        requirements.add("ETH", make_datetime(2024, 1, 2, 5)); // After range (next day)
         requirements.add("BNB", make_datetime(2024, 1, 1, 12)); // No data for this currency
 
         let tolerance = Duration::hours(2);
