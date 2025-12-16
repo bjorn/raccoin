@@ -115,25 +115,27 @@ impl TransactionsSourceType {
                 return false;
             }
 
-            source_type.delimiter().is_some_and(|delimiter| {
+            source_type.delimiters().iter().any(|&delimiter| {
                 csv_file_has_headers(path, delimiter, source_type.skip_lines(), source_type.headers()).is_ok_and(|x| x)
             })
         })
     }
 
-    fn delimiter(&self) -> Option<u8> {
+    fn delimiters(&self) -> &'static [u8] {
         match self {
             TransactionsSourceType::BitcoinAddresses |
             TransactionsSourceType::BitcoinXpubs |
             TransactionsSourceType::EthereumAddress |
             TransactionsSourceType::StellarAccount |
             TransactionsSourceType::TrezorJson |
-            TransactionsSourceType::Json => None,
+            TransactionsSourceType::Json => &[],
 
-            TransactionsSourceType::BitcoinDeCsv |
-            TransactionsSourceType::TrezorCsv => Some(b';'),
+            TransactionsSourceType::BitcoinDeCsv => &[b';'],
 
-            _ => Some(b','),
+            // TrezorCsv used to use ';' but now uses ',', so we check both
+            TransactionsSourceType::TrezorCsv => &[b',', b';'],
+
+            _ => &[b','],
         }
     }
 
