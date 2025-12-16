@@ -67,6 +67,7 @@ enum TransactionsSourceType {
     PoloniexDepositsCsv,
     PoloniexDepositsSupportCsv,
     PoloniexDepositsSupport2Csv,
+    PoloniexTradesBeforeAugust2022Csv,
     PoloniexTradesCsv,
     PoloniexTradesSupportCsv,
     PoloniexTradesSupport2Csv,
@@ -175,6 +176,7 @@ impl TransactionsSourceType {
             TransactionsSourceType::PoloniexDepositsCsv => &["Currency", "Amount", "Address", "Date", "Status"],
             TransactionsSourceType::PoloniexDepositsSupportCsv => &["", "timestamp", "currency", "amount", "address", "status"],
             TransactionsSourceType::PoloniexDepositsSupport2Csv => &["f_created_at", "currency", "f_amount", "f_address", "f_status"],
+            TransactionsSourceType::PoloniexTradesBeforeAugust2022Csv => &["tradeid","markettradeid","base","quote","type","rate","amount","buyuser","selluser","buyerfee","sellerwallet","sellerfee","buyerwallet","buyerordernumber","sellerordernumber","date"],
             TransactionsSourceType::PoloniexTradesCsv => &["Date", "Market", "Type", "Side", "Price", "Amount", "Total", "Fee", "Order Number", "Fee Currency", "Fee Total"],
             TransactionsSourceType::PoloniexTradesSupportCsv => &["", "timestamp", "trade_id", "market", "wallet", "side", "price", "amount", "fee", "fee_currency", "fee_total"],
             TransactionsSourceType::PoloniexTradesSupport2Csv => &["order_id", "activity", "order_role", "order_type", "base_currency_name", "quote_currency_name", "fee_currency_name", "price", "amount", "fee_amount", "usd_amount", "usd_fee_amount", "utc_time"],
@@ -215,6 +217,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
             TransactionsSourceType::PoloniexDepositsSupportCsv |
             TransactionsSourceType::PoloniexDepositsSupport2Csv => "Poloniex Deposits from Support (CSV)".to_owned(),
+            TransactionsSourceType::PoloniexTradesBeforeAugust2022Csv => "Poloniex Trades (CSV, before August 2022)".to_owned(),
             TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
             TransactionsSourceType::PoloniexTradesSupportCsv |
             TransactionsSourceType::PoloniexTradesSupport2Csv => "Poloniex Trades from Support (CSV)".to_owned(),
@@ -733,6 +736,9 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
                 TransactionsSourceType::PoloniexDepositsSupportCsv |
                 TransactionsSourceType::PoloniexDepositsSupport2Csv => {
                     poloniex::load_poloniex_deposits_csv(&source.full_path)
+                }
+                TransactionsSourceType::PoloniexTradesBeforeAugust2022Csv => {
+                    poloniex::load_poloniex_trades_before_august_2022_csv(&source.full_path)
                 }
                 TransactionsSourceType::PoloniexTradesCsv |
                 TransactionsSourceType::PoloniexTradesSupportCsv |
