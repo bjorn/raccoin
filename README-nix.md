@@ -3,10 +3,11 @@
 This repository provides a Nix-based build setup for **raccoin**,
 usable both for **developers** and for **nixpkgs integration**.
 
-* Developers get **fast, reproducible builds** with flakes & direnv.
-* Non-flake users can still build and hack.
+* Developers get **fast, reproducible builds** with flakes & direnv
+* Non-flake users can still build and hack
 * Local `package.nix` for building the release or optionally latest from master
-* Upstream (nixpkgs) gets a **minimal, clean `package.nix`** without extra noise.
+* Upstream (nixpkgs) gets a **minimal, clean `package.nix`** without extra noise
+  + can be pushed on nixpkgs after realease
 
 This was written assuming you are using NixOS 25.05 or later.
 
@@ -28,6 +29,12 @@ nix profile list # to list the installed package
 nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix { useLatest = true; }'
 nix profile remove raccoin
 nix profile add ./result
+```
+
+### Build latest from feature branch
+
+```sh
+nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix { useLatest = true; buildBranch = "alby"; }'
 ```
 
 ### With Flakes (recommended)
@@ -80,7 +87,7 @@ Tree for this repository
 
 ```tree
 raccoin-nix/
-├── README.text       # documentation
+├── README-nix.md     # documentation
 ├── package.nix       # local derivation (not for nixpkgs)
 ├── package-np.nix    # upstream derivation (for nixpkgs only)
 ├── flake.nix         # flake entrypoint for local development

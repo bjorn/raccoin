@@ -1,5 +1,6 @@
 # nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix {}'
 # nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix { useLatest = true; }'
+# nix-build -E 'with import <nixpkgs> {}; callPackage ./package.nix { useLatest = true; buildBranch = "newfeature"; }'
 {
   lib,
   rustPlatform,
@@ -20,6 +21,7 @@
   xorg,
   wayland,
   useLatest ? false,
+  buildBranch ? "master",
 }:
 
 let
@@ -53,13 +55,13 @@ in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "raccoin";
   version = "0.2.0"; # last release
-  NIX_REBUILD_TIMESTAMP = "2025-11-25T23:42";
+  NIX_REBUILD_TIMESTAMP = "2025-12-17T13:42";
 
   src =
     if useLatest then
       fetchGit {
         url = "https://github.com/bjorn/raccoin.git";
-        ref = "master";
+        ref = buildBranch;
       }
     else
       fetchFromGitHub {
