@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod alby;
 mod alby_hub;
 mod base;
 mod binance;
@@ -57,6 +58,7 @@ fn rounded_to_cent(amount: Decimal) -> Decimal {
 
 #[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
 enum TransactionsSourceType {
+    AlbyCsv,
     AlbyHubCsv,
     WalletOfSatoshiCsv,
     WalletOfSatoshiNonCustodialCsv,
@@ -172,6 +174,7 @@ impl TransactionsSourceType {
             TransactionsSourceType::TrezorJson |
             TransactionsSourceType::Json => &[],
 
+            TransactionsSourceType::AlbyCsv => &[ "Invoice Type", "Amount", "Fee", "Creation Date", "Settled Date", "Memo", "Comment", "Message", "Payer Name", "Payer Pubkey", "Payment Hash", "Preimage", "Fiat In Cents", "Currency", "USD In Cents", "Is Boostagram", "Is Zap" ],
             TransactionsSourceType::AlbyHubCsv => &[ "type", "state", "invoice", "description", "descriptionHash", "preimage", "paymentHash", "amount", "feesPaid", "updatedAt", "createdAt", "settledAt", "appId", "metadata", "failureReason" ],
             TransactionsSourceType::WalletOfSatoshiCsv => &[ "utcDate", "type", "currency", "amount", "fees", "address", "description", "pointOfSale" ],
             TransactionsSourceType::WalletOfSatoshiNonCustodialCsv => &[ "utcDate", "type", "currency", "amount", "fees", "status", "address", "description", "transactionId", "pointOfSale" ],
@@ -215,6 +218,7 @@ impl TransactionsSourceType {
 impl ToString for TransactionsSourceType {
     fn to_string(&self) -> String {
         match self {
+            TransactionsSourceType::AlbyCsv => "Alby (CSV)".to_owned(),
             TransactionsSourceType::AlbyHubCsv => "Alby Hub (CSV)".to_owned(),
             TransactionsSourceType::WalletOfSatoshiCsv => "Wallet of Satoshi (CSV)".to_owned(),
             TransactionsSourceType::WalletOfSatoshiNonCustodialCsv => "Wallet of Satoshi Self-Custody (CSV)".to_owned(),
@@ -717,6 +721,9 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
                 }
                 TransactionsSourceType::BitstampCsvNew => {
                     bitstamp::load_bitstamp_csv(&source.full_path)
+                }
+                TransactionsSourceType::AlbyCsv => {
+                    alby::load_alby_csv(&source.full_path)
                 }
                 TransactionsSourceType::AlbyHubCsv => {
                     alby_hub::load_alby_hub_csv(&source.full_path)
