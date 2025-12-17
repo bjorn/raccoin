@@ -30,6 +30,7 @@ Raccoin can import CSV files exported from the following sources:
 * [Poloniex](https://poloniex.com/) (exchange)
 * [Reddcoin](https://www.reddcoin.com/reddwallet/) (desktop wallet)
 * [Trezor Suite](https://trezor.io/trezor-suite) (desktop and web wallet)
+* [Wallet of Satoshi](https://walletofsatoshi.com/) (mobile wallet)
 
 ### Blockchains
 

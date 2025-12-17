@@ -1,0 +1,209 @@
+use std::{convert::TryFrom, path::Path};
+
+use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, FixedOffset};
+use rust_decimal::Decimal;
+use serde::Deserialize;
+
+use crate::base::{Amount, Transaction};
+
+const BTC_CURRENCY: &str = "BTC";
+const LIGHTNING_CURRENCY: &str = "LIGHTNING";
+
+#[derive(Debug, Deserialize, Copy, Clone)]
+#[serde(rename_all = "UPPERCASE")]
+enum EntryType {
+    Credit,
+    Debit,
+}
+
+// CSV header: utcDate,type,currency,amount,fees,address,description,pointOfSale
+// Non-custodial: "utcDate","type","currency","amount","fees","status","address","description","transactionId","pointOfSale"
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WalletOfSatoshiRecord {
+    #[serde(rename = "type")]
+    entry_type: EntryType,
+    utc_date: DateTime<FixedOffset>,
+    currency: String,
+    amount: Decimal,
+    fees: Decimal,
+    // status: Option<String>, // generally "PAID", absent in custodial CSV export
+    // address: String,
+    description: String,
+    transaction_id: Option<String>,
+    point_of_sale: bool,
+}
+
+impl WalletOfSatoshiRecord {
+    fn ensure_supported_currency(&self) -> Result<()> {
+        let code = self.currency.trim();
+        if code.eq_ignore_ascii_case(BTC_CURRENCY) || code.eq_ignore_ascii_case(LIGHTNING_CURRENCY) {
+            Ok(())
+        } else {
+            Err(anyhow!(
+                "Wallet of Satoshi CSV contains unsupported currency '{}'",
+                self.currency
+            ))
+        }
+    }
+
+    fn btc_amount(&self) -> Amount {
+        Amount::new(self.amount, BTC_CURRENCY.to_owned())
+    }
+
+    fn fee_amount(&self) -> Option<Amount> {
+        if self.fees.is_zero() {
+            None
+        } else {
+            Some(Amount::new(self.fees, BTC_CURRENCY.to_owned()))
+        }
+    }
+
+    fn compose_description(&self) -> Option<String> {
+        let mut parts = Vec::new();
+
+        if let Some(text) = non_empty(&self.description) {
+            parts.push(text.to_owned());
+        }
+
+        if self.point_of_sale {
+            parts.push("Point of sale".to_owned());
+        }
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" | "))
+        }
+    }
+}
+
+impl TryFrom<WalletOfSatoshiRecord> for Transaction {
+    type Error = anyhow::Error;
+
+    fn try_from(record: WalletOfSatoshiRecord) -> Result<Self> {
+        record.ensure_supported_currency()?;
+
+        let timestamp = record.utc_date.naive_utc();
+        let amount = record.btc_amount();
+
+        let mut tx = match record.entry_type {
+            EntryType::Credit => Transaction::receive(timestamp, amount),
+            EntryType::Debit => Transaction::send(timestamp, amount),
+        };
+
+        tx.fee = record.fee_amount();
+        tx.description = record.compose_description();
+        tx.tx_hash = record.transaction_id;
+
+        Ok(tx)
+    }
+}
+
+pub(crate) fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+    let mut reader = csv::ReaderBuilder::new().from_path(input_path)?;
+    let mut transactions = Vec::new();
+
+    for record in reader.deserialize() {
+        let row: WalletOfSatoshiRecord = record?;
+        let utc_date = row.utc_date.clone();
+        let tx = Transaction::try_from(row)
+            .with_context(|| format!("Failed to convert Wallet of Satoshi row dated {}", utc_date))?;
+        transactions.push(tx);
+    }
+
+    Ok(transactions)
+}
+
+fn non_empty(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::base::Operation;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn credit_row_converts_to_receive() {
+        let ts = DateTime::parse_from_rfc3339("2025-12-17T09:32:39.872Z").unwrap();
+        let record = WalletOfSatoshiRecord {
+            entry_type: EntryType::Credit,
+            utc_date: ts,
+            currency: "LIGHTNING".to_owned(),
+            amount: dec!(0.00001),
+            fees: Decimal::ZERO,
+            description: "Test sending to WoS".to_owned(),
+            transaction_id: None,
+            point_of_sale: false,
+        };
+
+        let tx = Transaction::try_from(record).unwrap();
+        assert_eq!(tx.timestamp, ts.naive_utc());
+        match tx.operation {
+            Operation::Receive(amount) => {
+                assert_eq!(amount.quantity, dec!(0.00001));
+                assert_eq!(amount.currency, BTC_CURRENCY);
+            }
+            other => panic!("expected receive, got {:?}", other),
+        }
+        assert!(tx.fee.is_none());
+        assert!(tx.tx_hash.is_none());
+        assert_eq!(tx.description.as_deref(), Some("Test sending to WoS"));
+    }
+
+    #[test]
+    fn debit_row_converts_to_send_with_fee() {
+        let ts = DateTime::parse_from_rfc3339("2025-12-17T11:51:23.628Z").unwrap();
+        let record = WalletOfSatoshiRecord {
+            entry_type: EntryType::Debit,
+            utc_date: ts,
+            currency: "LIGHTNING".to_owned(),
+            amount: dec!(0.00000979),
+            fees: dec!(0.00000010),
+            description: "Thanks, sats received!".to_owned(),
+            transaction_id: None,
+            point_of_sale: true,
+        };
+
+        let tx = Transaction::try_from(record).unwrap();
+        assert_eq!(tx.timestamp, ts.naive_utc());
+        match tx.operation {
+            Operation::Send(amount) => {
+                assert_eq!(amount.quantity, dec!(0.00000979));
+            }
+            other => panic!("expected send, got {:?}", other),
+        }
+        let fee = tx.fee.expect("fee set");
+        assert_eq!(fee.quantity, dec!(0.00000010));
+        assert!(tx.tx_hash.is_none());
+        assert_eq!(
+            tx.description.as_deref(),
+            Some("Thanks, sats received! | Point of sale")
+        );
+    }
+
+    #[test]
+    fn unsupported_currency_is_rejected() {
+        let ts = DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z").unwrap();
+        let record = WalletOfSatoshiRecord {
+            entry_type: EntryType::Credit,
+            utc_date: ts,
+            currency: "EUR".to_owned(),
+            amount: dec!(0.1),
+            fees: Decimal::ZERO,
+            description: String::new(),
+            transaction_id: None,
+            point_of_sale: false,
+        };
+
+        assert!(Transaction::try_from(record).is_err());
+    }
+}

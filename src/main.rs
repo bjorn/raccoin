@@ -22,6 +22,7 @@ mod mycelium;
 mod poloniex;
 mod time;
 mod trezor;
+mod wallet_of_satoshi;
 
 use anyhow::{anyhow, Context, Result};
 use base::{cmc_id, Amount, Operation, PriceHistory, Transaction};
@@ -57,6 +58,8 @@ fn rounded_to_cent(amount: Decimal) -> Decimal {
 #[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
 enum TransactionsSourceType {
     AlbyHubCsv,
+    WalletOfSatoshiCsv,
+    WalletOfSatoshiNonCustodialCsv,
     BitcoinAddresses,
     BitcoinXpubs,
     BitcoinCoreCsv,
@@ -170,6 +173,8 @@ impl TransactionsSourceType {
             TransactionsSourceType::Json => &[],
 
             TransactionsSourceType::AlbyHubCsv => &[ "type", "state", "invoice", "description", "descriptionHash", "preimage", "paymentHash", "amount", "feesPaid", "updatedAt", "createdAt", "settledAt", "appId", "metadata", "failureReason" ],
+            TransactionsSourceType::WalletOfSatoshiCsv => &[ "utcDate", "type", "currency", "amount", "fees", "address", "description", "pointOfSale" ],
+            TransactionsSourceType::WalletOfSatoshiNonCustodialCsv => &[ "utcDate", "type", "currency", "amount", "fees", "status", "address", "description", "transactionId", "pointOfSale" ],
             TransactionsSourceType::BitcoinDeCsv => &[],    // handled by bitcoin_de::is_bitcoin_de_csv
             TransactionsSourceType::TrezorCsv => &["Timestamp", "Date", "Time", "Type", "Transaction ID", "Fee", "Fee unit", "Address", "Label", "Amount", "Amount unit", "Fiat (EUR)", "Other"],
 
@@ -211,6 +216,8 @@ impl ToString for TransactionsSourceType {
     fn to_string(&self) -> String {
         match self {
             TransactionsSourceType::AlbyHubCsv => "Alby Hub (CSV)".to_owned(),
+            TransactionsSourceType::WalletOfSatoshiCsv => "Wallet of Satoshi (CSV)".to_owned(),
+            TransactionsSourceType::WalletOfSatoshiNonCustodialCsv => "Wallet of Satoshi Self-Custody (CSV)".to_owned(),
             TransactionsSourceType::BitcoinAddresses => "Bitcoin Address(es)".to_owned(),
             TransactionsSourceType::BitcoinXpubs => "Bitcoin HD Wallet(s)".to_owned(),
             TransactionsSourceType::BitcoinCoreCsv => "Bitcoin Core (CSV)".to_owned(),
@@ -713,6 +720,10 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
                 }
                 TransactionsSourceType::AlbyHubCsv => {
                     alby_hub::load_alby_hub_csv(&source.full_path)
+                }
+                TransactionsSourceType::WalletOfSatoshiCsv |
+                TransactionsSourceType::WalletOfSatoshiNonCustodialCsv => {
+                    wallet_of_satoshi::load_wallet_of_satoshi_csv(&source.full_path)
                 }
                 TransactionsSourceType::BittrexOrderHistoryCsv => {
                     bittrex::load_bittrex_order_history_csv(&source.full_path)
