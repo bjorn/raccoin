@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod alby_hub;
 mod base;
 mod binance;
 mod bitcoin_core;
@@ -22,20 +23,32 @@ mod poloniex;
 mod time;
 mod trezor;
 
-use anyhow::{Context, Result, anyhow};
-use base::{Operation, Amount, Transaction, cmc_id, PriceHistory};
-use chrono::{Duration, Datelike, Utc, TimeZone, Local};
+use anyhow::{anyhow, Context, Result};
+use base::{cmc_id, Amount, Operation, PriceHistory, Transaction};
+use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use directories::ProjectDirs;
+use fifo::{CapitalGain, CostBasisTracking, FIFO};
 use raccoin_ui::*;
-use fifo::{FIFO, CapitalGain, CostBasisTracking};
 use regex::{Regex, RegexBuilder};
-use rust_decimal_macros::dec;
 use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
-use slint::{VecModel, StandardListViewItem, SharedString, ModelRc};
+use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
+use std::{
+    cell::RefCell,
+    cmp::{Eq, Ordering},
+    collections::HashMap,
+    default::Default,
+    env,
+    ffi::OsString,
+    fs::File,
+    hash::Hash,
+    io::BufReader,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 use strum::{EnumIter, IntoEnumIterator};
-use std::{rc::Rc, path::{Path, PathBuf}, cell::RefCell, env, collections::HashMap, cmp::{Eq, Ordering}, hash::Hash, default::Default, ffi::OsString, fs::File, io::BufReader};
 
 fn rounded_to_cent(amount: Decimal) -> Decimal {
     amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
@@ -43,6 +56,7 @@ fn rounded_to_cent(amount: Decimal) -> Decimal {
 
 #[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
 enum TransactionsSourceType {
+    AlbyHubCsv,
     BitcoinAddresses,
     BitcoinXpubs,
     BitcoinCoreCsv,
@@ -155,6 +169,7 @@ impl TransactionsSourceType {
             TransactionsSourceType::TrezorJson |
             TransactionsSourceType::Json => &[],
 
+            TransactionsSourceType::AlbyHubCsv => &[ "type", "state", "invoice", "description", "descriptionHash", "preimage", "paymentHash", "amount", "feesPaid", "updatedAt", "createdAt", "settledAt", "appId", "metadata", "failureReason" ],
             TransactionsSourceType::BitcoinDeCsv => &[],    // handled by bitcoin_de::is_bitcoin_de_csv
             TransactionsSourceType::TrezorCsv => &["Timestamp", "Date", "Time", "Type", "Transaction ID", "Fee", "Fee unit", "Address", "Label", "Amount", "Amount unit", "Fiat (EUR)", "Other"],
 
@@ -195,6 +210,7 @@ impl TransactionsSourceType {
 impl ToString for TransactionsSourceType {
     fn to_string(&self) -> String {
         match self {
+            TransactionsSourceType::AlbyHubCsv => "Alby Hub (CSV)".to_owned(),
             TransactionsSourceType::BitcoinAddresses => "Bitcoin Address(es)".to_owned(),
             TransactionsSourceType::BitcoinXpubs => "Bitcoin HD Wallet(s)".to_owned(),
             TransactionsSourceType::BitcoinCoreCsv => "Bitcoin Core (CSV)".to_owned(),
@@ -695,6 +711,9 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
                 TransactionsSourceType::BitstampCsvNew => {
                     bitstamp::load_bitstamp_csv(&source.full_path)
                 }
+                TransactionsSourceType::AlbyHubCsv => {
+                    alby_hub::load_alby_hub_csv(&source.full_path)
+                }
                 TransactionsSourceType::BittrexOrderHistoryCsv => {
                     bittrex::load_bittrex_order_history_csv(&source.full_path)
                 }
@@ -775,7 +794,7 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
             match source_txs {
                 Ok(mut source_transactions) => {
                     // sort transactions
-                    source_transactions.sort_by(|a, b| a.cmp(b) );
+                    source_transactions.sort_by(|a, b| a.cmp(b));
 
                     // merge consecutive trades that are really the same order
                     if portfolio.merge_consecutive_trades {
@@ -827,7 +846,7 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
     }
 
     // sort transactions
-    transactions.sort_by(|a, b| a.cmp(b) );
+    transactions.sort_by(|a, b| a.cmp(b));
 
     // assign transaction indices
     for (index, tx) in transactions.iter_mut().enumerate() {
@@ -957,7 +976,11 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                 if let Some(matching_index) = matching_index {
                     // this send is now matched, so remove it from the list of unmatched sends
                     let matching_tx_index = unmatched_sends_receives.remove(matching_index);
-                    matching_pairs.push(if tx.operation.is_send() { (index, matching_tx_index) } else { (matching_tx_index, index) });
+                    matching_pairs.push(if tx.operation.is_send() {
+                        (index, matching_tx_index)
+                    } else {
+                        (matching_tx_index, index)
+                    });
                 } else {
                     // no match was found for this transactions, so add it to the unmatched list
                     unmatched_sends_receives.push(index);
