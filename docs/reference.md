@@ -24,6 +24,7 @@ Raccoin can import CSV files exported from the following sources:
 * [Liquid](https://www.liquid.com/) (exchange)
 * [Mycelium](https://wallet.mycelium.com/) (mobile wallet)
 * [Peercoin](https://www.peercoin.net/wallet) (desktop wallet)
+* [Phoenix](https://phoenix.acinq.co/) (mobile wallet)
 * [Poloniex](https://poloniex.com/) (exchange)
 * [Reddcoin](https://www.reddcoin.com/reddwallet/) (desktop wallet)
 * [Trezor Suite](https://trezor.io/trezor-suite) (desktop and web wallet)

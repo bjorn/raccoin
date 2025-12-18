@@ -26,6 +26,7 @@ post_url 2024-01-04-raccoin-0-2 %}).
 * Added support for getalby.com CSV export ([#58](https://github.com/bjorn/raccoin/issues/58))
 * Added support for Alby Hub CSV export ([#58](https://github.com/bjorn/raccoin/issues/58))
 * Added support for Wallet of Satoshi CSV export
+* Added support for Phoenix CSV export
 * Adjust to bitcoin.de CSV format changes ([#31](https://github.com/bjorn/raccoin/issues/31))
 * Added support for new Bitstamp CSV format and detect SGB and FLR airdrops ([#51](https://github.com/bjorn/raccoin/pull/51))
 * Added support for more Poloniex CSV formats ([#57](https://github.com/bjorn/raccoin/pull/57))
