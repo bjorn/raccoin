@@ -1928,6 +1928,17 @@ async fn main() -> Result<()> {
         }
     });
 
+    facade.on_set_wallet_expanded({
+        let app = app.clone();
+
+        move |index, expanded| {
+            let mut app = app.borrow_mut();
+            if let Some(wallet) = app.portfolio.wallets.get_mut(index as usize) {
+                wallet.expanded = expanded;
+            }
+        }
+    });
+
     facade.on_set_source_enabled({
         let app = app.clone();
 
