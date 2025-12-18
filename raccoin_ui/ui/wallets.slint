@@ -119,6 +119,7 @@ export component Wallets inherits ScrollView {
                     pointer-event(event) => {
                         if (event.kind == PointerEventKind.down) {
                             is-expanded = !is-expanded;
+                            Facade.set-wallet-expanded(wallet_index, is-expanded);
                         }
                     }
 
