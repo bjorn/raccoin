@@ -1,13 +1,14 @@
-use anyhow::{anyhow, Result, Context};
+use alloy_chains::Chain;
+use alloy_primitives::{ruint::UintTryTo, Address, B256, U256};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, NaiveDateTime};
-use ethers_core::types::{Chain, U256, H256, Address};
-use ethers_etherscan::{Client, account::*};
-use rust_decimal::{Decimal, prelude::FromPrimitive};
+use foundry_block_explorers::{account::*, Client};
+use rust_decimal::{prelude::FromPrimitive, Decimal};
 
-use crate::base::{Transaction, Amount, Operation};
+use crate::base::{Amount, Operation, Transaction};
 
 fn u256_to_decimal(value: U256) -> Result<Decimal> {
-    Decimal::from_u128(value.as_u128()).context("value cannot be represented")
+    Decimal::from_u128(value.uint_try_to()?).context("value cannot be represented")
 }
 
 fn u256_to_eth(value: U256) -> Result<Decimal> {
@@ -24,7 +25,7 @@ trait EthereumTransaction {
     }
     fn value(&self) -> Result<Amount>;
     fn hash(&self) -> Option<String> {
-        self.hash_h256().map(|hash| serde_json::to_string(hash).unwrap().trim_matches('"').to_owned())
+        self.hash_b256().map(|hash| serde_json::to_string(hash).unwrap().trim_matches('"').to_owned())
     }
 
     fn fee(&self) -> Result<Option<Amount>> {
@@ -66,7 +67,7 @@ trait EthereumTransaction {
     }
 
     fn timestamp_str(&self) -> &str;
-    fn hash_h256(&self) -> Option<&H256>;
+    fn hash_b256(&self) -> Option<&B256>;
     fn to(&self) -> Option<&Address>;
     fn from(&self) -> Option<&Address>;
     fn gas_price(&self) -> Option<U256>;
@@ -79,7 +80,7 @@ impl EthereumTransaction for NormalTransaction {
     }
 
     fn timestamp_str(&self) -> &str { &self.time_stamp }
-    fn hash_h256(&self) -> Option<&H256> { self.hash.value() }
+    fn hash_b256(&self) -> Option<&B256> { self.hash.value() }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { self.from.value() }
     fn gas_price(&self) -> Option<U256> { self.gas_price }
@@ -92,7 +93,7 @@ impl EthereumTransaction for InternalTransaction {
     }
 
     fn timestamp_str(&self) -> &str { &self.time_stamp }
-    fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
+    fn hash_b256(&self) -> Option<&B256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.value() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
     fn gas_price(&self) -> Option<U256> { None }
@@ -108,7 +109,7 @@ impl EthereumTransaction for ERC20TokenTransferEvent {
     }
 
     fn timestamp_str(&self) -> &str { &self.time_stamp }
-    fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
+    fn hash_b256(&self) -> Option<&B256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
     fn gas_price(&self) -> Option<U256> { None }
@@ -121,7 +122,7 @@ impl EthereumTransaction for ERC721TokenTransferEvent {
     }
 
     fn timestamp_str(&self) -> &str { &self.time_stamp }
-    fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
+    fn hash_b256(&self) -> Option<&B256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
     fn gas_price(&self) -> Option<U256> { None }
@@ -134,7 +135,7 @@ impl EthereumTransaction for ERC1155TokenTransferEvent {
     }
 
     fn timestamp_str(&self) -> &str { &self.time_stamp }
-    fn hash_h256(&self) -> Option<&H256> { Some(&self.hash) }
+    fn hash_b256(&self) -> Option<&B256> { Some(&self.hash) }
     fn to(&self) -> Option<&Address> { self.to.as_ref() }
     fn from(&self) -> Option<&Address> { Some(&self.from) }
     fn gas_price(&self) -> Option<U256> { None }
@@ -144,7 +145,7 @@ impl EthereumTransaction for ERC1155TokenTransferEvent {
 pub(crate) async fn address_transactions(
     address: &str,
 ) -> Result<Vec<Transaction>> {
-    let client = Client::new(Chain::Mainnet, "YU7CJTKTFHYUKSK9KUGCAJ448QW1U26NUN")?;
+    let client = Client::new(Chain::mainnet(), "YU7CJTKTFHYUKSK9KUGCAJ448QW1U26NUN")?;
     let address = address.parse()?;
 
     println!("requesting normal transactions for address: {:?}...", address);
