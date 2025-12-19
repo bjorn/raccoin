@@ -37,8 +37,9 @@ struct WalletOfSatoshiRecord {
 
 impl WalletOfSatoshiRecord {
     fn ensure_supported_currency(&self) -> Result<()> {
-        let code = self.currency.trim();
-        if code.eq_ignore_ascii_case(BTC_CURRENCY) || code.eq_ignore_ascii_case(LIGHTNING_CURRENCY) {
+        let currency = &self.currency;
+        if currency.eq_ignore_ascii_case(BTC_CURRENCY) || currency.eq_ignore_ascii_case(LIGHTNING_CURRENCY)
+        {
             Ok(())
         } else {
             Err(anyhow!(
@@ -86,7 +87,14 @@ impl TryFrom<WalletOfSatoshiRecord> for Transaction {
         record.ensure_supported_currency()?;
 
         let timestamp = record.utc_date.naive_utc();
-        let amount = record.btc_amount();
+        let amount = if matches!(record.entry_type, EntryType::Credit)
+        {
+            let mut gross = record.btc_amount();
+            gross.quantity += record.fees;
+            gross
+        } else {
+            record.btc_amount()
+        };
 
         let mut tx = match record.entry_type {
             EntryType::Credit => Transaction::receive(timestamp, amount),
@@ -108,8 +116,9 @@ pub(crate) fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transa
     for record in reader.deserialize() {
         let row: WalletOfSatoshiRecord = record?;
         let utc_date = row.utc_date.clone();
-        let tx = Transaction::try_from(row)
-            .with_context(|| format!("Failed to convert Wallet of Satoshi row dated {}", utc_date))?;
+        let tx = Transaction::try_from(row).with_context(|| {
+            format!("Failed to convert Wallet of Satoshi row dated {}", utc_date)
+        })?;
         transactions.push(tx);
     }
 
@@ -129,24 +138,19 @@ fn non_empty(value: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use crate::base::Operation;
+    use csv::StringRecord;
     use rust_decimal_macros::dec;
 
     #[test]
     fn credit_row_converts_to_receive() {
-        let ts = DateTime::parse_from_rfc3339("2025-12-17T09:32:39.872Z").unwrap();
-        let record = WalletOfSatoshiRecord {
-            entry_type: EntryType::Credit,
-            utc_date: ts,
-            currency: "LIGHTNING".to_owned(),
-            amount: dec!(0.00001),
-            fees: Decimal::ZERO,
-            description: "Test sending to WoS".to_owned(),
-            transaction_id: None,
-            point_of_sale: false,
-        };
+        let csv =
+            "2025-12-17T09:32:39.872Z,CREDIT,LIGHTNING,0.00001,0,,addr,Test sending to WoS,,false";
+        let tx = parse_csv_row(csv).unwrap();
 
-        let tx = Transaction::try_from(record).unwrap();
-        assert_eq!(tx.timestamp, ts.naive_utc());
+        let expected_ts = DateTime::parse_from_rfc3339("2025-12-17T09:32:39.872Z")
+            .unwrap()
+            .naive_utc();
+        assert_eq!(tx.timestamp, expected_ts);
         match tx.operation {
             Operation::Receive(amount) => {
                 assert_eq!(amount.quantity, dec!(0.00001));
@@ -161,20 +165,13 @@ mod tests {
 
     #[test]
     fn debit_row_converts_to_send_with_fee() {
-        let ts = DateTime::parse_from_rfc3339("2025-12-17T11:51:23.628Z").unwrap();
-        let record = WalletOfSatoshiRecord {
-            entry_type: EntryType::Debit,
-            utc_date: ts,
-            currency: "LIGHTNING".to_owned(),
-            amount: dec!(0.00000979),
-            fees: dec!(0.00000010),
-            description: "Thanks, sats received!".to_owned(),
-            transaction_id: None,
-            point_of_sale: true,
-        };
+        let csv = "2025-12-17T11:51:23.628Z,DEBIT,LIGHTNING,0.00000979,0.00000010,,addr,\"Thanks, sats received!\",,true";
+        let tx = parse_csv_row(csv).unwrap();
 
-        let tx = Transaction::try_from(record).unwrap();
-        assert_eq!(tx.timestamp, ts.naive_utc());
+        let expected_ts = DateTime::parse_from_rfc3339("2025-12-17T11:51:23.628Z")
+            .unwrap()
+            .naive_utc();
+        assert_eq!(tx.timestamp, expected_ts);
         match tx.operation {
             Operation::Send(amount) => {
                 assert_eq!(amount.quantity, dec!(0.00000979));
@@ -192,18 +189,34 @@ mod tests {
 
     #[test]
     fn unsupported_currency_is_rejected() {
-        let ts = DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z").unwrap();
-        let record = WalletOfSatoshiRecord {
-            entry_type: EntryType::Credit,
-            utc_date: ts,
-            currency: "EUR".to_owned(),
-            amount: dec!(0.1),
-            fees: Decimal::ZERO,
-            description: String::new(),
-            transaction_id: None,
-            point_of_sale: false,
-        };
+        let csv = "2025-01-01T00:00:00Z,CREDIT,EUR,0.1,0,,addr,,,false";
+        assert!(parse_csv_row(csv).is_err());
+    }
 
-        assert!(Transaction::try_from(record).is_err());
+    // For incoming BTC on-chain, the CSV amount is net of the fee
+    #[test]
+    fn credit_btc_adds_fee_to_amount() {
+        let csv =
+            "2025-02-03T04:05:06Z,CREDIT,BTC,0.00042,0.00001,,addr,On-chain receive,abc123,false";
+        let tx = parse_csv_row(csv).unwrap();
+        match tx.operation {
+            Operation::Receive(amount) => {
+                assert_eq!(amount.quantity, dec!(0.00043));
+                assert_eq!(amount.currency, BTC_CURRENCY);
+            }
+            other => panic!("expected receive, got {:?}", other),
+        }
+        let fee = tx.fee.expect("fee set");
+        assert_eq!(fee.quantity, dec!(0.00001));
+    }
+
+    fn parse_csv_row(csv: &str) -> Result<Transaction> {
+        let header = StringRecord::from(vec![
+            "utcDate","type","currency","amount","fees","status","address","description","transactionId","pointOfSale",
+        ]);
+        let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
+        reader.set_headers(header);
+        let record: WalletOfSatoshiRecord = reader.deserialize().next().unwrap().unwrap();
+        Transaction::try_from(record)
     }
 }
