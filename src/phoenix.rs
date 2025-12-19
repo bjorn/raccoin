@@ -22,6 +22,7 @@ enum RecordType {
     LightningSent,
     SwapIn,
     SwapOut,
+    LiquidityPurchase,
 }
 
 /// CSV record mapping for Phoenix export
@@ -70,31 +71,46 @@ impl From<PhoenixRecord> for Transaction {
         let timestamp = record.date.naive_utc();
         let total_fee_msat = record.total_fee_msat();
 
-        // For receive records, Phoenix reports the incoming amount AFTER fees were subtracted. We
-        // need to add fees back to the incoming amount so Transaction::receive holds the gross
-        // amount.
-        //
-        // For sending records, Phoenix reports the outgoing amount including fees, but the
-        // value is negative, so in this case the fees need to be added as well.
-        let amount = msat_to_btc_amount(record.amount_msat.saturating_add(total_fee_msat).abs());
-
         let mut tx = match record.type_ {
-            RecordType::LightningReceived | RecordType::SwapIn => {
-                Transaction::receive(timestamp, amount)
-            }
-            RecordType::LightningSent | RecordType::SwapOut => {
-                Transaction::send(timestamp, amount)
+            // For receive records, Phoenix reports the incoming amount AFTER fees were
+            // subtracted. We need to add fees back to the incoming amount so
+            // Transaction::receive holds the gross amount.
+            RecordType::LightningReceived | RecordType::SwapIn => Transaction::receive(
+                timestamp,
+                msat_to_btc_amount(record.amount_msat.saturating_add(total_fee_msat).abs()),
+            ),
+            // For sending records, Phoenix reports the outgoing amount including fees, but the
+            // value is negative, so in this case the fees need to be added as well.
+            RecordType::LightningSent | RecordType::SwapOut => Transaction::send(
+                timestamp,
+                msat_to_btc_amount(record.amount_msat.saturating_add(total_fee_msat).abs()),
+            ),
+            // Liquidity purchase rows represent fees only; amount_msat is already the total.
+            RecordType::LiquidityPurchase => {
+                if record.amount_msat.abs() != total_fee_msat {
+                    println!("Warning: Liquidity purchase amount_msat {} doesn't match sum of mining_fee_sat {} and service_fee_msat {}!", record.amount_msat, record.mining_fee_sat, record.service_fee_msat);
+                }
+                Transaction::fee(timestamp, msat_to_btc_amount(record.amount_msat.abs()))
             }
         };
 
-        if total_fee_msat != 0 {
+        if total_fee_msat != 0 && record.type_ != RecordType::LiquidityPurchase {
             tx.fee = Some(msat_to_btc_amount(total_fee_msat));
         }
 
-        tx.description = non_empty(&record.description).map(|s| s.to_owned());
+        tx.description = match non_empty(&record.description) {
+            Some(s) => Some(s.to_owned()),
+            None => {
+                if record.type_ == RecordType::LiquidityPurchase {
+                    Some("Liquidity purchase".to_owned())
+                } else {
+                    None
+                }
+            }
+        };
 
         match record.type_ {
-            RecordType::SwapIn | RecordType::SwapOut => {
+            RecordType::SwapIn | RecordType::SwapOut | RecordType::LiquidityPurchase => {
                 tx.tx_hash = record.tx_id;
             }
             _ => {}
@@ -201,5 +217,23 @@ mod tests {
             }
             other => panic!("expected receive, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn liquidity_purchase_is_fee_transaction() {
+        let csv = "2025-12-19T20:05:57.310Z,a6c868f9-52e9-419f-9c27-045b1dc5b3e8,liquidity_purchase,-1248000,0.9333 EUR,0,248,0.1854 EUR,1000000,0.7478 EUR,,060d5c1bf6c7f349434460ceaa3bc0919c6ffe50933ed27c368552c766205e73,,";
+        let tx = parse_csv_row(csv);
+        match tx.operation {
+            Operation::Fee(amount) => {
+                assert_eq!(amount.quantity, dec!(0.00001248));
+                assert_eq!(amount.currency, BTC_CURRENCY);
+            }
+            other => panic!("expected fee, got {:?}", other),
+        }
+        assert!(tx.fee.is_none());
+        assert_eq!(
+            tx.tx_hash.as_deref(),
+            Some("060d5c1bf6c7f349434460ceaa3bc0919c6ffe50933ed27c368552c766205e73")
+        );
     }
 }
