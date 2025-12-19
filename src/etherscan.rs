@@ -4,6 +4,8 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, NaiveDateTime};
 use foundry_block_explorers::{account::*, Client};
 use rust_decimal::{prelude::FromPrimitive, Decimal};
+use std::time::{Duration, Instant};
+use tokio::time::sleep;
 
 use crate::base::{Amount, Operation, Transaction};
 
@@ -15,6 +17,27 @@ fn u256_to_eth(value: U256) -> Result<Decimal> {
     let mut value = u256_to_decimal(value)?;
     value.set_scale(18)?; // convert Wei to ETH
     Ok(value)
+}
+
+struct RateLimiter {
+    min_interval: Duration,
+    last_call: Option<Instant>,
+}
+
+impl RateLimiter {
+    fn new(min_interval: Duration) -> Self {
+        Self { min_interval, last_call: None }
+    }
+
+    async fn wait(&mut self) {
+        if let Some(last) = self.last_call {
+            let elapsed = last.elapsed();
+            if elapsed < self.min_interval {
+                sleep(self.min_interval - elapsed).await;
+            }
+        }
+        self.last_call = Some(Instant::now());
+    }
 }
 
 // Generic interface to the many different transaction types in the Etherscan API
@@ -147,8 +170,10 @@ pub(crate) async fn address_transactions(
 ) -> Result<Vec<Transaction>> {
     let client = Client::new(Chain::mainnet(), "YU7CJTKTFHYUKSK9KUGCAJ448QW1U26NUN")?;
     let address = address.parse()?;
+    let mut rate_limiter = RateLimiter::new(Duration::from_millis(350));
 
     println!("requesting normal transactions for address: {:?}...", address);
+    rate_limiter.wait().await;
     let normal_transactions = client.get_transactions(&address, None).await?;
     println!("received {} normal transactions", normal_transactions.len());
 
@@ -203,6 +228,7 @@ pub(crate) async fn address_transactions(
     };
 
     println!("requesting internal transactions for address: {:?}...", address);
+    rate_limiter.wait().await;
     let internal_transactions = client.get_internal_transactions(InternalTxQueryOption::ByAddress(address), None).await?;
     println!("received {} internal transactions", internal_transactions.len());
 
@@ -214,6 +240,7 @@ pub(crate) async fn address_transactions(
     }
 
     println!("requesting erc-20 token transfers for address: {:?}...", address);
+    rate_limiter.wait().await;
     let erc20_transfers = client.get_erc20_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
     println!("received {} erc-20 token transfers", erc20_transfers.len());
 
@@ -225,6 +252,7 @@ pub(crate) async fn address_transactions(
     }
 
     println!("requesting erc-721 token transfers for address: {:?}...", address);
+    rate_limiter.wait().await;
     let erc721_transfers = client.get_erc721_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
     println!("received {} erc-721 token transfers", erc721_transfers.len());
 
@@ -236,6 +264,7 @@ pub(crate) async fn address_transactions(
     }
 
     println!("requesting erc-1155 token transfers for address: {:?}...", address);
+    rate_limiter.wait().await;
     let erc1155_transfers = client.get_erc1155_token_transfer_events(TokenQueryOption::ByAddress(address), None).await?;
     println!("received {} erc-1155 token transfers", erc1155_transfers.len());
 
