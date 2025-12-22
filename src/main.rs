@@ -419,9 +419,12 @@ impl TransactionFilter {
             TransactionFilter::Currency(currency) => match tx.incoming_outgoing() {
                 (None, None) => false,
                 (None, Some(amount)) |
-                (Some(amount), None) => &amount.currency == currency,
+                (Some(amount), None) => {
+                    amount.effective_currency().as_ref() == currency
+                }
                 (Some(incoming), Some(outgoing)) => {
-                    &incoming.currency == currency || &outgoing.currency == currency
+                    incoming.effective_currency().as_ref() == currency ||
+                    outgoing.effective_currency().as_ref() == currency
                 }
             }
             TransactionFilter::Text(text) => {
@@ -826,20 +829,28 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
                         merge_consecutive_trades(&mut source_transactions);
                     }
 
+                    let is_ignored = |currency: &str| {
+                        ignored_currencies
+                            .binary_search_by(|ignored| ignored.as_str().cmp(currency))
+                            .is_ok()
+                    };
+
                     // remove transactions with ignored currencies
                     source_transactions.retain_mut(|tx| {
                         let retain_tx = match tx.incoming_outgoing() {
                             (None, None) => true,
-                            (None, Some(amount)) |
-                            (Some(amount), None) => !ignored_currencies.contains(&amount.currency),
+                            (None, Some(amount)) | (Some(amount), None) => {
+                                !is_ignored(amount.effective_currency().as_ref())
+                            }
                             (Some(incoming), Some(outgoing)) => {
                                 // Trades can only be ignored, if both the incoming and outgoing currencies are ignored
-                                !(ignored_currencies.contains(&incoming.currency) && ignored_currencies.contains(&outgoing.currency))
+                                !(is_ignored(incoming.effective_currency().as_ref())
+                                    && is_ignored(outgoing.effective_currency().as_ref()))
                             }
                         };
 
                         retain_tx || tx.fee.take().is_some_and(|fee| {
-                            if !ignored_currencies.contains(&fee.currency) {
+                            if !is_ignored(&fee.currency) {
                                 // We can't ignore the fee, so keep the transaction just for the fee
                                 tx.operation = Operation::Fee(fee);
                                 tx.value = tx.fee_value.take();
