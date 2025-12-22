@@ -52,7 +52,7 @@ Supported are:
 >   {
 >     "source_type": "EthereumAddress",
 >     "path": "0xf87eC316C04bf44D87200AdCa0c9b4d6ecBd91D4",
->     "enabled": true,
+>     "enabled": true
 >   }
 > ]
 > ```
@@ -77,7 +77,7 @@ Supported are:
 >   {
 >     "source_type": "Json",
 >     "path": "relative/path/to/transactions.json",
->     "enabled": true,
+>     "enabled": true
 >   }
 > ]
 > ```
