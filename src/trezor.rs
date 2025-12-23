@@ -12,7 +12,7 @@ use crate::base::{Amount, Operation, Transaction};
 enum TrezorTransactionType {
     #[serde(alias = "SENT")]
     Sent,
-    #[serde(alias = "RECV")]
+    #[serde(alias = "RECV", alias = "recv")]
     Received,
     #[serde(alias = "FAILED")]
     Failed,
