@@ -8,11 +8,14 @@ use serde::{Deserialize, Deserializer};
 use crate::base::{Amount, Operation, Transaction};
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum TrezorTransactionType {
-    #[serde(rename = "SENT", alias = "sent")]
+    #[serde(alias = "SENT")]
     Sent,
-    #[serde(rename = "RECV", alias = "recv")]
+    #[serde(alias = "RECV", alias = "recv")]
     Received,
+    #[serde(alias = "FAILED")]
+    Failed,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -65,9 +68,11 @@ struct TrezorTransactionCsv<'a> {
     // other: &'a str,
 }
 
-impl<'a> From<TrezorTransactionCsv<'a>> for Transaction {
+impl<'a> TryFrom<TrezorTransactionCsv<'a>> for Transaction {
+    type Error = anyhow::Error;
+
     // todo: translate address?
-    fn from(item: TrezorTransactionCsv) -> Self {
+    fn try_from(item: TrezorTransactionCsv<'a>) -> std::result::Result<Self, Self::Error> {
         let date_time = DateTime::from_timestamp(item.timestamp, 0)
             .expect("valid timestamp")
             .naive_utc();
@@ -80,6 +85,9 @@ impl<'a> From<TrezorTransactionCsv<'a>> for Transaction {
         let mut tx = match item.type_ {
             TrezorTransactionType::Sent => Transaction::send(date_time, amount),
             TrezorTransactionType::Received => Transaction::receive(date_time, amount),
+            TrezorTransactionType::Failed => {
+                anyhow::bail!("skipping failed transaction {}", item.id);
+            }
         };
         tx.description = if item.label.is_empty() {
             None
@@ -96,7 +104,7 @@ impl<'a> From<TrezorTransactionCsv<'a>> for Transaction {
             }
             (Some(fee), Some(fee_unit)) => Some(Amount::new(fee, fee_unit.to_owned())),
         };
-        tx
+        Ok(tx)
     }
 }
 
@@ -126,7 +134,10 @@ pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     while rdr.read_record(&mut raw_record)? {
         let record: TrezorTransactionCsv = raw_record.deserialize(Some(&headers))?;
-        transactions.push(record.into());
+        match Transaction::try_from(record) {
+            Ok(tx) => transactions.push(tx),
+            Err(_) => continue,
+        }
     }
 
     Ok(transactions)
@@ -224,6 +235,9 @@ impl TrezorTransaction {
             TrezorTransactionType::Received => {
                 Operation::Receive(Amount::new(self.amount, currency.clone()))
             }
+            TrezorTransactionType::Failed => {
+                return Ok(());
+            }
         };
 
         // Adjust the operation based on internal transfers
@@ -232,6 +246,7 @@ impl TrezorTransaction {
             let internal_op = match internal_transfer.type_ {
                 TrezorTransactionType::Sent => Operation::Send(internal_amount),
                 TrezorTransactionType::Received => Operation::Receive(internal_amount),
+                TrezorTransactionType::Failed => continue,
             };
             op = match (op, internal_op) {
                 (Operation::Fee(fee_amount), internal_op) => {
@@ -277,6 +292,7 @@ impl TrezorTransaction {
             let token_op = match token.type_ {
                 TrezorTransactionType::Sent => Operation::Send(token_amount),
                 TrezorTransactionType::Received => Operation::Receive(token_amount),
+                TrezorTransactionType::Failed => continue,
             };
 
             op = match (op, token_op) {
