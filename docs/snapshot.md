@@ -32,6 +32,7 @@ post_url 2024-01-04-raccoin-0-2 %}).
 * Added support for more Poloniex CSV formats ([#57](https://github.com/bjorn/raccoin/pull/57))
 * Support Trezor CSV files using ',' as delimiter ([#56](https://github.com/bjorn/raccoin/pull/56))
 * Ignore failed transactions in Trezor Suite CSV export
+* Added CAN, FLT, LPT and TON to the recognized currencies
 * Show new wallets expanded by default
 * Fixed issue where wallets collapsed when making changes ([#62](https://github.com/bjorn/raccoin/issues/62))
 * Made the merging of consecutive trades optional
