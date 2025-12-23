@@ -85,7 +85,17 @@ impl<'a> TryFrom<TrezorTransactionCsv<'a>> for Transaction {
         };
         let mut tx = match item.type_ {
             TrezorTransactionType::Sent => Transaction::send(date_time, amount),
-            TrezorTransactionType::Received => Transaction::receive(date_time, amount),
+            TrezorTransactionType::Received => {
+                // Crude spam recognition
+                if (amount.currency == "XLM" || amount.currency == "XRP")
+                    && amount.quantity > Decimal::ZERO
+                    && amount.quantity < (Decimal::ONE / Decimal::ONE_HUNDRED)
+                {
+                    Transaction::spam(date_time, amount)
+                } else {
+                    Transaction::receive(date_time, amount)
+                }
+            }
             TrezorTransactionType::Failed => {
                 anyhow::bail!("skipping failed transaction {}", item.id);
             }

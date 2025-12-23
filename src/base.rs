@@ -367,6 +367,10 @@ impl Transaction {
         Self::new(timestamp, Operation::Trade { incoming, outgoing })
     }
 
+    pub(crate) fn spam(timestamp: NaiveDateTime, amount: Amount) -> Self {
+        Self::new(timestamp, Operation::Spam(amount))
+    }
+
     pub(crate) fn incoming_outgoing(&self) -> (Option<&Amount>, Option<&Amount>) {
         match &self.operation {
             Operation::Buy(amount) |
