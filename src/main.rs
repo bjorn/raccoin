@@ -96,7 +96,7 @@ enum TransactionsSourceType {
     PoloniexWithdrawalsSupportCsv,
     PoloniexWithdrawalsSupport2Csv,
     StellarAccount,
-    BinanceBnbConvertCsv,  // todo: document custom format
+    BinanceConvertCsv,  // todo: document custom format
     BinanceSpotTradeHistoryCsv,
     BinanceTransactionHistoryCsv,
     ReddcoinCoreCsv,
@@ -211,7 +211,7 @@ impl TransactionsSourceType {
             TransactionsSourceType::PoloniexWithdrawalsCsv => &["Fee Deducted", "Date", "Currency", "Amount", "Amount-Fee", "Address", "Status"],
             TransactionsSourceType::PoloniexWithdrawalsSupportCsv => &["", "timestamp", "currency", "amount", "fee_deducted", "status"],
             TransactionsSourceType::PoloniexWithdrawalsSupport2Csv => &["f_date", "currency", "f_amount", "f_feededucted", "f_status"],
-            TransactionsSourceType::BinanceBnbConvertCsv => &["Date", "Coin", "Amount", "Fee (BNB)", "Converted BNB"],
+            TransactionsSourceType::BinanceConvertCsv => &["Date", "Coin", "Amount", "Fee", "Converted To"],
             TransactionsSourceType::BinanceSpotTradeHistoryCsv => &["Date(UTC)", "Pair", "Side", "Price", "Executed", "Amount", "Fee"],
             TransactionsSourceType::BinanceTransactionHistoryCsv => &["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change", "Remark"],
         }
@@ -258,7 +258,7 @@ impl ToString for TransactionsSourceType {
             TransactionsSourceType::PoloniexWithdrawalsSupportCsv |
             TransactionsSourceType::PoloniexWithdrawalsSupport2Csv => "Poloniex Withdrawals from Support (CSV)".to_owned(),
             TransactionsSourceType::StellarAccount => "Stellar Account".to_owned(),
-            TransactionsSourceType::BinanceBnbConvertCsv => "Binance BNB Convert (CSV)".to_owned(),
+            TransactionsSourceType::BinanceConvertCsv => "Binance Convert (CSV)".to_owned(),
             TransactionsSourceType::BinanceSpotTradeHistoryCsv => "Binance Spot Trade History (CSV)".to_owned(),
             TransactionsSourceType::BinanceTransactionHistoryCsv => "Binance Transaction History (CSV)".to_owned(),
             TransactionsSourceType::ReddcoinCoreCsv => "Reddcoin Core (CSV)".to_owned(),
@@ -799,8 +799,8 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
                 TransactionsSourceType::PoloniexWithdrawalsSupport2Csv => {
                     poloniex::load_poloniex_withdrawals_csv(&source.full_path)
                 }
-                TransactionsSourceType::BinanceBnbConvertCsv => {
-                    binance::load_binance_bnb_convert_csv(&source.full_path)
+                TransactionsSourceType::BinanceConvertCsv => {
+                    binance::load_binance_convert_csv(&source.full_path)
                 }
                 TransactionsSourceType::BinanceSpotTradeHistoryCsv => {
                     binance::load_binance_spot_trades_csv(&source.full_path)
