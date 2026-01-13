@@ -97,17 +97,17 @@ struct BinanceSpotTrade {
 // struct for storing the following CSV columns:
 // Date,Coin,Amount,Fee (BNB),Converted BNB
 #[derive(Debug, Deserialize)]
-struct BinanceBnbConvert {
+struct BinanceConvert {
     #[serde(rename = "Date", deserialize_with = "deserialize_date_time")]
     timestamp: NaiveDateTime,
     #[serde(rename = "Coin")]
     coin: String,
     #[serde(rename = "Amount")]
     amount: Decimal,
-    #[serde(rename = "Fee (BNB)")]
-    fee_bnb: Decimal,
-    #[serde(rename = "Converted BNB")]
-    converted_bnb: Decimal,
+    #[serde(rename = "Fee", deserialize_with = "deserialize_amount")]
+    fee: Amount,
+    #[serde(rename = "Converted To", deserialize_with = "deserialize_amount")]
+    converted_to: Amount,
 }
 
 // Binance reported BCH as BCC
@@ -249,12 +249,12 @@ impl From<BinanceSpotTrade> for Transaction {
     }
 }
 
-impl From<BinanceBnbConvert> for Transaction {
-    fn from(item: BinanceBnbConvert) -> Self {
-        let incoming = Amount::new(item.converted_bnb, "BNB".to_owned());
+impl From<BinanceConvert> for Transaction {
+    fn from(item: BinanceConvert) -> Self {
+        let incoming = item.converted_to;
         let outgoing = Amount::new(item.amount, normalize_currency(item.timestamp, item.coin));
         let mut tx = Transaction::trade(item.timestamp, incoming, outgoing);
-        tx.fee = Some(Amount::new(item.fee_bnb, "BNB".to_owned()));
+        tx.fee = Some(item.fee);
         tx
     }
 }
@@ -320,14 +320,14 @@ pub(crate) fn load_binance_spot_trades_csv(input_path: &Path) -> Result<Vec<Tran
     Ok(transactions)
 }
 
-pub(crate) fn load_binance_bnb_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+pub(crate) fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
         .from_path(input_path)?;
 
     for result in rdr.deserialize() {
-        let record: BinanceBnbConvert = result?;
+        let record: BinanceConvert = result?;
         transactions.push(record.into());
     }
 
