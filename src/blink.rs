@@ -12,6 +12,33 @@ const USD_CURRENCY: &str = "USD";
 const SATS_SCALE: u32 = 8;
 const USD_SCALE: u32 = 2;
 
+pub(crate) const BLINK_HEADERS: &[&str] = &[
+    "id",
+    "walletId",
+    "type",
+    "credit",
+    "debit",
+    "fee",
+    "currency",
+    "timestamp",
+    "pendingConfirmation",
+    "journalId",
+    "lnMemo",
+    "usd",
+    "feeUsd",
+    "recipientWalletId",
+    "username",
+    "memoFromPayer",
+    "paymentHash",
+    "pubkey",
+    "feeKnownInAdvance",
+    "address",
+    "txHash",
+    "displayAmount",
+    "displayFee",
+    "displayCurrency",
+];
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum BlinkType {
@@ -437,32 +464,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     fn parse_csv_row(csv: &str) -> BlinkRecord {
-        let header = StringRecord::from(vec![
-            "id",
-            "walletId",
-            "type",
-            "credit",
-            "debit",
-            "fee",
-            "currency",
-            "timestamp",
-            "pendingConfirmation",
-            "journalId",
-            "lnMemo",
-            "usd",
-            "feeUsd",
-            "recipientWalletId",
-            "username",
-            "memoFromPayer",
-            "paymentHash",
-            "pubkey",
-            "feeKnownInAdvance",
-            "address",
-            "txHash",
-            "displayAmount",
-            "displayFee",
-            "displayCurrency",
-        ]);
+        let header = StringRecord::from(BLINK_HEADERS);
         let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
         reader.set_headers(header);
         reader.deserialize().next().unwrap().unwrap()

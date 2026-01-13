@@ -49,6 +49,7 @@ impl From<BitonicAction> for Transaction {
 }
 
 // loads a bitonic CSV file into a list of unified transactions
+// todo: document custom format
 pub(crate) fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 

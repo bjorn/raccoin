@@ -1,4 +1,4 @@
-export struct UiTransactionSource {
+export struct UiWalletSource {
     source_type: string,
     name: string,
     path: string,
@@ -11,7 +11,7 @@ export struct UiWallet {
     name: string,
     enabled: bool,
     expanded: bool,
-    sources: [UiTransactionSource],
+    sources: [UiWalletSource],
     transaction_count: int,
 }
 

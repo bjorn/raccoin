@@ -320,6 +320,7 @@ pub(crate) fn load_binance_spot_trades_csv(input_path: &Path) -> Result<Vec<Tran
     Ok(transactions)
 }
 
+// todo: document custom format
 pub(crate) fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 

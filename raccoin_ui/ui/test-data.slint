@@ -6,7 +6,7 @@ import {
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
-    UiTransactionSource,
+    UiWalletSource,
     UiTransactionType,
     UiWallet
 } from "./structs.slint";
@@ -77,7 +77,7 @@ export global TestData {
         sources: root.sources,
     }];
 
-    out property <[UiTransactionSource]> sources : [{
+    out property <[UiWalletSource]> sources : [{
         source_type: "ExchangeCsv",
         name: "Exchange",
         path: "/foo/bar/exchange.csv",
