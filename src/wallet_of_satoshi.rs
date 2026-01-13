@@ -13,6 +13,28 @@ use linkme::distributed_slice;
 
 const BTC_CURRENCY: &str = "BTC";
 const LIGHTNING_CURRENCY: &str = "LIGHTNING";
+const WALLET_OF_SATOSHI_HEADERS: &[&str] = &[
+    "utcDate",
+    "type",
+    "currency",
+    "amount",
+    "fees",
+    "address",
+    "description",
+    "pointOfSale",
+];
+const WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS: &[&str] = &[
+    "utcDate",
+    "type",
+    "currency",
+    "amount",
+    "fees",
+    "status",
+    "address",
+    "description",
+    "transactionId",
+    "pointOfSale",
+];
 
 #[derive(Debug, Deserialize, Copy, Clone)]
 #[serde(rename_all = "UPPERCASE")]
@@ -42,7 +64,8 @@ struct WalletOfSatoshiRecord {
 impl WalletOfSatoshiRecord {
     fn ensure_supported_currency(&self) -> Result<()> {
         let currency = &self.currency;
-        if currency.eq_ignore_ascii_case(BTC_CURRENCY) || currency.eq_ignore_ascii_case(LIGHTNING_CURRENCY)
+        if currency.eq_ignore_ascii_case(BTC_CURRENCY)
+            || currency.eq_ignore_ascii_case(LIGHTNING_CURRENCY)
         {
             Ok(())
         } else {
@@ -91,8 +114,7 @@ impl TryFrom<WalletOfSatoshiRecord> for Transaction {
         record.ensure_supported_currency()?;
 
         let timestamp = record.utc_date.naive_utc();
-        let amount = if matches!(record.entry_type, EntryType::Credit)
-        {
+        let amount = if matches!(record.entry_type, EntryType::Credit) {
             let mut gross = record.btc_amount();
             gross.quantity += record.fees;
             gross
@@ -133,50 +155,21 @@ fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static WALLET_OF_SATOSHI_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "WalletOfSatoshiCsv",
     label: "Wallet of Satoshi (CSV)",
-    csv: Some(CsvSpec {
-        headers: &[
-            "utcDate",
-            "type",
-            "currency",
-            "amount",
-            "fees",
-            "address",
-            "description",
-            "pointOfSale",
-        ],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(WALLET_OF_SATOSHI_HEADERS)),
     detect: None,
     load_sync: Some(load_wallet_of_satoshi_csv),
     load_async: None,
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static WALLET_OF_SATOSHI_NON_CUSTODIAL_CSV_SOURCE: TransactionSourceType =
-    TransactionSourceType {
-        id: "WalletOfSatoshiNonCustodialCsv",
-        label: "Wallet of Satoshi Self-Custody (CSV)",
-        csv: Some(CsvSpec {
-            headers: &[
-                "utcDate",
-                "type",
-                "currency",
-                "amount",
-                "fees",
-                "status",
-                "address",
-                "description",
-                "transactionId",
-                "pointOfSale",
-            ],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(load_wallet_of_satoshi_csv),
-        load_async: None,
-    };
+static WALLET_OF_SATOSHI_NON_CUSTODIAL_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "WalletOfSatoshiNonCustodialCsv",
+    label: "Wallet of Satoshi Self-Custody (CSV)",
+    csv: Some(CsvSpec::new(WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS)),
+    detect: None,
+    load_sync: Some(load_wallet_of_satoshi_csv),
+    load_async: None,
+};
 
 fn non_empty(value: &str) -> Option<&str> {
     let trimmed = value.trim();
@@ -264,9 +257,7 @@ mod tests {
     }
 
     fn parse_csv_row(csv: &str) -> Result<Transaction> {
-        let header = StringRecord::from(vec![
-            "utcDate","type","currency","amount","fees","status","address","description","transactionId","pointOfSale",
-        ]);
+        let header = StringRecord::from(WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS);
         let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
         reader.set_headers(header);
         let record: WalletOfSatoshiRecord = reader.deserialize().next().unwrap().unwrap();

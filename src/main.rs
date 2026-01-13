@@ -68,6 +68,16 @@ pub(crate) struct CsvSpec {
     pub(crate) skip_lines: usize,
 }
 
+impl CsvSpec {
+    pub(crate) const fn new(headers: &'static [&'static str]) -> Self {
+        Self {
+            headers,
+            delimiters: &[b','],
+            skip_lines: 0,
+        }
+    }
+}
+
 pub(crate) struct TransactionSourceType {
     pub(crate) id: &'static str,
     pub(crate) label: &'static str,

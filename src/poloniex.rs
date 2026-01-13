@@ -8,8 +8,7 @@ use serde::{Deserialize, Deserializer};
 use crate::{
     base::{Amount, Transaction},
     time::deserialize_date_time,
-    CsvSpec,
-    TransactionSourceType,
+    CsvSpec, TransactionSourceType,
 };
 use linkme::distributed_slice;
 
@@ -343,23 +342,31 @@ fn load_poloniex_trades_before_august_2022_csv(input_path: &Path) -> Result<Vec<
         let cand_a = &records[0].buy_user;
         let cand_b = &records[0].sell_user;
 
-        if records.iter().all(|r| &r.buy_user == cand_a || &r.sell_user == cand_a) {
+        if records
+            .iter()
+            .all(|r| &r.buy_user == cand_a || &r.sell_user == cand_a)
+        {
             Some(cand_a.clone())
-        } else if records.iter().all(|r| &r.buy_user == cand_b || &r.sell_user == cand_b) {
+        } else if records
+            .iter()
+            .all(|r| &r.buy_user == cand_b || &r.sell_user == cand_b)
+        {
             Some(cand_b.clone())
         } else {
             None
         }
     };
 
-    let user_id = user_id.ok_or_else(|| anyhow::anyhow!("Could not determine user ID from trade records"))?;
+    let user_id =
+        user_id.ok_or_else(|| anyhow::anyhow!("Could not determine user ID from trade records"))?;
 
     // Now convert records to transactions using the determined user ID
     for record in records {
         let base_currency = normalize_currency(&record.base);
         let quote_currency = normalize_currency(&record.quote);
 
-        let total = (record.rate * record.amount).round_dp_with_strategy(8, RoundingStrategy::ToZero);
+        let total =
+            (record.rate * record.amount).round_dp_with_strategy(8, RoundingStrategy::ToZero);
 
         let (incoming, outgoing, fee_rate, order_number) = if record.buy_user == user_id {
             // We are the buyer: we receive quote currency, we send base currency
@@ -383,7 +390,8 @@ fn load_poloniex_trades_before_august_2022_csv(input_path: &Path) -> Result<Vec<
 
         let mut tx = Transaction::trade(record.date, incoming.clone(), outgoing);
 
-        let fee = (incoming.quantity * fee_rate).round_dp_with_strategy(8, RoundingStrategy::ToZero);
+        let fee =
+            (incoming.quantity * fee_rate).round_dp_with_strategy(8, RoundingStrategy::ToZero);
         tx.fee = Some(Amount::new(fee, incoming.currency));
         tx.description = Some(format!("Order #{}", order_number));
 
@@ -397,11 +405,9 @@ fn load_poloniex_trades_before_august_2022_csv(input_path: &Path) -> Result<Vec<
 static POLONIEX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexDepositsCsv",
     label: "Poloniex Deposits (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["Currency", "Amount", "Address", "Date", "Status"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "Currency", "Amount", "Address", "Date", "Status",
+    ])),
     detect: None,
     load_sync: Some(load_poloniex_deposits_csv),
     load_async: None,
@@ -411,11 +417,14 @@ static POLONIEX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceTy
 static POLONIEX_DEPOSITS_SUPPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexDepositsSupportCsv",
     label: "Poloniex Deposits from Support (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["", "timestamp", "currency", "amount", "address", "status"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "",
+        "timestamp",
+        "currency",
+        "amount",
+        "address",
+        "status",
+    ])),
     detect: None,
     load_sync: Some(load_poloniex_deposits_csv),
     load_async: None,
@@ -425,69 +434,62 @@ static POLONIEX_DEPOSITS_SUPPORT_CSV_SOURCE: TransactionSourceType = Transaction
 static POLONIEX_DEPOSITS_SUPPORT2_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexDepositsSupport2Csv",
     label: "Poloniex Deposits from Support (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["f_created_at", "currency", "f_amount", "f_address", "f_status"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "f_created_at",
+        "currency",
+        "f_amount",
+        "f_address",
+        "f_status",
+    ])),
     detect: None,
     load_sync: Some(load_poloniex_deposits_csv),
     load_async: None,
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE: TransactionSourceType =
-    TransactionSourceType {
-        id: "PoloniexTradesBeforeAugust2022Csv",
-        label: "Poloniex Trades (CSV, before August 2022)",
-        csv: Some(CsvSpec {
-            headers: &[
-                "tradeid",
-                "markettradeid",
-                "base",
-                "quote",
-                "type",
-                "rate",
-                "amount",
-                "buyuser",
-                "selluser",
-                "buyerfee",
-                "sellerwallet",
-                "sellerfee",
-                "buyerwallet",
-                "buyerordernumber",
-                "sellerordernumber",
-                "date",
-            ],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(load_poloniex_trades_before_august_2022_csv),
-        load_async: None,
-    };
+static POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "PoloniexTradesBeforeAugust2022Csv",
+    label: "Poloniex Trades (CSV, before August 2022)",
+    csv: Some(CsvSpec::new(&[
+        "tradeid",
+        "markettradeid",
+        "base",
+        "quote",
+        "type",
+        "rate",
+        "amount",
+        "buyuser",
+        "selluser",
+        "buyerfee",
+        "sellerwallet",
+        "sellerfee",
+        "buyerwallet",
+        "buyerordernumber",
+        "sellerordernumber",
+        "date",
+    ])),
+    detect: None,
+    load_sync: Some(load_poloniex_trades_before_august_2022_csv),
+    load_async: None,
+};
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
 static POLONIEX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexTradesCsv",
     label: "Poloniex Trades (CSV)",
-    csv: Some(CsvSpec {
-        headers: &[
-            "Date",
-            "Market",
-            "Type",
-            "Side",
-            "Price",
-            "Amount",
-            "Total",
-            "Fee",
-            "Order Number",
-            "Fee Currency",
-            "Fee Total",
-        ],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "Date",
+        "Market",
+        "Type",
+        "Side",
+        "Price",
+        "Amount",
+        "Total",
+        "Fee",
+        "Order Number",
+        "Fee Currency",
+        "Fee Total",
+    ])),
     detect: None,
     load_sync: Some(load_poloniex_trades_csv),
     load_async: None,
@@ -497,11 +499,19 @@ static POLONIEX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType
 static POLONIEX_TRADES_SUPPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexTradesSupportCsv",
     label: "Poloniex Trades from Support (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["", "timestamp", "trade_id", "market", "wallet", "side", "price", "amount", "fee", "fee_currency", "fee_total"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "",
+        "timestamp",
+        "trade_id",
+        "market",
+        "wallet",
+        "side",
+        "price",
+        "amount",
+        "fee",
+        "fee_currency",
+        "fee_total",
+    ])),
     detect: None,
     load_sync: Some(load_poloniex_trades_csv),
     load_async: None,
@@ -511,11 +521,21 @@ static POLONIEX_TRADES_SUPPORT_CSV_SOURCE: TransactionSourceType = TransactionSo
 static POLONIEX_TRADES_SUPPORT2_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexTradesSupport2Csv",
     label: "Poloniex Trades from Support (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["order_id", "activity", "order_role", "order_type", "base_currency_name", "quote_currency_name", "fee_currency_name", "price", "amount", "fee_amount", "usd_amount", "usd_fee_amount", "utc_time"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "order_id",
+        "activity",
+        "order_role",
+        "order_type",
+        "base_currency_name",
+        "quote_currency_name",
+        "fee_currency_name",
+        "price",
+        "amount",
+        "fee_amount",
+        "usd_amount",
+        "usd_fee_amount",
+        "utc_time",
+    ])),
     detect: None,
     load_sync: Some(load_poloniex_trades_csv),
     load_async: None,
@@ -525,42 +545,49 @@ static POLONIEX_TRADES_SUPPORT2_CSV_SOURCE: TransactionSourceType = TransactionS
 static POLONIEX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexWithdrawalsCsv",
     label: "Poloniex Withdrawals (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["Fee Deducted", "Date", "Currency", "Amount", "Amount-Fee", "Address", "Status"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "Fee Deducted",
+        "Date",
+        "Currency",
+        "Amount",
+        "Amount-Fee",
+        "Address",
+        "Status",
+    ])),
     detect: None,
     load_sync: Some(load_poloniex_withdrawals_csv),
     load_async: None,
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static POLONIEX_WITHDRAWALS_SUPPORT_CSV_SOURCE: TransactionSourceType =
-    TransactionSourceType {
-        id: "PoloniexWithdrawalsSupportCsv",
-        label: "Poloniex Withdrawals from Support (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["", "timestamp", "currency", "amount", "fee_deducted", "status"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(load_poloniex_withdrawals_csv),
-        load_async: None,
-    };
+static POLONIEX_WITHDRAWALS_SUPPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "PoloniexWithdrawalsSupportCsv",
+    label: "Poloniex Withdrawals from Support (CSV)",
+    csv: Some(CsvSpec::new(&[
+        "",
+        "timestamp",
+        "currency",
+        "amount",
+        "fee_deducted",
+        "status",
+    ])),
+    detect: None,
+    load_sync: Some(load_poloniex_withdrawals_csv),
+    load_async: None,
+};
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static POLONIEX_WITHDRAWALS_SUPPORT2_CSV_SOURCE: TransactionSourceType =
-    TransactionSourceType {
-        id: "PoloniexWithdrawalsSupport2Csv",
-        label: "Poloniex Withdrawals from Support (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["f_date", "currency", "f_amount", "f_feededucted", "f_status"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(load_poloniex_withdrawals_csv),
-        load_async: None,
-    };
+static POLONIEX_WITHDRAWALS_SUPPORT2_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "PoloniexWithdrawalsSupport2Csv",
+    label: "Poloniex Withdrawals from Support (CSV)",
+    csv: Some(CsvSpec::new(&[
+        "f_date",
+        "currency",
+        "f_amount",
+        "f_feededucted",
+        "f_status",
+    ])),
+    detect: None,
+    load_sync: Some(load_poloniex_withdrawals_csv),
+    load_async: None,
+};

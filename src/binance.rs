@@ -340,42 +340,50 @@ fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BinanceConvertCsv",
     label: "Binance Convert (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["Date", "Coin", "Amount", "Fee", "Converted To"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "Date",
+        "Coin",
+        "Amount",
+        "Fee",
+        "Converted To",
+    ])),
     detect: None,
     load_sync: Some(load_binance_convert_csv),
     load_async: None,
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType =
-    TransactionSourceType {
-        id: "BinanceSpotTradeHistoryCsv",
-        label: "Binance Spot Trade History (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Date(UTC)", "Pair", "Side", "Price", "Executed", "Amount", "Fee"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(load_binance_spot_trades_csv),
-        load_async: None,
-    };
+static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BinanceSpotTradeHistoryCsv",
+    label: "Binance Spot Trade History (CSV)",
+    csv: Some(CsvSpec::new(&[
+        "Date(UTC)",
+        "Pair",
+        "Side",
+        "Price",
+        "Executed",
+        "Amount",
+        "Fee",
+    ])),
+    detect: None,
+    load_sync: Some(load_binance_spot_trades_csv),
+    load_async: None,
+};
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
-    TransactionSourceType {
-        id: "BinanceTransactionHistoryCsv",
-        label: "Binance Transaction History (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change", "Remark"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(load_binance_transaction_records_csv),
-        load_async: None,
-    };
+static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BinanceTransactionHistoryCsv",
+    label: "Binance Transaction History (CSV)",
+    csv: Some(CsvSpec::new(&[
+        "User_ID",
+        "UTC_Time",
+        "Account",
+        "Operation",
+        "Coin",
+        "Change",
+        "Remark",
+    ])),
+    detect: None,
+    load_sync: Some(load_binance_transaction_records_csv),
+    load_async: None,
+};

@@ -16,14 +16,6 @@ pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::res
     Ok(NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%MZ").unwrap())
 }
 
-#[derive(Debug, Clone, Deserialize)]
-enum TransferType {
-    #[serde(rename = "Sent to")]
-    SentTo,
-    #[serde(rename = "Received with")]
-    ReceivedWith,
-}
-
 // Stores values loaded from CSV file exported by Mycelium, with the following header:
 // Account, Transaction ID, Destination Address, Timestamp, Value, Currency, Transaction Label
 #[derive(Debug, Deserialize)]
@@ -80,19 +72,15 @@ fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static MYCELIUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "MyceliumCsv",
     label: "Mycelium (CSV)",
-    csv: Some(CsvSpec {
-        headers: &[
-            "Account",
-            "Transaction ID",
-            "Destination Address",
-            "Timestamp",
-            "Value",
-            "Currency",
-            "Transaction Label",
-        ],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "Account",
+        "Transaction ID",
+        "Destination Address",
+        "Timestamp",
+        "Value",
+        "Currency",
+        "Transaction Label",
+    ])),
     detect: None,
     load_sync: Some(load_mycelium_csv),
     load_async: None,

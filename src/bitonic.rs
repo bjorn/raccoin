@@ -94,11 +94,7 @@ fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static BITONIC_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitonicCsv",
     label: "Bitonic (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["Date", "Action", "Amount", "Price"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&["Date", "Action", "Amount", "Price"])),
     detect: None,
     load_sync: Some(load_bitonic_csv),
     load_async: None,

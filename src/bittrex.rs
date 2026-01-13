@@ -151,27 +151,22 @@ fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transac
 static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BittrexOrderHistoryCsv",
     label: "Bittrex Order History (CSV)",
-    csv: Some(CsvSpec {
-        headers: &["Date", "Market", "Side", "Type", "Price", "Quantity", "Total"],
-        delimiters: &[b','],
-        skip_lines: 0,
-    }),
+    csv: Some(CsvSpec::new(&[
+        "Date", "Market", "Side", "Type", "Price", "Quantity", "Total",
+    ])),
     detect: None,
     load_sync: Some(load_bittrex_order_history_csv),
     load_async: None,
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITTREX_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
-    TransactionSourceType {
-        id: "BittrexTransactionHistoryCsv",
-        label: "Bittrex Transaction History (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(load_bittrex_transaction_history_csv),
-        load_async: None,
-    };
+static BITTREX_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BittrexTransactionHistoryCsv",
+    label: "Bittrex Transaction History (CSV)",
+    csv: Some(CsvSpec::new(&[
+        "Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount",
+    ])),
+    detect: None,
+    load_sync: Some(load_bittrex_transaction_history_csv),
+    load_async: None,
+};
