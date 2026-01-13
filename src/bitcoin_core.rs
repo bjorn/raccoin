@@ -6,7 +6,10 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{Amount, Transaction, Operation};
+use crate::{
+    base::{Amount, Transaction, Operation},
+    CsvSpec, TransactionSourceType,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 enum TransferType {
@@ -88,3 +91,42 @@ pub(crate) fn load_peercoin_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 pub(crate) fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "RDD")
 }
+
+pub(crate) static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BitcoinCoreCsv",
+    label: "Bitcoin Core (CSV)",
+    csv: Some(CsvSpec {
+        headers: &["Confirmed", "Date", "Type", "Label", "Address", "Amount (BTC)", "ID"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_bitcoin_core_csv),
+    load_async: None,
+};
+
+pub(crate) static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "PeercoinCsv",
+    label: "Peercoin Qt (CSV)",
+    csv: Some(CsvSpec {
+        headers: &["Confirmed", "Date", "Type", "Label", "Address", "Amount (PPC)", "ID"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_peercoin_csv),
+    load_async: None,
+};
+
+pub(crate) static REDDCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "ReddcoinCoreCsv",
+    label: "Reddcoin Core (CSV)",
+    csv: Some(CsvSpec {
+        headers: &["Confirmed", "Date", "Type", "Label", "Address", "Amount (RDD)", "ID"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_reddcoin_core_csv),
+    load_async: None,
+};

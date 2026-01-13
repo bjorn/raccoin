@@ -5,7 +5,7 @@ use chrono::DateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Amount, Operation, Transaction};
+use crate::{base::{Amount, Operation, Transaction}, CsvSpec, TransactionSourceType};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -336,3 +336,39 @@ pub(crate) fn load_trezor_json(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+pub(crate) static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "TrezorCsv",
+    label: "Trezor (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "Timestamp",
+            "Date",
+            "Time",
+            "Type",
+            "Transaction ID",
+            "Fee",
+            "Fee unit",
+            "Address",
+            "Label",
+            "Amount",
+            "Amount unit",
+            "Fiat (EUR)",
+            "Other",
+        ],
+        delimiters: &[b',', b';'],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_trezor_csv),
+    load_async: None,
+};
+
+pub(crate) static TREZOR_JSON_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "TrezorJson",
+    label: "Trezor (JSON)",
+    csv: None,
+    detect: None,
+    load_sync: Some(load_trezor_json),
+    load_async: None,
+};

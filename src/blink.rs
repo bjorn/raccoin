@@ -5,7 +5,10 @@ use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Amount, Operation, Transaction};
+use crate::{
+    base::{Amount, Operation, Transaction},
+    CsvSpec, TransactionSourceType,
+};
 
 const BTC_CURRENCY: &str = "BTC";
 const USD_CURRENCY: &str = "USD";
@@ -38,6 +41,19 @@ pub(crate) const BLINK_HEADERS: &[&str] = &[
     "displayFee",
     "displayCurrency",
 ];
+
+pub(crate) static BLINK_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BlinkCsv",
+    label: "Blink (CSV)",
+    csv: Some(CsvSpec {
+        headers: BLINK_HEADERS,
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_blink_csv),
+    load_async: None,
+};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case")]

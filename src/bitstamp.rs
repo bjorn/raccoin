@@ -5,7 +5,10 @@ use chrono::{NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{deserialize_amount, Amount, Operation, Transaction};
+use crate::{
+    base::{deserialize_amount, Amount, Operation, Transaction},
+    CsvSpec, TransactionSourceType,
+};
 
 #[derive(Debug, Deserialize)]
 enum BitstampTransactionType {
@@ -297,3 +300,44 @@ pub(crate) fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(converter.finish())
 }
+
+pub(crate) static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BitstampCsv",
+    label: "Bitstamp Old (CSV)",
+    csv: Some(CsvSpec {
+        headers: &["Type", "Datetime", "Account", "Amount", "Value", "Rate", "Fee", "Sub Type"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_bitstamp_old_csv),
+    load_async: None,
+};
+
+pub(crate) static BITSTAMP_CSV_NEW_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BitstampCsvNew",
+    label: "Bitstamp RFC 4180 (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "ID",
+            "Account",
+            "Type",
+            "Subtype",
+            "Datetime",
+            "Amount",
+            "Amount currency",
+            "Value",
+            "Value currency",
+            "Rate",
+            "Rate currency",
+            "Fee",
+            "Fee currency",
+            "Order ID",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_bitstamp_csv),
+    load_async: None,
+};

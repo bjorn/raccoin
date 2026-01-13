@@ -10,7 +10,10 @@ use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{Amount, Transaction};
+use crate::{
+    base::{Amount, Transaction},
+    CsvSpec, TransactionSourceType,
+};
 
 const BTC_CURRENCY: &str = "BTC";
 
@@ -173,6 +176,37 @@ pub(crate) fn load_alby_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+pub(crate) static ALBY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "AlbyCsv",
+    label: "Alby (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "Invoice Type",
+            "Amount",
+            "Fee",
+            "Creation Date",
+            "Settled Date",
+            "Memo",
+            "Comment",
+            "Message",
+            "Payer Name",
+            "Payer Pubkey",
+            "Payment Hash",
+            "Preimage",
+            "Fiat In Cents",
+            "Currency",
+            "USD In Cents",
+            "Is Boostagram",
+            "Is Zap",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_alby_csv),
+    load_async: None,
+};
 
 fn sats_to_btc_amount(sats: i64) -> Amount {
     Amount::new(Decimal::new(sats, SATS_SCALE), BTC_CURRENCY.to_owned())

@@ -5,7 +5,7 @@ use chrono::{NaiveDateTime, NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount};
+use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
 
 // deserialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -145,3 +145,30 @@ pub(crate) fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<
     transactions.reverse();
     Ok(transactions)
 }
+
+pub(crate) static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BittrexOrderHistoryCsv",
+    label: "Bittrex Order History (CSV)",
+    csv: Some(CsvSpec {
+        headers: &["Date", "Market", "Side", "Type", "Price", "Quantity", "Total"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_bittrex_order_history_csv),
+    load_async: None,
+};
+
+pub(crate) static BITTREX_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
+    TransactionSourceType {
+        id: "BittrexTransactionHistoryCsv",
+        label: "Bittrex Transaction History (CSV)",
+        csv: Some(CsvSpec {
+            headers: &["Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount"],
+            delimiters: &[b','],
+            skip_lines: 0,
+        }),
+        detect: None,
+        load_sync: Some(load_bittrex_transaction_history_csv),
+        load_async: None,
+    };

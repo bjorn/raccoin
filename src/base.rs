@@ -5,6 +5,8 @@ use chrono::{NaiveDateTime, Duration};
 use serde::{Serialize, Deserialize, Deserializer};
 use rust_decimal::prelude::*;
 
+use crate::TransactionSourceType;
+
 /// Maps currencies to their CMC ID
 /// todo: support more currencies and load from file
 pub(crate) fn cmc_id(currency: &str) -> i32 {
@@ -509,6 +511,15 @@ pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Trans
     let transactions: Vec<Transaction> = serde_json::from_str(&json)?;
     Ok(transactions)
 }
+
+pub(crate) static JSON_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "Json",
+    label: "JSON",
+    csv: None,
+    detect: None,
+    load_sync: Some(load_transactions_from_json),
+    load_async: None,
+};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct PricePoint {

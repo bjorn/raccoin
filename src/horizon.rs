@@ -12,7 +12,7 @@ use stellar_horizon::client::{HorizonClient, HorizonHttpClient};
 use stellar_horizon::request::PageRequest;
 use stellar_horizon::resources::{Effect, Asset, operation};
 
-use crate::base::{Transaction, Amount, Operation};
+use crate::{base::{Transaction, Amount, Operation}, LoadFuture, TransactionSourceType};
 
 const STELLAR_SCALE: u32 = 7;
 const PAGE_LIMIT: u64 = 20;
@@ -274,3 +274,16 @@ pub(crate) async fn address_transactions(
 
     Ok(transactions)
 }
+
+pub(crate) fn load_stellar_account_async(source_path: String) -> LoadFuture {
+    Box::pin(async move { address_transactions(&source_path).await })
+}
+
+pub(crate) static STELLAR_ACCOUNT_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "StellarAccount",
+    label: "Stellar Account",
+    csv: None,
+    detect: None,
+    load_sync: None,
+    load_async: Some(load_stellar_account_async),
+};

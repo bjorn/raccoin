@@ -5,7 +5,7 @@ use chrono::{NaiveDateTime, FixedOffset, DateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount};
+use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
 
 // function for reading NaiveDateTime in the format "2/25/2021, 2:24:46 PM"
 pub(crate) fn deserialize_date_time_mdy<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -170,3 +170,42 @@ pub(crate) fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>>
 
     Ok(transactions)
 }
+
+pub(crate) static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "FtxDepositsCsv",
+    label: "FTX Deposits (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[" ", "Time", "Coin", "Amount", "Status", "Additional info", "Transaction ID"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_ftx_deposits_csv),
+    load_async: None,
+};
+
+pub(crate) static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "FtxWithdrawalsCsv",
+    label: "FTX Withdrawal (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[" ", "Time", "Coin", "Amount", "Destination", "Status", "Transaction ID", "fee"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_ftx_withdrawals_csv),
+    load_async: None,
+};
+
+pub(crate) static FTX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "FtxTradesCsv",
+    label: "FTX Trades (CSV)",
+    csv: Some(CsvSpec {
+        headers: &["ID", "Time", "Market", "Side", "Order Type", "Size", "Price", "Total", "Fee", "Fee Currency", "TWAP"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_ftx_trades_csv),
+    load_async: None,
+};

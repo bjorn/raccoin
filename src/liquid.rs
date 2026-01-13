@@ -5,7 +5,7 @@ use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount, deserialize_amount};
+use crate::{base::{Transaction, Amount, deserialize_amount}, CsvSpec, TransactionSourceType};
 
 // function for reading NaiveDateTime in the format "07/04/2019 07:48:17"
 pub(crate) fn deserialize_date_time_mdy<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -182,6 +182,70 @@ pub(crate) fn load_liquid_withdrawals_csv(input_path: &Path) -> Result<Vec<Trans
 
     Ok(transactions)
 }
+
+pub(crate) static LIQUID_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "LiquidDepositsCsv",
+    label: "Liquid Deposits (CSV)",
+    csv: Some(CsvSpec {
+        headers: &["ID", "Type", "Amount", "Status", "Created (YY/MM/DD)", "Hash"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_liquid_deposits_csv),
+    load_async: None,
+};
+
+pub(crate) static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "LiquidTradesCsv",
+    label: "Liquid Trades (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "Quoted currency",
+            "Base currency",
+            "Qex/liquid",
+            "Execution",
+            "Type",
+            "Date",
+            "Open qty",
+            "Price",
+            "Fee",
+            "Fee currency",
+            "Amount",
+            "Trade side",
+        ],
+        delimiters: &[b','],
+        skip_lines: 2,
+    }),
+    detect: None,
+    load_sync: Some(load_liquid_trades_csv),
+    load_async: None,
+};
+
+pub(crate) static LIQUID_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "LiquidWithdrawalsCsv",
+    label: "Liquid Withdrawals (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "ID",
+            "Wallet label",
+            "Amount",
+            "Created On",
+            "Transfer network",
+            "Status",
+            "Address",
+            "Liquid Fee",
+            "Network Fee",
+            "Broadcasted At",
+            "Hash",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_liquid_withdrawals_csv),
+    load_async: None,
+};
 
 pub(crate) fn load_liquid_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new()

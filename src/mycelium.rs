@@ -7,7 +7,7 @@ use csv::Trim;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount};
+use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
 
 // serialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -74,3 +74,24 @@ pub(crate) fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+pub(crate) static MYCELIUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "MyceliumCsv",
+    label: "Mycelium (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "Account",
+            "Transaction ID",
+            "Destination Address",
+            "Timestamp",
+            "Value",
+            "Currency",
+            "Transaction Label",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_mycelium_csv),
+    load_async: None,
+};

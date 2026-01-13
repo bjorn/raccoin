@@ -6,7 +6,7 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Transaction, Amount}};
+use crate::{time::deserialize_date_time, base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
 
 #[derive(Debug, Deserialize)]
 struct ElectrumHistoryItem {
@@ -52,3 +52,25 @@ pub(crate) fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+pub(crate) static ELECTRUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "ElectrumCsv",
+    label: "Electrum (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "transaction_hash",
+            "label",
+            "confirmations",
+            "value",
+            "fiat_value",
+            "fee",
+            "fiat_fee",
+            "timestamp",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_electrum_csv),
+    load_async: None,
+};

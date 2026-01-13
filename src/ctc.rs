@@ -5,7 +5,7 @@ use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::{Serialize, Deserialize};
 
-use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation, Amount}};
+use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation, Amount}, CsvSpec, TransactionSourceType};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum CtcTxType {
@@ -413,3 +413,32 @@ pub(crate) fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+pub(crate) static CTC_IMPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "CtcImportCsv",
+    label: "CryptoTaxCalculator import (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "Timestamp (UTC)",
+            "Type",
+            "Base Currency",
+            "Base Amount",
+            "Quote Currency (Optional)",
+            "Quote Amount (Optional)",
+            "Fee Currency (Optional)",
+            "Fee Amount (Optional)",
+            "From (Optional)",
+            "To (Optional)",
+            "Blockchain (Optional)",
+            "ID (Optional)",
+            "Description (Optional)",
+            "Reference Price Per Unit (Optional)",
+            "Reference Price Currency (Optional)",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_ctc_csv),
+    load_async: None,
+};

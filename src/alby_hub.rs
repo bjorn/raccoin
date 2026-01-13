@@ -5,7 +5,10 @@ use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{Amount, Transaction};
+use crate::{
+    base::{Amount, Transaction},
+    CsvSpec, TransactionSourceType,
+};
 
 #[derive(Debug, Deserialize, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -114,6 +117,35 @@ pub(crate) fn load_alby_hub_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+pub(crate) static ALBY_HUB_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "AlbyHubCsv",
+    label: "Alby Hub (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "type",
+            "state",
+            "invoice",
+            "description",
+            "descriptionHash",
+            "preimage",
+            "paymentHash",
+            "amount",
+            "feesPaid",
+            "updatedAt",
+            "createdAt",
+            "settledAt",
+            "appId",
+            "metadata",
+            "failureReason",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_alby_hub_csv),
+    load_async: None,
+};
 
 const MSATS_SCALE: u32 = 11;
 

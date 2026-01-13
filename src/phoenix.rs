@@ -7,7 +7,10 @@ use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{Amount, Transaction};
+use crate::{
+    base::{Amount, Transaction},
+    CsvSpec, TransactionSourceType,
+};
 
 const BTC_CURRENCY: &str = "BTC";
 
@@ -132,6 +135,34 @@ pub(crate) fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+pub(crate) static PHOENIX_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "PhoenixCsv",
+    label: "Phoenix (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "date",
+            "id",
+            "type",
+            "amount_msat",
+            "amount_fiat",
+            "fee_credit_msat",
+            "mining_fee_sat",
+            "mining_fee_fiat",
+            "service_fee_msat",
+            "service_fee_fiat",
+            "payment_hash",
+            "tx_id",
+            "destination",
+            "description",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_phoenix_csv),
+    load_async: None,
+};
 
 /// Helpers
 

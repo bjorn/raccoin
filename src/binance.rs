@@ -5,7 +5,7 @@ use chrono::{NaiveDateTime, NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Amount, Transaction, self, deserialize_amount}};
+use crate::{time::deserialize_date_time, base::{Amount, Transaction, self, deserialize_amount}, CsvSpec, TransactionSourceType};
 
 // #[derive(Debug, Deserialize)]
 // enum Account {
@@ -334,3 +334,44 @@ pub(crate) fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transact
 
     Ok(transactions)
 }
+
+pub(crate) static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BinanceConvertCsv",
+    label: "Binance Convert (CSV)",
+    csv: Some(CsvSpec {
+        headers: &["Date", "Coin", "Amount", "Fee", "Converted To"],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_binance_convert_csv),
+    load_async: None,
+};
+
+pub(crate) static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType =
+    TransactionSourceType {
+        id: "BinanceSpotTradeHistoryCsv",
+        label: "Binance Spot Trade History (CSV)",
+        csv: Some(CsvSpec {
+            headers: &["Date(UTC)", "Pair", "Side", "Price", "Executed", "Amount", "Fee"],
+            delimiters: &[b','],
+            skip_lines: 0,
+        }),
+        detect: None,
+        load_sync: Some(load_binance_spot_trades_csv),
+        load_async: None,
+    };
+
+pub(crate) static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
+    TransactionSourceType {
+        id: "BinanceTransactionHistoryCsv",
+        label: "Binance Transaction History (CSV)",
+        csv: Some(CsvSpec {
+            headers: &["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change", "Remark"],
+            delimiters: &[b','],
+            skip_lines: 0,
+        }),
+        detect: None,
+        load_sync: Some(load_binance_transaction_records_csv),
+        load_async: None,
+    };

@@ -5,7 +5,10 @@ use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{Amount, Transaction};
+use crate::{
+    base::{Amount, Transaction},
+    CsvSpec, TransactionSourceType,
+};
 
 const BTC_CURRENCY: &str = "BTC";
 const LIGHTNING_CURRENCY: &str = "LIGHTNING";
@@ -124,6 +127,53 @@ pub(crate) fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transa
 
     Ok(transactions)
 }
+
+pub(crate) static WALLET_OF_SATOSHI_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "WalletOfSatoshiCsv",
+    label: "Wallet of Satoshi (CSV)",
+    csv: Some(CsvSpec {
+        headers: &[
+            "utcDate",
+            "type",
+            "currency",
+            "amount",
+            "fees",
+            "address",
+            "description",
+            "pointOfSale",
+        ],
+        delimiters: &[b','],
+        skip_lines: 0,
+    }),
+    detect: None,
+    load_sync: Some(load_wallet_of_satoshi_csv),
+    load_async: None,
+};
+
+pub(crate) static WALLET_OF_SATOSHI_NON_CUSTODIAL_CSV_SOURCE: TransactionSourceType =
+    TransactionSourceType {
+        id: "WalletOfSatoshiNonCustodialCsv",
+        label: "Wallet of Satoshi Self-Custody (CSV)",
+        csv: Some(CsvSpec {
+            headers: &[
+                "utcDate",
+                "type",
+                "currency",
+                "amount",
+                "fees",
+                "status",
+                "address",
+                "description",
+                "transactionId",
+                "pointOfSale",
+            ],
+            delimiters: &[b','],
+            skip_lines: 0,
+        }),
+        detect: None,
+        load_sync: Some(load_wallet_of_satoshi_csv),
+        load_async: None,
+    };
 
 fn non_empty(value: &str) -> Option<&str> {
     let trimmed = value.trim();

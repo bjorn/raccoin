@@ -5,7 +5,7 @@ use chrono::DateTime;
 use esplora_client::{Builder, Tx};
 use esplora_client::r#async::AsyncClient;
 
-use crate::base::{Transaction, Amount};
+use crate::{base::{Transaction, Amount}, LoadFuture, TransactionSourceType};
 
 pub(crate) fn async_esplora_client() -> Result<AsyncClient, esplora_client::Error> {
     let builder = Builder::new("https://blockstream.info/api");
@@ -234,6 +234,42 @@ pub(crate) async fn xpub_addresses_transactions(
 
     Ok(process_transactions(address_transactions, pub_keys))
 }
+
+fn split_whitespace_owned(value: &str) -> Vec<String> {
+    value.split_ascii_whitespace().map(|item| item.to_owned()).collect()
+}
+
+pub(crate) fn load_bitcoin_addresses_async(source_path: String) -> LoadFuture {
+    Box::pin(async move {
+        let esplora_client = async_esplora_client().unwrap();
+        address_transactions(&esplora_client, &split_whitespace_owned(&source_path)).await
+    })
+}
+
+pub(crate) fn load_bitcoin_xpubs_async(source_path: String) -> LoadFuture {
+    Box::pin(async move {
+        let esplora_client = async_esplora_client().unwrap();
+        xpub_addresses_transactions(&esplora_client, &split_whitespace_owned(&source_path)).await
+    })
+}
+
+pub(crate) static BITCOIN_ADDRESSES_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BitcoinAddresses",
+    label: "Bitcoin Address(es)",
+    csv: None,
+    detect: None,
+    load_sync: None,
+    load_async: Some(load_bitcoin_addresses_async),
+};
+
+pub(crate) static BITCOIN_XPUBS_SOURCE: TransactionSourceType = TransactionSourceType {
+    id: "BitcoinXpubs",
+    label: "Bitcoin HD Wallet(s)",
+    csv: None,
+    detect: None,
+    load_sync: None,
+    load_async: Some(load_bitcoin_xpubs_async),
+};
 
 // Converts the transactions, using a set of tx_hash to skip duplicates
 fn process_transactions(address_transactions: HashMap<Address, Result<Vec<Tx>>>, pub_keys: HashSet<ScriptBuf>) -> Vec<Transaction> {

@@ -59,25 +59,25 @@ fn rounded_to_cent(amount: Decimal) -> Decimal {
     amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
 }
 
-type LoadFuture = Pin<Box<dyn Future<Output = Result<Vec<Transaction>>> + Send>>;
+pub(crate) type LoadFuture = Pin<Box<dyn Future<Output = Result<Vec<Transaction>>> + Send>>;
 
-struct CsvSpec {
-    headers: &'static [&'static str],
-    delimiters: &'static [u8],
-    skip_lines: usize,
+pub(crate) struct CsvSpec {
+    pub(crate) headers: &'static [&'static str],
+    pub(crate) delimiters: &'static [u8],
+    pub(crate) skip_lines: usize,
 }
 
-struct TransactionSourceType {
-    id: &'static str,
-    label: &'static str,
-    csv: Option<CsvSpec>,
-    detect: Option<fn(&Path) -> Result<bool>>,
-    load_sync: Option<fn(&Path) -> Result<Vec<Transaction>>>,
-    load_async: Option<fn(String) -> LoadFuture>,
+pub(crate) struct TransactionSourceType {
+    pub(crate) id: &'static str,
+    pub(crate) label: &'static str,
+    pub(crate) csv: Option<CsvSpec>,
+    pub(crate) detect: Option<fn(&Path) -> Result<bool>>,
+    pub(crate) load_sync: Option<fn(&Path) -> Result<Vec<Transaction>>>,
+    pub(crate) load_async: Option<fn(String) -> LoadFuture>,
 }
 
 impl TransactionSourceType {
-    fn detect_from_file(&self, path: &Path) -> Result<bool> {
+    pub(crate) fn detect_from_file(&self, path: &Path) -> Result<bool> {
         if let Some(detect) = self.detect {
             return detect(path);
         }
@@ -89,7 +89,7 @@ impl TransactionSourceType {
         Ok(false)
     }
 
-    fn can_sync(&self) -> bool {
+    pub(crate) fn can_sync(&self) -> bool {
         self.load_async.is_some()
     }
 }
@@ -112,11 +112,7 @@ fn csv_file_has_headers(path: &Path, delimiter: u8, skip_lines: usize, headers: 
     Ok(rdr.headers().map_or(false, |s| s == headers))
 }
 
-fn csv_matches(path: &Path, csv: &CsvSpec) -> Result<bool> {
-    if csv.delimiters.is_empty() {
-        return Ok(false);
-    }
-
+pub(crate) fn csv_matches(path: &Path, csv: &CsvSpec) -> Result<bool> {
     for &delimiter in csv.delimiters {
         if csv_file_has_headers(path, delimiter, csv.skip_lines, csv.headers).is_ok_and(|matched| matched) {
             return Ok(true);
@@ -126,547 +122,69 @@ fn csv_matches(path: &Path, csv: &CsvSpec) -> Result<bool> {
     Ok(false)
 }
 
-static TRANSACTION_SOURCES: &[TransactionSourceType] = &[
-    TransactionSourceType {
-        id: "AlbyCsv",
-        label: "Alby (CSV)",
-        csv: Some(CsvSpec {
-            headers: &[ "Invoice Type", "Amount", "Fee", "Creation Date", "Settled Date", "Memo", "Comment", "Message", "Payer Name", "Payer Pubkey", "Payment Hash", "Preimage", "Fiat In Cents", "Currency", "USD In Cents", "Is Boostagram", "Is Zap" ],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(alby::load_alby_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "AlbyHubCsv",
-        label: "Alby Hub (CSV)",
-        csv: Some(CsvSpec {
-            headers: &[ "type", "state", "invoice", "description", "descriptionHash", "preimage", "paymentHash", "amount", "feesPaid", "updatedAt", "createdAt", "settledAt", "appId", "metadata", "failureReason" ],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(alby_hub::load_alby_hub_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "WalletOfSatoshiCsv",
-        label: "Wallet of Satoshi (CSV)",
-        csv: Some(CsvSpec {
-            headers: &[ "utcDate", "type", "currency", "amount", "fees", "address", "description", "pointOfSale" ],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(wallet_of_satoshi::load_wallet_of_satoshi_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "WalletOfSatoshiNonCustodialCsv",
-        label: "Wallet of Satoshi Self-Custody (CSV)",
-        csv: Some(CsvSpec {
-            headers: &[ "utcDate", "type", "currency", "amount", "fees", "status", "address", "description", "transactionId", "pointOfSale" ],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(wallet_of_satoshi::load_wallet_of_satoshi_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PhoenixCsv",
-        label: "Phoenix (CSV)",
-        csv: Some(CsvSpec {
-            headers: &[ "date", "id", "type", "amount_msat", "amount_fiat", "fee_credit_msat", "mining_fee_sat", "mining_fee_fiat", "service_fee_msat", "service_fee_fiat", "payment_hash", "tx_id", "destination", "description" ],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(phoenix::load_phoenix_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BlinkCsv",
-        label: "Blink (CSV)",
-        csv: Some(CsvSpec {
-            headers: blink::BLINK_HEADERS,
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(blink::load_blink_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BitcoinAddresses",
-        label: "Bitcoin Address(es)",
-        csv: None,
-        detect: None,
-        load_sync: None,
-        load_async: Some(load_bitcoin_addresses_async),
-    },
-    TransactionSourceType {
-        id: "BitcoinXpubs",
-        label: "Bitcoin HD Wallet(s)",
-        csv: None,
-        detect: None,
-        load_sync: None,
-        load_async: Some(load_bitcoin_xpubs_async),
-    },
-    TransactionSourceType {
-        id: "BitcoinCoreCsv",
-        label: "Bitcoin Core (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Confirmed", "Date", "Type", "Label", "Address", "Amount (BTC)", "ID"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(bitcoin_core::load_bitcoin_core_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BitcoinDeCsv",
-        label: "bitcoin.de (CSV)",
-        csv: None,
-        detect: Some(bitcoin_de::is_bitcoin_de_csv),
-        load_sync: Some(bitcoin_de::load_bitcoin_de_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BitonicCsv",
-        label: "Bitonic (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Date", "Action", "Amount", "Price"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(bitonic::load_bitonic_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BitstampCsv",
-        label: "Bitstamp Old (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Type", "Datetime", "Account", "Amount", "Value", "Rate", "Fee", "Sub Type"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(bitstamp::load_bitstamp_old_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BitstampCsvNew",
-        label: "Bitstamp RFC 4180 (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["ID", "Account", "Type", "Subtype", "Datetime", "Amount", "Amount currency", "Value", "Value currency", "Rate", "Rate currency", "Fee", "Fee currency", "Order ID"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(bitstamp::load_bitstamp_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BittrexOrderHistoryCsv",
-        label: "Bittrex Order History (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Date", "Market", "Side", "Type", "Price", "Quantity", "Total"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(bittrex::load_bittrex_order_history_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BittrexTransactionHistoryCsv",
-        label: "Bittrex Transaction History (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(bittrex::load_bittrex_transaction_history_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "CtcImportCsv",
-        label: "CryptoTaxCalculator import (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Timestamp (UTC)", "Type", "Base Currency", "Base Amount", "Quote Currency (Optional)", "Quote Amount (Optional)", "Fee Currency (Optional)", "Fee Amount (Optional)", "From (Optional)", "To (Optional)", "Blockchain (Optional)", "ID (Optional)", "Description (Optional)", "Reference Price Per Unit (Optional)", "Reference Price Currency (Optional)"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(ctc::load_ctc_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "ElectrumCsv",
-        label: "Electrum (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["transaction_hash", "label", "confirmations", "value", "fiat_value", "fee", "fiat_fee", "timestamp"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(electrum::load_electrum_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "EthereumAddress",
-        label: "Ethereum Address",
-        csv: None,
-        detect: None,
-        load_sync: None,
-        load_async: Some(load_ethereum_address_async),
-    },
-    TransactionSourceType {
-        id: "Json",
-        label: "JSON",
-        csv: None,
-        detect: None,
-        load_sync: Some(base::load_transactions_from_json),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "MyceliumCsv",
-        label: "Mycelium (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Account", "Transaction ID", "Destination Address", "Timestamp", "Value", "Currency", "Transaction Label"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(mycelium::load_mycelium_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PeercoinCsv",
-        label: "Peercoin Qt (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Confirmed", "Date", "Type", "Label", "Address", "Amount (PPC)", "ID"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(bitcoin_core::load_peercoin_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "FtxDepositsCsv",
-        label: "FTX Deposits (CSV)",
-        csv: Some(CsvSpec {
-            headers: &[" ", "Time", "Coin", "Amount", "Status", "Additional info", "Transaction ID"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(ftx::load_ftx_deposits_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "FtxWithdrawalsCsv",
-        label: "FTX Withdrawal (CSV)",
-        csv: Some(CsvSpec {
-            headers: &[" ", "Time", "Coin", "Amount", "Destination", "Status", "Transaction ID", "fee"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(ftx::load_ftx_withdrawals_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "FtxTradesCsv",
-        label: "FTX Trades (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["ID", "Time", "Market", "Side", "Order Type", "Size", "Price", "Total", "Fee", "Fee Currency", "TWAP"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(ftx::load_ftx_trades_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "LiquidDepositsCsv",
-        label: "Liquid Deposits (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["ID", "Type", "Amount", "Status", "Created (YY/MM/DD)", "Hash"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(liquid::load_liquid_deposits_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "LiquidTradesCsv",
-        label: "Liquid Trades (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Quoted currency", "Base currency", "Qex/liquid", "Execution", "Type", "Date", "Open qty", "Price", "Fee", "Fee currency", "Amount", "Trade side"],
-            delimiters: &[b','],
-            skip_lines: 2,
-        }),
-        detect: None,
-        load_sync: Some(liquid::load_liquid_trades_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "LiquidWithdrawalsCsv",
-        label: "Liquid Withdrawals (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["ID", "Wallet label", "Amount", "Created On", "Transfer network", "Status", "Address", "Liquid Fee", "Network Fee", "Broadcasted At", "Hash"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(liquid::load_liquid_withdrawals_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexDepositsCsv",
-        label: "Poloniex Deposits (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Currency", "Amount", "Address", "Date", "Status"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_deposits_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexDepositsSupportCsv",
-        label: "Poloniex Deposits from Support (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["", "timestamp", "currency", "amount", "address", "status"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_deposits_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexDepositsSupport2Csv",
-        label: "Poloniex Deposits from Support (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["f_created_at", "currency", "f_amount", "f_address", "f_status"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_deposits_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexTradesBeforeAugust2022Csv",
-        label: "Poloniex Trades (CSV, before August 2022)",
-        csv: Some(CsvSpec {
-            headers: &["tradeid","markettradeid","base","quote","type","rate","amount","buyuser","selluser","buyerfee","sellerwallet","sellerfee","buyerwallet","buyerordernumber","sellerordernumber","date"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_trades_before_august_2022_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexTradesCsv",
-        label: "Poloniex Trades (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Date", "Market", "Type", "Side", "Price", "Amount", "Total", "Fee", "Order Number", "Fee Currency", "Fee Total"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_trades_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexTradesSupportCsv",
-        label: "Poloniex Trades from Support (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["", "timestamp", "trade_id", "market", "wallet", "side", "price", "amount", "fee", "fee_currency", "fee_total"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_trades_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexTradesSupport2Csv",
-        label: "Poloniex Trades from Support (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["order_id", "activity", "order_role", "order_type", "base_currency_name", "quote_currency_name", "fee_currency_name", "price", "amount", "fee_amount", "usd_amount", "usd_fee_amount", "utc_time"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_trades_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexWithdrawalsCsv",
-        label: "Poloniex Withdrawals (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Fee Deducted", "Date", "Currency", "Amount", "Amount-Fee", "Address", "Status"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_withdrawals_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexWithdrawalsSupportCsv",
-        label: "Poloniex Withdrawals from Support (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["", "timestamp", "currency", "amount", "fee_deducted", "status"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_withdrawals_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "PoloniexWithdrawalsSupport2Csv",
-        label: "Poloniex Withdrawals from Support (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["f_date", "currency", "f_amount", "f_feededucted", "f_status"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(poloniex::load_poloniex_withdrawals_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "StellarAccount",
-        label: "Stellar Account",
-        csv: None,
-        detect: None,
-        load_sync: None,
-        load_async: Some(load_stellar_account_async),
-    },
-    TransactionSourceType {
-        id: "BinanceConvertCsv",
-        label: "Binance Convert (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Date", "Coin", "Amount", "Fee", "Converted To"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(binance::load_binance_convert_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BinanceSpotTradeHistoryCsv",
-        label: "Binance Spot Trade History (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Date(UTC)", "Pair", "Side", "Price", "Executed", "Amount", "Fee"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(binance::load_binance_spot_trades_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "BinanceTransactionHistoryCsv",
-        label: "Binance Transaction History (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change", "Remark"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(binance::load_binance_transaction_records_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "ReddcoinCoreCsv",
-        label: "Reddcoin Core (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Confirmed", "Date", "Type", "Label", "Address", "Amount (RDD)", "ID"],
-            delimiters: &[b','],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(bitcoin_core::load_reddcoin_core_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "TrezorCsv",
-        label: "Trezor (CSV)",
-        csv: Some(CsvSpec {
-            headers: &["Timestamp", "Date", "Time", "Type", "Transaction ID", "Fee", "Fee unit", "Address", "Label", "Amount", "Amount unit", "Fiat (EUR)", "Other"],
-            delimiters: &[b',', b';'],
-            skip_lines: 0,
-        }),
-        detect: None,
-        load_sync: Some(trezor::load_trezor_csv),
-        load_async: None,
-    },
-    TransactionSourceType {
-        id: "TrezorJson",
-        label: "Trezor (JSON)",
-        csv: None,
-        detect: None,
-        load_sync: Some(trezor::load_trezor_json),
-        load_async: None,
-    },
+static TRANSACTION_SOURCES: &[&TransactionSourceType] = &[
+    &alby::ALBY_CSV_SOURCE,
+    &alby_hub::ALBY_HUB_CSV_SOURCE,
+    &wallet_of_satoshi::WALLET_OF_SATOSHI_CSV_SOURCE,
+    &wallet_of_satoshi::WALLET_OF_SATOSHI_NON_CUSTODIAL_CSV_SOURCE,
+    &phoenix::PHOENIX_CSV_SOURCE,
+    &blink::BLINK_CSV_SOURCE,
+    &esplora::BITCOIN_ADDRESSES_SOURCE,
+    &esplora::BITCOIN_XPUBS_SOURCE,
+    &bitcoin_core::BITCOIN_CORE_CSV_SOURCE,
+    &bitcoin_de::BITCOIN_DE_CSV_SOURCE,
+    &bitonic::BITONIC_CSV_SOURCE,
+    &bitstamp::BITSTAMP_CSV_SOURCE,
+    &bitstamp::BITSTAMP_CSV_NEW_SOURCE,
+    &bittrex::BITTREX_ORDER_HISTORY_CSV_SOURCE,
+    &bittrex::BITTREX_TRANSACTION_HISTORY_CSV_SOURCE,
+    &ctc::CTC_IMPORT_CSV_SOURCE,
+    &electrum::ELECTRUM_CSV_SOURCE,
+    &etherscan::ETHEREUM_ADDRESS_SOURCE,
+    &base::JSON_SOURCE,
+    &mycelium::MYCELIUM_CSV_SOURCE,
+    &bitcoin_core::PEERCOIN_CSV_SOURCE,
+    &ftx::FTX_DEPOSITS_CSV_SOURCE,
+    &ftx::FTX_WITHDRAWALS_CSV_SOURCE,
+    &ftx::FTX_TRADES_CSV_SOURCE,
+    &liquid::LIQUID_DEPOSITS_CSV_SOURCE,
+    &liquid::LIQUID_TRADES_CSV_SOURCE,
+    &liquid::LIQUID_WITHDRAWALS_CSV_SOURCE,
+    &poloniex::POLONIEX_DEPOSITS_CSV_SOURCE,
+    &poloniex::POLONIEX_DEPOSITS_SUPPORT_CSV_SOURCE,
+    &poloniex::POLONIEX_DEPOSITS_SUPPORT2_CSV_SOURCE,
+    &poloniex::POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE,
+    &poloniex::POLONIEX_TRADES_CSV_SOURCE,
+    &poloniex::POLONIEX_TRADES_SUPPORT_CSV_SOURCE,
+    &poloniex::POLONIEX_TRADES_SUPPORT2_CSV_SOURCE,
+    &poloniex::POLONIEX_WITHDRAWALS_CSV_SOURCE,
+    &poloniex::POLONIEX_WITHDRAWALS_SUPPORT_CSV_SOURCE,
+    &poloniex::POLONIEX_WITHDRAWALS_SUPPORT2_CSV_SOURCE,
+    &horizon::STELLAR_ACCOUNT_SOURCE,
+    &binance::BINANCE_CONVERT_CSV_SOURCE,
+    &binance::BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE,
+    &binance::BINANCE_TRANSACTION_HISTORY_CSV_SOURCE,
+    &bitcoin_core::REDDCOIN_CORE_CSV_SOURCE,
+    &trezor::TREZOR_CSV_SOURCE,
+    &trezor::TREZOR_JSON_SOURCE,
 ];
 
-fn transaction_sources() -> &'static [TransactionSourceType] {
+fn transaction_sources() -> &'static [&'static TransactionSourceType] {
     TRANSACTION_SOURCES
 }
 
 fn transaction_source_by_id(id: &str) -> Option<&'static TransactionSourceType> {
-    TRANSACTION_SOURCES.iter().find(|source| source.id == id)
+    TRANSACTION_SOURCES
+        .iter()
+        .copied()
+        .find(|source| source.id == id)
 }
 
 fn detect_source_from_file(path: &Path) -> Option<&'static TransactionSourceType> {
     TRANSACTION_SOURCES
         .iter()
+        .copied()
         .find(|source| source.detect_from_file(path).ok().unwrap_or(false))
-}
-
-fn split_whitespace_owned(value: &str) -> Vec<String> {
-    value.split_ascii_whitespace().map(|item| item.to_owned()).collect()
-}
-
-fn load_bitcoin_addresses_async(source_path: String) -> LoadFuture {
-    Box::pin(async move {
-        let esplora_client = esplora::async_esplora_client().unwrap();
-        esplora::address_transactions(&esplora_client, &split_whitespace_owned(&source_path)).await
-    })
-}
-
-fn load_bitcoin_xpubs_async(source_path: String) -> LoadFuture {
-    Box::pin(async move {
-        let esplora_client = esplora::async_esplora_client().unwrap();
-        esplora::xpub_addresses_transactions(&esplora_client, &split_whitespace_owned(&source_path)).await
-    })
-}
-
-fn load_ethereum_address_async(source_path: String) -> LoadFuture {
-    Box::pin(async move { etherscan::address_transactions(&source_path).await })
-}
-
-fn load_stellar_account_async(source_path: String) -> LoadFuture {
-    Box::pin(async move { horizon::address_transactions(&source_path).await })
 }
 
 #[derive(Serialize, Deserialize)]
