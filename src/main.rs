@@ -976,40 +976,54 @@ fn match_send_receive(transactions: &mut Vec<Transaction>) {
                     Duration::days(1)
                 };
 
-                let matching_index = unmatched_sends_receives.iter().enumerate().rev().take_while(|(_, tx_index)| -> bool {
+                let mut best_match: Option<(usize, Decimal)> = None;
+
+                for (i, tx_index) in unmatched_sends_receives.iter().enumerate().rev().take_while(|(_, tx_index)| -> bool {
                     // the unmatched send may not be too old
                     let tx: &Transaction = &transactions[**tx_index];
                     tx.timestamp >= oldest_match_time
-                }).find(|(_, tx_index)| {
-                    let candidate_tx: &Transaction = &transactions[**tx_index];
+                }) {
+                    let candidate_tx: &Transaction = &transactions[*tx_index];
 
                     match (&candidate_tx.operation, &tx.operation) {
                         (Operation::Send(send_amount), Operation::Receive(receive_amount)) |
                         (Operation::Receive(receive_amount), Operation::Send(send_amount)) => {
                             // the send and receive transactions must have the same currency
                             if receive_amount.currency != send_amount.currency {
-                                return false;
+                                continue;
                             }
 
                             // if both transactions have a tx_hash set, it must be equal
                             if let (Some(candidate_tx_hash), Some(tx_hash)) = (&candidate_tx.tx_hash, &tx.tx_hash) {
                                 if candidate_tx_hash != tx_hash {
-                                    return false;
+                                    continue;
                                 }
                             }
 
                             // check whether the price roughly matches (sent amount can't be lower than received amount, but can be 5% higher)
                             if receive_amount.quantity > send_amount.quantity || receive_amount.quantity < send_amount.quantity * dec!(0.95) {
-                                return false;
+                                continue;
                             }
 
-                            true
-                        }
-                        _ => false,
-                    }
-                }).map(|(i, _)| i);
+                            let difference = (send_amount.quantity - receive_amount.quantity).abs();
+                            match best_match {
+                                None => best_match = Some((i, difference)),
+                                Some((_, best_difference)) => {
+                                    if difference < best_difference {
+                                        best_match = Some((i, difference));
+                                    }
+                                }
+                            }
 
-                if let Some(matching_index) = matching_index {
+                            if difference.is_zero() {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                if let Some((matching_index, _)) = best_match {
                     // this send is now matched, so remove it from the list of unmatched sends
                     let matching_tx_index = unmatched_sends_receives.remove(matching_index);
                     matching_pairs.push(if tx.operation.is_send() {

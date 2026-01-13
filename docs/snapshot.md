@@ -36,6 +36,7 @@ post_url 2024-01-04-raccoin-0-2 %}).
 * Show new wallets expanded by default
 * Fixed issue where wallets collapsed when making changes ([#62](https://github.com/bjorn/raccoin/issues/62))
 * Fixed "Ignore currency" and transaction filtering for NFTs
+* Fixed detection of matching transfers when interleaved with transactions of similar amounts ([#83](https://github.com/bjorn/raccoin/pull/83))
 * Made the merging of consecutive trades optional
 * Added BTC price history (EUR) for 2024 (by Òscar Casajuana)
 * Bittrex CSV: Add 0.001 fee to BTC withdrawals (as with BCH)
