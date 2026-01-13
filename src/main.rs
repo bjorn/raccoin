@@ -44,7 +44,7 @@ use std::{
     collections::HashMap,
     default::Default,
     env,
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fs::File,
     hash::Hash,
     io::BufReader,
@@ -1704,8 +1704,16 @@ fn ui_set_portfolio(app: &App) {
 async fn main() -> Result<()> {
     let mut app = App::new();
 
+    let cli_arg = env::args_os().nth(1);
+    if let Some(arg) = cli_arg.as_ref() {
+        if arg == OsStr::new("-v") || arg == OsStr::new("--version") {
+            println!("raccoin {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+    }
+
     // Load portfolio from command-line or from previous application state
-    if let Some(portfolio_file) = env::args_os().nth(1).map(OsString::into).or_else(|| app.state.portfolio_file.to_owned()) {
+    if let Some(portfolio_file) = cli_arg.map(OsString::into).or_else(|| app.state.portfolio_file.to_owned()) {
         if let Err(e) = app.load_portfolio(&portfolio_file) {
             println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
             return Ok(());
