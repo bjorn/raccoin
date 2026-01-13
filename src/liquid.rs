@@ -160,7 +160,7 @@ impl<'a> From<LiquidSpotTrade<'a>> for Transaction {
     }
 }
 
-pub(crate) fn load_liquid_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_liquid_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -172,7 +172,7 @@ pub(crate) fn load_liquid_deposits_csv(input_path: &Path) -> Result<Vec<Transact
     Ok(transactions)
 }
 
-pub(crate) fn load_liquid_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_liquid_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -185,7 +185,7 @@ pub(crate) fn load_liquid_withdrawals_csv(input_path: &Path) -> Result<Vec<Trans
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static LIQUID_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static LIQUID_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidDepositsCsv",
     label: "Liquid Deposits (CSV)",
     csv: Some(CsvSpec {
@@ -199,7 +199,7 @@ pub(crate) static LIQUID_DEPOSITS_CSV_SOURCE: TransactionSourceType = Transactio
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidTradesCsv",
     label: "Liquid Trades (CSV)",
     csv: Some(CsvSpec {
@@ -226,7 +226,7 @@ pub(crate) static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionS
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static LIQUID_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static LIQUID_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidWithdrawalsCsv",
     label: "Liquid Withdrawals (CSV)",
     csv: Some(CsvSpec {
@@ -251,7 +251,7 @@ pub(crate) static LIQUID_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = Transac
     load_async: None,
 };
 
-pub(crate) fn load_liquid_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_liquid_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)

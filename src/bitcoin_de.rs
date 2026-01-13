@@ -146,7 +146,7 @@ pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
 }
 
 // loads a bitcoin.de CSV file into a list of unified transactions
-pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -194,7 +194,7 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>>
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BITCOIN_DE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITCOIN_DE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinDeCsv",
     label: "bitcoin.de (CSV)",
     csv: None,

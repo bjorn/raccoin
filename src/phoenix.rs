@@ -124,7 +124,7 @@ impl From<PhoenixRecord> for Transaction {
     }
 }
 
-pub(crate) fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut reader = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -138,7 +138,7 @@ pub(crate) fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static PHOENIX_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static PHOENIX_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PhoenixCsv",
     label: "Phoenix (CSV)",
     csv: Some(CsvSpec {

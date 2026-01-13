@@ -399,7 +399,7 @@ pub(crate) fn save_transactions_to_ctc_csv(transactions: &Vec<Transaction>, outp
 }
 
 // loads a CSV file that was prepared in CryptoTaxCalculator import format
-pub(crate) fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -416,7 +416,7 @@ pub(crate) fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static CTC_IMPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static CTC_IMPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "CtcImportCsv",
     label: "CryptoTaxCalculator import (CSV)",
     csv: Some(CsvSpec {

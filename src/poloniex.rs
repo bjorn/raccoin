@@ -282,7 +282,7 @@ impl TryFrom<PoloniexTrade> for Transaction {
 }
 
 // loads a Poloniex Deposits CSV file into a list of unified transactions
-pub(crate) fn load_poloniex_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_poloniex_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -295,7 +295,7 @@ pub(crate) fn load_poloniex_deposits_csv(input_path: &Path) -> Result<Vec<Transa
 }
 
 // loads a Poloniex Withdrawals CSV file into a list of unified transactions
-pub(crate) fn load_poloniex_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_poloniex_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -308,7 +308,7 @@ pub(crate) fn load_poloniex_withdrawals_csv(input_path: &Path) -> Result<Vec<Tra
 }
 
 // loads a Poloniex Trades CSV file into a list of unified transactions
-pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -326,7 +326,7 @@ pub(crate) fn load_poloniex_trades_csv(input_path: &Path) -> Result<Vec<Transact
     Ok(transactions)
 }
 
-pub(crate) fn load_poloniex_trades_before_august_2022_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_poloniex_trades_before_august_2022_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -394,7 +394,7 @@ pub(crate) fn load_poloniex_trades_before_august_2022_csv(input_path: &Path) -> 
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexDepositsCsv",
     label: "Poloniex Deposits (CSV)",
     csv: Some(CsvSpec {
@@ -408,7 +408,7 @@ pub(crate) static POLONIEX_DEPOSITS_CSV_SOURCE: TransactionSourceType = Transact
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_DEPOSITS_SUPPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_DEPOSITS_SUPPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexDepositsSupportCsv",
     label: "Poloniex Deposits from Support (CSV)",
     csv: Some(CsvSpec {
@@ -422,7 +422,7 @@ pub(crate) static POLONIEX_DEPOSITS_SUPPORT_CSV_SOURCE: TransactionSourceType = 
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_DEPOSITS_SUPPORT2_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_DEPOSITS_SUPPORT2_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexDepositsSupport2Csv",
     label: "Poloniex Deposits from Support (CSV)",
     csv: Some(CsvSpec {
@@ -436,7 +436,7 @@ pub(crate) static POLONIEX_DEPOSITS_SUPPORT2_CSV_SOURCE: TransactionSourceType =
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE: TransactionSourceType =
+static POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "PoloniexTradesBeforeAugust2022Csv",
         label: "Poloniex Trades (CSV, before August 2022)",
@@ -468,7 +468,7 @@ pub(crate) static POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE: TransactionSour
     };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexTradesCsv",
     label: "Poloniex Trades (CSV)",
     csv: Some(CsvSpec {
@@ -494,7 +494,7 @@ pub(crate) static POLONIEX_TRADES_CSV_SOURCE: TransactionSourceType = Transactio
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_TRADES_SUPPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_TRADES_SUPPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexTradesSupportCsv",
     label: "Poloniex Trades from Support (CSV)",
     csv: Some(CsvSpec {
@@ -508,7 +508,7 @@ pub(crate) static POLONIEX_TRADES_SUPPORT_CSV_SOURCE: TransactionSourceType = Tr
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_TRADES_SUPPORT2_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_TRADES_SUPPORT2_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexTradesSupport2Csv",
     label: "Poloniex Trades from Support (CSV)",
     csv: Some(CsvSpec {
@@ -522,7 +522,7 @@ pub(crate) static POLONIEX_TRADES_SUPPORT2_CSV_SOURCE: TransactionSourceType = T
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PoloniexWithdrawalsCsv",
     label: "Poloniex Withdrawals (CSV)",
     csv: Some(CsvSpec {
@@ -536,7 +536,7 @@ pub(crate) static POLONIEX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = Trans
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_WITHDRAWALS_SUPPORT_CSV_SOURCE: TransactionSourceType =
+static POLONIEX_WITHDRAWALS_SUPPORT_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "PoloniexWithdrawalsSupportCsv",
         label: "Poloniex Withdrawals from Support (CSV)",
@@ -551,7 +551,7 @@ pub(crate) static POLONIEX_WITHDRAWALS_SUPPORT_CSV_SOURCE: TransactionSourceType
     };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static POLONIEX_WITHDRAWALS_SUPPORT2_CSV_SOURCE: TransactionSourceType =
+static POLONIEX_WITHDRAWALS_SUPPORT2_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "PoloniexWithdrawalsSupport2Csv",
         label: "Poloniex Withdrawals from Support (CSV)",

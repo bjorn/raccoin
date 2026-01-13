@@ -120,7 +120,7 @@ impl From<BittrexTransaction> for Transaction {
 }
 
 // loads a Bittrex Order History CSV file into a list of unified transactions
-pub(crate) fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -134,7 +134,7 @@ pub(crate) fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Tr
 }
 
 // loads a Bittrex Transaction History CSV file into a list of unified transactions
-pub(crate) fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -148,7 +148,7 @@ pub(crate) fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BittrexOrderHistoryCsv",
     label: "Bittrex Order History (CSV)",
     csv: Some(CsvSpec {
@@ -162,7 +162,7 @@ pub(crate) static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = Tran
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BITTREX_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
+static BITTREX_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "BittrexTransactionHistoryCsv",
         label: "Bittrex Transaction History (CSV)",

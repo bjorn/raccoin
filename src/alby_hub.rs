@@ -105,7 +105,7 @@ impl AlbyHubRecord {
     }
 }
 
-pub(crate) fn load_alby_hub_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_alby_hub_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -120,7 +120,7 @@ pub(crate) fn load_alby_hub_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static ALBY_HUB_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static ALBY_HUB_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "AlbyHubCsv",
     label: "Alby Hub (CSV)",
     csv: Some(CsvSpec {

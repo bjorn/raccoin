@@ -79,22 +79,22 @@ fn load_transactions(input_path: &Path, currency: &str) -> Result<Vec<Transactio
 }
 
 // loads a Bitcoin Core CSV file into a list of unified transactions
-pub(crate) fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "BTC")
 }
 
 // loads a Peercoin CSV file into a list of unified transactions
-pub(crate) fn load_peercoin_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_peercoin_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "PPC")
 }
 
 // loads a Reddcoin Core CSV file into a list of unified transactions
-pub(crate) fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "RDD")
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinCoreCsv",
     label: "Bitcoin Core (CSV)",
     csv: Some(CsvSpec {
@@ -108,7 +108,7 @@ pub(crate) static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSo
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PeercoinCsv",
     label: "Peercoin Qt (CSV)",
     csv: Some(CsvSpec {
@@ -122,7 +122,7 @@ pub(crate) static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSource
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static REDDCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static REDDCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "ReddcoinCoreCsv",
     label: "Reddcoin Core (CSV)",
     csv: Some(CsvSpec {

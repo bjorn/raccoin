@@ -110,7 +110,7 @@ impl<'a> TryFrom<TrezorTransactionCsv<'a>> for Transaction {
 }
 
 // loads a TREZOR Suite CSV file into a list of unified transactions
-pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
@@ -339,7 +339,7 @@ pub(crate) fn load_trezor_json(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "TrezorCsv",
     label: "Trezor (CSV)",
     csv: Some(CsvSpec {
@@ -367,7 +367,7 @@ pub(crate) static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceTy
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static TREZOR_JSON_SOURCE: TransactionSourceType = TransactionSourceType {
+static TREZOR_JSON_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "TrezorJson",
     label: "Trezor (JSON)",
     csv: None,

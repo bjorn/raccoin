@@ -113,7 +113,7 @@ impl TryFrom<WalletOfSatoshiRecord> for Transaction {
     }
 }
 
-pub(crate) fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut reader = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -130,7 +130,7 @@ pub(crate) fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transa
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static WALLET_OF_SATOSHI_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static WALLET_OF_SATOSHI_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "WalletOfSatoshiCsv",
     label: "Wallet of Satoshi (CSV)",
     csv: Some(CsvSpec {
@@ -153,7 +153,7 @@ pub(crate) static WALLET_OF_SATOSHI_CSV_SOURCE: TransactionSourceType = Transact
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static WALLET_OF_SATOSHI_NON_CUSTODIAL_CSV_SOURCE: TransactionSourceType =
+static WALLET_OF_SATOSHI_NON_CUSTODIAL_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "WalletOfSatoshiNonCustodialCsv",
         label: "Wallet of Satoshi Self-Custody (CSV)",

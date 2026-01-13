@@ -514,7 +514,7 @@ pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Trans
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static JSON_SOURCE: TransactionSourceType = TransactionSourceType {
+static JSON_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "Json",
     label: "JSON",
     csv: None,

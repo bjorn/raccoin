@@ -278,7 +278,7 @@ impl BitstampTransactionsConverter {
     }
 }
 
-pub(crate) fn load_bitstamp_old_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bitstamp_old_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut converter = BitstampTransactionsConverter::new();
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
 
@@ -290,7 +290,7 @@ pub(crate) fn load_bitstamp_old_csv(input_path: &Path) -> Result<Vec<Transaction
     Ok(converter.finish())
 }
 
-pub(crate) fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut converter = BitstampTransactionsConverter::new();
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
 
@@ -303,7 +303,7 @@ pub(crate) fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitstampCsv",
     label: "Bitstamp Old (CSV)",
     csv: Some(CsvSpec {
@@ -317,7 +317,7 @@ pub(crate) static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSource
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BITSTAMP_CSV_NEW_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITSTAMP_CSV_NEW_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitstampCsvNew",
     label: "Bitstamp RFC 4180 (CSV)",
     csv: Some(CsvSpec {

@@ -260,7 +260,7 @@ impl From<BinanceConvert> for Transaction {
     }
 }
 
-pub(crate) fn load_binance_transaction_records_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_binance_transaction_records_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -307,7 +307,7 @@ pub(crate) fn load_binance_transaction_records_csv(input_path: &Path) -> Result<
     Ok(transactions)
 }
 
-pub(crate) fn load_binance_spot_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_binance_spot_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -322,7 +322,7 @@ pub(crate) fn load_binance_spot_trades_csv(input_path: &Path) -> Result<Vec<Tran
 }
 
 // todo: document custom format
-pub(crate) fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -337,7 +337,7 @@ pub(crate) fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transact
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BinanceConvertCsv",
     label: "Binance Convert (CSV)",
     csv: Some(CsvSpec {
@@ -351,7 +351,7 @@ pub(crate) static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = Transactio
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType =
+static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "BinanceSpotTradeHistoryCsv",
         label: "Binance Spot Trade History (CSV)",
@@ -366,7 +366,7 @@ pub(crate) static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType =
     };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
+static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "BinanceTransactionHistoryCsv",
         label: "Binance Transaction History (CSV)",

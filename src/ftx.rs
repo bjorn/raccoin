@@ -136,7 +136,7 @@ impl TryFrom<FtxTrade> for Transaction {
     }
 }
 
-pub(crate) fn load_ftx_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_ftx_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -148,7 +148,7 @@ pub(crate) fn load_ftx_deposits_csv(input_path: &Path) -> Result<Vec<Transaction
     Ok(transactions)
 }
 
-pub(crate) fn load_ftx_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_ftx_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -160,7 +160,7 @@ pub(crate) fn load_ftx_withdrawals_csv(input_path: &Path) -> Result<Vec<Transact
     Ok(transactions)
 }
 
-pub(crate) fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -173,7 +173,7 @@ pub(crate) fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>>
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxDepositsCsv",
     label: "FTX Deposits (CSV)",
     csv: Some(CsvSpec {
@@ -187,7 +187,7 @@ pub(crate) static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSo
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxWithdrawalsCsv",
     label: "FTX Withdrawal (CSV)",
     csv: Some(CsvSpec {
@@ -201,7 +201,7 @@ pub(crate) static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = Transactio
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static FTX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static FTX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxTradesCsv",
     label: "FTX Trades (CSV)",
     csv: Some(CsvSpec {

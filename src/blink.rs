@@ -44,7 +44,7 @@ pub(crate) const BLINK_HEADERS: &[&str] = &[
 ];
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-pub(crate) static BLINK_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BLINK_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BlinkCsv",
     label: "Blink (CSV)",
     csv: Some(CsvSpec {
@@ -296,7 +296,7 @@ enum Direction {
     Outgoing,
 }
 
-pub(crate) fn load_blink_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_blink_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut reader = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut records = Vec::new();
 
