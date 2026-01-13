@@ -13,6 +13,7 @@ use stellar_horizon::request::PageRequest;
 use stellar_horizon::resources::{Effect, Asset, operation};
 
 use crate::{base::{Transaction, Amount, Operation}, LoadFuture, TransactionSourceType};
+use linkme::distributed_slice;
 
 const STELLAR_SCALE: u32 = 7;
 const PAGE_LIMIT: u64 = 20;
@@ -279,6 +280,7 @@ pub(crate) fn load_stellar_account_async(source_path: String) -> LoadFuture {
     Box::pin(async move { address_transactions(&source_path).await })
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static STELLAR_ACCOUNT_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "StellarAccount",
     label: "Stellar Account",

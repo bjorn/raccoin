@@ -10,6 +10,7 @@ use crate::{
     base::{Amount, Transaction, Operation},
     CsvSpec, TransactionSourceType,
 };
+use linkme::distributed_slice;
 
 #[derive(Debug, Clone, Deserialize)]
 enum TransferType {
@@ -92,6 +93,7 @@ pub(crate) fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transactio
     load_transactions(input_path, "RDD")
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinCoreCsv",
     label: "Bitcoin Core (CSV)",
@@ -105,6 +107,7 @@ pub(crate) static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSo
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PeercoinCsv",
     label: "Peercoin Qt (CSV)",
@@ -118,6 +121,7 @@ pub(crate) static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSource
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static REDDCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "ReddcoinCoreCsv",
     label: "Reddcoin Core (CSV)",

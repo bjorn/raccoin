@@ -14,6 +14,7 @@ use crate::{
     base::{Amount, Transaction},
     CsvSpec, TransactionSourceType,
 };
+use linkme::distributed_slice;
 
 const BTC_CURRENCY: &str = "BTC";
 
@@ -177,6 +178,7 @@ pub(crate) fn load_alby_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static ALBY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "AlbyCsv",
     label: "Alby (CSV)",

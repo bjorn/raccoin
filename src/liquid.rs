@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
 use crate::{base::{Transaction, Amount, deserialize_amount}, CsvSpec, TransactionSourceType};
+use linkme::distributed_slice;
 
 // function for reading NaiveDateTime in the format "07/04/2019 07:48:17"
 pub(crate) fn deserialize_date_time_mdy<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -183,6 +184,7 @@ pub(crate) fn load_liquid_withdrawals_csv(input_path: &Path) -> Result<Vec<Trans
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static LIQUID_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidDepositsCsv",
     label: "Liquid Deposits (CSV)",
@@ -196,6 +198,7 @@ pub(crate) static LIQUID_DEPOSITS_CSV_SOURCE: TransactionSourceType = Transactio
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidTradesCsv",
     label: "Liquid Trades (CSV)",
@@ -222,6 +225,7 @@ pub(crate) static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionS
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static LIQUID_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidWithdrawalsCsv",
     label: "Liquid Withdrawals (CSV)",

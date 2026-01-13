@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
 use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
+use linkme::distributed_slice;
 
 // deserialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -146,6 +147,7 @@ pub(crate) fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BittrexOrderHistoryCsv",
     label: "Bittrex Order History (CSV)",
@@ -159,6 +161,7 @@ pub(crate) static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = Tran
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BITTREX_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "BittrexTransactionHistoryCsv",

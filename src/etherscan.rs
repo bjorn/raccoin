@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
 use crate::{base::{Amount, Operation, Transaction}, LoadFuture, TransactionSourceType};
+use linkme::distributed_slice;
 
 fn u256_to_decimal(value: U256) -> Result<Decimal> {
     Decimal::from_u128(value.uint_try_to()?).context("value cannot be represented")
@@ -299,6 +300,7 @@ pub(crate) fn load_ethereum_address_async(source_path: String) -> LoadFuture {
     Box::pin(async move { address_transactions(&source_path).await })
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static ETHEREUM_ADDRESS_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "EthereumAddress",
     label: "Ethereum Address",

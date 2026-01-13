@@ -9,6 +9,7 @@ use crate::{
     base::{deserialize_amount, Amount, Operation, Transaction},
     CsvSpec, TransactionSourceType,
 };
+use linkme::distributed_slice;
 
 #[derive(Debug, Deserialize)]
 enum BitstampTransactionType {
@@ -301,6 +302,7 @@ pub(crate) fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     Ok(converter.finish())
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitstampCsv",
     label: "Bitstamp Old (CSV)",
@@ -314,6 +316,7 @@ pub(crate) static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSource
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BITSTAMP_CSV_NEW_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitstampCsvNew",
     label: "Bitstamp RFC 4180 (CSV)",

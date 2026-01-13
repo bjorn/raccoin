@@ -9,6 +9,7 @@ use crate::{
     base::{Amount, Transaction},
     CsvSpec, TransactionSourceType,
 };
+use linkme::distributed_slice;
 
 #[derive(Debug, Deserialize, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -118,6 +119,7 @@ pub(crate) fn load_alby_hub_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static ALBY_HUB_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "AlbyHubCsv",
     label: "Alby Hub (CSV)",

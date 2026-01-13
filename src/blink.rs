@@ -9,6 +9,7 @@ use crate::{
     base::{Amount, Operation, Transaction},
     CsvSpec, TransactionSourceType,
 };
+use linkme::distributed_slice;
 
 const BTC_CURRENCY: &str = "BTC";
 const USD_CURRENCY: &str = "USD";
@@ -42,6 +43,7 @@ pub(crate) const BLINK_HEADERS: &[&str] = &[
     "displayCurrency",
 ];
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BLINK_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BlinkCsv",
     label: "Blink (CSV)",

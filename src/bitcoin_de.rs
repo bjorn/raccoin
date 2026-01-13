@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::{time::deserialize_date_time, base::{Transaction, Amount, Operation}, TransactionSourceType};
+use linkme::distributed_slice;
 
 #[derive(Debug, Deserialize)]
 enum BitcoinDeActionType {
@@ -192,6 +193,7 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>>
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BITCOIN_DE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinDeCsv",
     label: "bitcoin.de (CSV)",

@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
 use crate::{base::{Amount, Operation, Transaction}, CsvSpec, TransactionSourceType};
+use linkme::distributed_slice;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -337,6 +338,7 @@ pub(crate) fn load_trezor_json(input_path: &Path) -> Result<Vec<Transaction>> {
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "TrezorCsv",
     label: "Trezor (CSV)",
@@ -364,6 +366,7 @@ pub(crate) static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceTy
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static TREZOR_JSON_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "TrezorJson",
     label: "Trezor (JSON)",

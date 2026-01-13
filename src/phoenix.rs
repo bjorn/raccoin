@@ -11,6 +11,7 @@ use crate::{
     base::{Amount, Transaction},
     CsvSpec, TransactionSourceType,
 };
+use linkme::distributed_slice;
 
 const BTC_CURRENCY: &str = "BTC";
 
@@ -136,6 +137,7 @@ pub(crate) fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static PHOENIX_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PhoenixCsv",
     label: "Phoenix (CSV)",

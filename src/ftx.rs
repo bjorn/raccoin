@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
 use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
+use linkme::distributed_slice;
 
 // function for reading NaiveDateTime in the format "2/25/2021, 2:24:46 PM"
 pub(crate) fn deserialize_date_time_mdy<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -171,6 +172,7 @@ pub(crate) fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>>
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxDepositsCsv",
     label: "FTX Deposits (CSV)",
@@ -184,6 +186,7 @@ pub(crate) static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSo
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxWithdrawalsCsv",
     label: "FTX Withdrawal (CSV)",
@@ -197,6 +200,7 @@ pub(crate) static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = Transactio
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static FTX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxTradesCsv",
     label: "FTX Trades (CSV)",

@@ -39,6 +39,7 @@ use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
+use linkme::distributed_slice;
 use std::{
     cell::RefCell,
     cmp::{Eq, Ordering},
@@ -122,68 +123,18 @@ pub(crate) fn csv_matches(path: &Path, csv: &CsvSpec) -> Result<bool> {
     Ok(false)
 }
 
-static TRANSACTION_SOURCES: &[&TransactionSourceType] = &[
-    &alby::ALBY_CSV_SOURCE,
-    &alby_hub::ALBY_HUB_CSV_SOURCE,
-    &wallet_of_satoshi::WALLET_OF_SATOSHI_CSV_SOURCE,
-    &wallet_of_satoshi::WALLET_OF_SATOSHI_NON_CUSTODIAL_CSV_SOURCE,
-    &phoenix::PHOENIX_CSV_SOURCE,
-    &blink::BLINK_CSV_SOURCE,
-    &esplora::BITCOIN_ADDRESSES_SOURCE,
-    &esplora::BITCOIN_XPUBS_SOURCE,
-    &bitcoin_core::BITCOIN_CORE_CSV_SOURCE,
-    &bitcoin_de::BITCOIN_DE_CSV_SOURCE,
-    &bitonic::BITONIC_CSV_SOURCE,
-    &bitstamp::BITSTAMP_CSV_SOURCE,
-    &bitstamp::BITSTAMP_CSV_NEW_SOURCE,
-    &bittrex::BITTREX_ORDER_HISTORY_CSV_SOURCE,
-    &bittrex::BITTREX_TRANSACTION_HISTORY_CSV_SOURCE,
-    &ctc::CTC_IMPORT_CSV_SOURCE,
-    &electrum::ELECTRUM_CSV_SOURCE,
-    &etherscan::ETHEREUM_ADDRESS_SOURCE,
-    &base::JSON_SOURCE,
-    &mycelium::MYCELIUM_CSV_SOURCE,
-    &bitcoin_core::PEERCOIN_CSV_SOURCE,
-    &ftx::FTX_DEPOSITS_CSV_SOURCE,
-    &ftx::FTX_WITHDRAWALS_CSV_SOURCE,
-    &ftx::FTX_TRADES_CSV_SOURCE,
-    &liquid::LIQUID_DEPOSITS_CSV_SOURCE,
-    &liquid::LIQUID_TRADES_CSV_SOURCE,
-    &liquid::LIQUID_WITHDRAWALS_CSV_SOURCE,
-    &poloniex::POLONIEX_DEPOSITS_CSV_SOURCE,
-    &poloniex::POLONIEX_DEPOSITS_SUPPORT_CSV_SOURCE,
-    &poloniex::POLONIEX_DEPOSITS_SUPPORT2_CSV_SOURCE,
-    &poloniex::POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE,
-    &poloniex::POLONIEX_TRADES_CSV_SOURCE,
-    &poloniex::POLONIEX_TRADES_SUPPORT_CSV_SOURCE,
-    &poloniex::POLONIEX_TRADES_SUPPORT2_CSV_SOURCE,
-    &poloniex::POLONIEX_WITHDRAWALS_CSV_SOURCE,
-    &poloniex::POLONIEX_WITHDRAWALS_SUPPORT_CSV_SOURCE,
-    &poloniex::POLONIEX_WITHDRAWALS_SUPPORT2_CSV_SOURCE,
-    &horizon::STELLAR_ACCOUNT_SOURCE,
-    &binance::BINANCE_CONVERT_CSV_SOURCE,
-    &binance::BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE,
-    &binance::BINANCE_TRANSACTION_HISTORY_CSV_SOURCE,
-    &bitcoin_core::REDDCOIN_CORE_CSV_SOURCE,
-    &trezor::TREZOR_CSV_SOURCE,
-    &trezor::TREZOR_JSON_SOURCE,
-];
-
-fn transaction_sources() -> &'static [&'static TransactionSourceType] {
-    TRANSACTION_SOURCES
-}
+#[distributed_slice]
+pub(crate) static TRANSACTION_SOURCES: [TransactionSourceType];
 
 fn transaction_source_by_id(id: &str) -> Option<&'static TransactionSourceType> {
     TRANSACTION_SOURCES
         .iter()
-        .copied()
         .find(|source| source.id == id)
 }
 
 fn detect_source_from_file(path: &Path) -> Option<&'static TransactionSourceType> {
     TRANSACTION_SOURCES
         .iter()
-        .copied()
         .find(|source| source.detect_from_file(path).ok().unwrap_or(false))
 }
 
@@ -1172,10 +1123,11 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
 
     let facade = ui.global::<Facade>();
 
-    let source_types: Vec<SharedString> = transaction_sources()
+    let mut source_types: Vec<SharedString> = TRANSACTION_SOURCES
         .iter()
         .map(|source| SharedString::from(source.label))
         .collect();
+    source_types.sort();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
     facade.set_wallets(app.ui_wallets.clone().into());

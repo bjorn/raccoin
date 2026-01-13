@@ -6,6 +6,7 @@ use esplora_client::{Builder, Tx};
 use esplora_client::r#async::AsyncClient;
 
 use crate::{base::{Transaction, Amount}, LoadFuture, TransactionSourceType};
+use linkme::distributed_slice;
 
 pub(crate) fn async_esplora_client() -> Result<AsyncClient, esplora_client::Error> {
     let builder = Builder::new("https://blockstream.info/api");
@@ -253,6 +254,7 @@ pub(crate) fn load_bitcoin_xpubs_async(source_path: String) -> LoadFuture {
     })
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BITCOIN_ADDRESSES_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinAddresses",
     label: "Bitcoin Address(es)",
@@ -262,6 +264,7 @@ pub(crate) static BITCOIN_ADDRESSES_SOURCE: TransactionSourceType = TransactionS
     load_async: Some(load_bitcoin_addresses_async),
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BITCOIN_XPUBS_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinXpubs",
     label: "Bitcoin HD Wallet(s)",

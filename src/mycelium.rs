@@ -8,6 +8,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
 use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
+use linkme::distributed_slice;
 
 // serialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -75,6 +76,7 @@ pub(crate) fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static MYCELIUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "MyceliumCsv",
     label: "Mycelium (CSV)",

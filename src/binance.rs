@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::{time::deserialize_date_time, base::{Amount, Transaction, self, deserialize_amount}, CsvSpec, TransactionSourceType};
+use linkme::distributed_slice;
 
 // #[derive(Debug, Deserialize)]
 // enum Account {
@@ -335,6 +336,7 @@ pub(crate) fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transact
     Ok(transactions)
 }
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BinanceConvertCsv",
     label: "Binance Convert (CSV)",
@@ -348,6 +350,7 @@ pub(crate) static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = Transactio
     load_async: None,
 };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "BinanceSpotTradeHistoryCsv",
@@ -362,6 +365,7 @@ pub(crate) static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType =
         load_async: None,
     };
 
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
 pub(crate) static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType =
     TransactionSourceType {
         id: "BinanceTransactionHistoryCsv",
