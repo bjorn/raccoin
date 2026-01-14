@@ -17,6 +17,7 @@ Raccoin can import CSV files exported from the following sources:
 * [Bitcoin.de](https://www.bitcoin.de/de) (exchange)
 * [Bitstamp](https://www.bitstamp.net/) (exchange)
 * [Bittrex](https://bittrex.com/) (exchange) (order and transaction history for disabled accounts)
+* [Blink](https://www.blink.sv/) (mobile wallet)
 * [CryptoTaxCalculator](https://cryptotaxcalculator.io/) custom [CSV import
   format](https://help.cryptotaxcalculator.io/en/articles/5777675-advanced-manual-custom-csv-import)
 * [Electrum](https://www.electrum.org/) (desktop wallet)
