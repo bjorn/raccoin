@@ -5,7 +5,7 @@ use chrono::{NaiveDateTime, Duration};
 use serde::{Serialize, Deserialize, Deserializer};
 use rust_decimal::prelude::*;
 
-use crate::TransactionSourceType;
+use crate::TransactionSource;
 use linkme::distributed_slice;
 
 /// Maps currencies to their CMC ID
@@ -514,7 +514,7 @@ pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Trans
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static JSON: TransactionSourceType = TransactionSourceType {
+static JSON: TransactionSource = TransactionSource {
     id: "Json",
     label: "JSON",
     csv: &[],

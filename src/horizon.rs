@@ -12,7 +12,7 @@ use stellar_horizon::client::{HorizonClient, HorizonHttpClient};
 use stellar_horizon::request::PageRequest;
 use stellar_horizon::resources::{Effect, Asset, operation};
 
-use crate::{base::{Transaction, Amount, Operation}, LoadFuture, TransactionSourceType};
+use crate::{base::{Transaction, Amount, Operation}, LoadFuture, TransactionSource};
 use linkme::distributed_slice;
 
 const STELLAR_SCALE: u32 = 7;
@@ -281,7 +281,7 @@ pub(crate) fn load_stellar_account_async(source_path: String) -> LoadFuture {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static STELLAR_ACCOUNT: TransactionSourceType = TransactionSourceType {
+static STELLAR_ACCOUNT: TransactionSource = TransactionSource {
     id: "StellarAccount",
     label: "Stellar Account",
     csv: &[],

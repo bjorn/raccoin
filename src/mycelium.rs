@@ -7,7 +7,7 @@ use csv::Trim;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
+use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
 
 // serialize function for reading NaiveDateTime
@@ -69,7 +69,7 @@ fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static MYCELIUM_CSV: TransactionSourceType = TransactionSourceType {
+static MYCELIUM_CSV: TransactionSource = TransactionSource {
     id: "MyceliumCsv",
     label: "Mycelium (CSV)",
     csv: &[CsvSpec::new(&[

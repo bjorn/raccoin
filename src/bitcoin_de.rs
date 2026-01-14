@@ -6,7 +6,7 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Transaction, Amount, Operation}, TransactionSourceType};
+use crate::{time::deserialize_date_time, base::{Transaction, Amount, Operation}, TransactionSource};
 use linkme::distributed_slice;
 
 #[derive(Debug, Deserialize)]
@@ -194,7 +194,7 @@ fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITCOIN_DE_CSV: TransactionSourceType = TransactionSourceType {
+static BITCOIN_DE_CSV: TransactionSource = TransactionSource {
     id: "BitcoinDeCsv",
     label: "bitcoin.de (CSV)",
     csv: &[],

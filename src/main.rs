@@ -78,7 +78,7 @@ impl CsvSpec {
     }
 }
 
-pub(crate) struct TransactionSourceType {
+pub(crate) struct TransactionSource {
     pub(crate) id: &'static str,
     pub(crate) label: &'static str,
     pub(crate) csv: &'static [CsvSpec],
@@ -87,7 +87,7 @@ pub(crate) struct TransactionSourceType {
     pub(crate) load_async: Option<fn(String) -> LoadFuture>,
 }
 
-impl TransactionSourceType {
+impl TransactionSource {
     pub(crate) fn detect_from_file(&self, path: &Path) -> Result<bool> {
         if let Some(detect) = self.detect {
             return detect(path);
@@ -136,15 +136,15 @@ pub(crate) fn csv_matches(path: &Path, csv: &CsvSpec) -> Result<bool> {
 }
 
 #[distributed_slice]
-pub(crate) static TRANSACTION_SOURCES: [TransactionSourceType];
+pub(crate) static TRANSACTION_SOURCES: [TransactionSource];
 
-fn transaction_source_by_id(id: &str) -> Option<&'static TransactionSourceType> {
+fn transaction_source_by_id(id: &str) -> Option<&'static TransactionSource> {
     TRANSACTION_SOURCES
         .iter()
         .find(|source| source.id == id)
 }
 
-fn detect_source_from_file(path: &Path) -> Option<&'static TransactionSourceType> {
+fn detect_source_from_file(path: &Path) -> Option<&'static TransactionSource> {
     TRANSACTION_SOURCES
         .iter()
         .find(|source| source.detect_from_file(path).ok().unwrap_or(false))

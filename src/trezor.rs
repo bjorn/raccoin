@@ -5,7 +5,7 @@ use chrono::DateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::{base::{Amount, Operation, Transaction}, CsvSpec, TransactionSourceType};
+use crate::{base::{Amount, Operation, Transaction}, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -339,7 +339,7 @@ pub(crate) fn load_trezor_json(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static TREZOR_CSV: TransactionSourceType = TransactionSourceType {
+static TREZOR_CSV: TransactionSource = TransactionSource {
     id: "TrezorCsv",
     label: "Trezor (CSV)",
     csv: &[CsvSpec {
@@ -367,7 +367,7 @@ static TREZOR_CSV: TransactionSourceType = TransactionSourceType {
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static TREZOR_JSON: TransactionSourceType = TransactionSourceType {
+static TREZOR_JSON: TransactionSource = TransactionSource {
     id: "TrezorJson",
     label: "Trezor (JSON)",
     csv: &[],

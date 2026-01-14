@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::{
     base::{deserialize_amount, Amount, Operation, Transaction},
-    CsvSpec, TransactionSourceType,
+    CsvSpec, TransactionSource,
 };
 use linkme::distributed_slice;
 
@@ -303,7 +303,7 @@ fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITSTAMP_CSV: TransactionSourceType = TransactionSourceType {
+static BITSTAMP_CSV: TransactionSource = TransactionSource {
     id: "BitstampCsv",
     label: "Bitstamp Old (CSV)",
     csv: &[CsvSpec::new(&[
@@ -315,7 +315,7 @@ static BITSTAMP_CSV: TransactionSourceType = TransactionSourceType {
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITSTAMP_CSV_NEW: TransactionSourceType = TransactionSourceType {
+static BITSTAMP_CSV_NEW: TransactionSource = TransactionSource {
     id: "BitstampCsvNew",
     label: "Bitstamp RFC 4180 (CSV)",
     csv: &[CsvSpec::new(&[

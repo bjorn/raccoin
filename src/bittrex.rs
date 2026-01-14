@@ -5,7 +5,7 @@ use chrono::{NaiveDateTime, NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
+use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
 
 // deserialize function for reading NaiveDateTime
@@ -148,7 +148,7 @@ fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transac
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITTREX_ORDER_HISTORY_CSV: TransactionSourceType = TransactionSourceType {
+static BITTREX_ORDER_HISTORY_CSV: TransactionSource = TransactionSource {
     id: "BittrexOrderHistoryCsv",
     label: "Bittrex Order History (CSV)",
     csv: &[CsvSpec::new(&[
@@ -160,7 +160,7 @@ static BITTREX_ORDER_HISTORY_CSV: TransactionSourceType = TransactionSourceType 
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITTREX_TRANSACTION_HISTORY_CSV: TransactionSourceType = TransactionSourceType {
+static BITTREX_TRANSACTION_HISTORY_CSV: TransactionSource = TransactionSource {
     id: "BittrexTransactionHistoryCsv",
     label: "Bittrex Transaction History (CSV)",
     csv: &[CsvSpec::new(&[

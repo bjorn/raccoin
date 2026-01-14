@@ -6,7 +6,7 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{base::{Transaction, Operation, Amount}, time::deserialize_date_time, CsvSpec, TransactionSourceType};
+use crate::{base::{Transaction, Operation, Amount}, time::deserialize_date_time, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -91,7 +91,7 @@ fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITONIC_CSV: TransactionSourceType = TransactionSourceType {
+static BITONIC_CSV: TransactionSource = TransactionSource {
     id: "BitonicCsv",
     label: "Bitonic (CSV)",
     csv: &[CsvSpec::new(&["Date", "Action", "Amount", "Price"])],

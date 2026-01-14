@@ -5,7 +5,7 @@ use chrono::DateTime;
 use esplora_client::{Builder, Tx};
 use esplora_client::r#async::AsyncClient;
 
-use crate::{base::{Transaction, Amount}, LoadFuture, TransactionSourceType};
+use crate::{base::{Transaction, Amount}, LoadFuture, TransactionSource};
 use linkme::distributed_slice;
 
 pub(crate) fn async_esplora_client() -> Result<AsyncClient, esplora_client::Error> {
@@ -255,7 +255,7 @@ pub(crate) fn load_bitcoin_xpubs_async(source_path: String) -> LoadFuture {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITCOIN_ADDRESSES: TransactionSourceType = TransactionSourceType {
+static BITCOIN_ADDRESSES: TransactionSource = TransactionSource {
     id: "BitcoinAddresses",
     label: "Bitcoin Address(es)",
     csv: &[],
@@ -265,7 +265,7 @@ static BITCOIN_ADDRESSES: TransactionSourceType = TransactionSourceType {
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITCOIN_XPUBS: TransactionSourceType = TransactionSourceType {
+static BITCOIN_XPUBS: TransactionSource = TransactionSource {
     id: "BitcoinXpubs",
     label: "Bitcoin HD Wallet(s)",
     csv: &[],

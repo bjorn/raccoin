@@ -6,7 +6,7 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Transaction, Amount}, CsvSpec, TransactionSourceType};
+use crate::{time::deserialize_date_time, base::{Transaction, Amount}, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
 
 #[derive(Debug, Deserialize)]
@@ -55,7 +55,7 @@ fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static ELECTRUM_CSV: TransactionSourceType = TransactionSourceType {
+static ELECTRUM_CSV: TransactionSource = TransactionSource {
     id: "ElectrumCsv",
     label: "Electrum (CSV)",
     csv: &[CsvSpec::new(&[

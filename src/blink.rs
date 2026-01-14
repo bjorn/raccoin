@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::{
     base::{Amount, Operation, Transaction},
-    CsvSpec, TransactionSourceType,
+    CsvSpec, TransactionSource,
 };
 use linkme::distributed_slice;
 
@@ -44,7 +44,7 @@ pub(crate) const BLINK_HEADERS: &[&str] = &[
 ];
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BLINK_CSV: TransactionSourceType = TransactionSourceType {
+static BLINK_CSV: TransactionSource = TransactionSource {
     id: "BlinkCsv",
     label: "Blink (CSV)",
     csv: &[CsvSpec::new(BLINK_HEADERS)],

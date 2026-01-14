@@ -5,7 +5,7 @@ use chrono::{NaiveDateTime, NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Amount, Transaction, self, deserialize_amount}, CsvSpec, TransactionSourceType};
+use crate::{time::deserialize_date_time, base::{Amount, Transaction, self, deserialize_amount}, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
 
 // #[derive(Debug, Deserialize)]
@@ -337,7 +337,7 @@ fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BINANCE_CONVERT_CSV: TransactionSourceType = TransactionSourceType {
+static BINANCE_CONVERT_CSV: TransactionSource = TransactionSource {
     id: "BinanceConvertCsv",
     label: "Binance Convert (CSV)",
     csv: &[CsvSpec::new(&[
@@ -353,7 +353,7 @@ static BINANCE_CONVERT_CSV: TransactionSourceType = TransactionSourceType {
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BINANCE_SPOT_TRADE_HISTORY_CSV: TransactionSourceType = TransactionSourceType {
+static BINANCE_SPOT_TRADE_HISTORY_CSV: TransactionSource = TransactionSource {
     id: "BinanceSpotTradeHistoryCsv",
     label: "Binance Spot Trade History (CSV)",
     csv: &[CsvSpec::new(&[
@@ -371,7 +371,7 @@ static BINANCE_SPOT_TRADE_HISTORY_CSV: TransactionSourceType = TransactionSource
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BINANCE_TRANSACTION_HISTORY_CSV: TransactionSourceType = TransactionSourceType {
+static BINANCE_TRANSACTION_HISTORY_CSV: TransactionSource = TransactionSource {
     id: "BinanceTransactionHistoryCsv",
     label: "Binance Transaction History (CSV)",
     csv: &[CsvSpec::new(&[

@@ -5,7 +5,7 @@ use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::{Serialize, Deserialize};
 
-use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation, Amount}, CsvSpec, TransactionSourceType};
+use crate::{time::{serialize_date_time, deserialize_date_time}, base::{Transaction, Operation, Amount}, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -416,7 +416,7 @@ fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static CTC_IMPORT_CSV: TransactionSourceType = TransactionSourceType {
+static CTC_IMPORT_CSV: TransactionSource = TransactionSource {
     id: "CtcImportCsv",
     label: "CryptoTaxCalculator import (CSV)",
     csv: &[CsvSpec::new(&[

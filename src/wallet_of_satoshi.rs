@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::{
     base::{Amount, Transaction},
-    CsvSpec, TransactionSourceType,
+    CsvSpec, TransactionSource,
 };
 use linkme::distributed_slice;
 
@@ -152,7 +152,7 @@ fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static WALLET_OF_SATOSHI_CSV: TransactionSourceType = TransactionSourceType {
+static WALLET_OF_SATOSHI_CSV: TransactionSource = TransactionSource {
     id: "WalletOfSatoshiCsv",
     label: "Wallet of Satoshi (CSV)",
     csv: &[
