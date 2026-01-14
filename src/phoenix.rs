@@ -141,7 +141,7 @@ fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static PHOENIX_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PhoenixCsv",
     label: "Phoenix (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "date",
         "id",
         "type",
@@ -156,7 +156,7 @@ static PHOENIX_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "tx_id",
         "destination",
         "description",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_phoenix_csv),
     load_async: None,

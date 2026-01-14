@@ -342,7 +342,7 @@ pub(crate) fn load_trezor_json(input_path: &Path) -> Result<Vec<Transaction>> {
 static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "TrezorCsv",
     label: "Trezor (CSV)",
-    csv: Some(CsvSpec {
+    csv: &[CsvSpec {
         headers: &[
             "Timestamp",
             "Date",
@@ -360,7 +360,7 @@ static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         ],
         delimiters: &[b',', b';'],
         skip_lines: 0,
-    }),
+    }],
     detect: None,
     load_sync: Some(load_trezor_csv),
     load_async: None,
@@ -370,7 +370,7 @@ static TREZOR_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 static TREZOR_JSON_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "TrezorJson",
     label: "Trezor (JSON)",
-    csv: None,
+    csv: &[],
     detect: None,
     load_sync: Some(load_trezor_json),
     load_async: None,

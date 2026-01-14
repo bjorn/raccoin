@@ -188,14 +188,14 @@ fn load_liquid_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static LIQUID_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidDepositsCsv",
     label: "Liquid Deposits (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "ID",
         "Type",
         "Amount",
         "Status",
         "Created (YY/MM/DD)",
         "Hash",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_liquid_deposits_csv),
     load_async: None,
@@ -205,7 +205,7 @@ static LIQUID_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType
 static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidTradesCsv",
     label: "Liquid Trades (CSV)",
-    csv: Some(CsvSpec {
+    csv: &[CsvSpec {
         headers: &[
             "Quoted currency",
             "Base currency",
@@ -222,7 +222,7 @@ static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         ],
         delimiters: &[b','],
         skip_lines: 2,
-    }),
+    }],
     detect: None,
     load_sync: Some(load_liquid_trades_csv),
     load_async: None,
@@ -232,7 +232,7 @@ static LIQUID_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 static LIQUID_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "LiquidWithdrawalsCsv",
     label: "Liquid Withdrawals (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "ID",
         "Wallet label",
         "Amount",
@@ -244,7 +244,7 @@ static LIQUID_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceT
         "Network Fee",
         "Broadcasted At",
         "Hash",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_liquid_withdrawals_csv),
     load_async: None,

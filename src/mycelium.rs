@@ -72,7 +72,7 @@ fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static MYCELIUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "MyceliumCsv",
     label: "Mycelium (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Account",
         "Transaction ID",
         "Destination Address",
@@ -80,7 +80,7 @@ static MYCELIUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "Value",
         "Currency",
         "Transaction Label",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_mycelium_csv),
     load_async: None,

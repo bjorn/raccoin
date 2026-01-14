@@ -155,17 +155,10 @@ fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static WALLET_OF_SATOSHI_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "WalletOfSatoshiCsv",
     label: "Wallet of Satoshi (CSV)",
-    csv: Some(CsvSpec::new(WALLET_OF_SATOSHI_HEADERS)),
-    detect: None,
-    load_sync: Some(load_wallet_of_satoshi_csv),
-    load_async: None,
-};
-
-#[distributed_slice(crate::TRANSACTION_SOURCES)]
-static WALLET_OF_SATOSHI_NON_CUSTODIAL_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
-    id: "WalletOfSatoshiNonCustodialCsv",
-    label: "Wallet of Satoshi Self-Custody (CSV)",
-    csv: Some(CsvSpec::new(WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS)),
+    csv: &[
+        CsvSpec::new(WALLET_OF_SATOSHI_HEADERS),
+        CsvSpec::new(WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS),
+    ],
     detect: None,
     load_sync: Some(load_wallet_of_satoshi_csv),
     load_async: None,

@@ -151,9 +151,9 @@ fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transac
 static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BittrexOrderHistoryCsv",
     label: "Bittrex Order History (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Date", "Market", "Side", "Type", "Price", "Quantity", "Total",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_bittrex_order_history_csv),
     load_async: None,
@@ -163,9 +163,9 @@ static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSour
 static BITTREX_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BittrexTransactionHistoryCsv",
     label: "Bittrex Transaction History (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_bittrex_transaction_history_csv),
     load_async: None,

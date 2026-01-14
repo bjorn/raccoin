@@ -123,7 +123,7 @@ fn load_alby_hub_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static ALBY_HUB_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "AlbyHubCsv",
     label: "Alby Hub (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "type",
         "state",
         "invoice",
@@ -139,7 +139,7 @@ static ALBY_HUB_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "appId",
         "metadata",
         "failureReason",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_alby_hub_csv),
     load_async: None,

@@ -517,7 +517,7 @@ pub(crate) fn load_transactions_from_json(input_path: &Path) -> Result<Vec<Trans
 static JSON_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "Json",
     label: "JSON",
-    csv: None,
+    csv: &[],
     detect: None,
     load_sync: Some(load_transactions_from_json),
     load_async: None,

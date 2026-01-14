@@ -258,7 +258,7 @@ pub(crate) fn load_bitcoin_xpubs_async(source_path: String) -> LoadFuture {
 static BITCOIN_ADDRESSES_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinAddresses",
     label: "Bitcoin Address(es)",
-    csv: None,
+    csv: &[],
     detect: None,
     load_sync: None,
     load_async: Some(load_bitcoin_addresses_async),
@@ -268,7 +268,7 @@ static BITCOIN_ADDRESSES_SOURCE: TransactionSourceType = TransactionSourceType {
 static BITCOIN_XPUBS_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinXpubs",
     label: "Bitcoin HD Wallet(s)",
-    csv: None,
+    csv: &[],
     detect: None,
     load_sync: None,
     load_async: Some(load_bitcoin_xpubs_async),

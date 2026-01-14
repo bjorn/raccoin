@@ -58,7 +58,7 @@ fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static ELECTRUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "ElectrumCsv",
     label: "Electrum (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "transaction_hash",
         "label",
         "confirmations",
@@ -67,7 +67,7 @@ static ELECTRUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "fee",
         "fiat_fee",
         "timestamp",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_electrum_csv),
     load_async: None,

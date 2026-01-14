@@ -97,7 +97,7 @@ fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinCoreCsv",
     label: "Bitcoin Core (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Confirmed",
         "Date",
         "Type",
@@ -105,7 +105,7 @@ static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "Address",
         "Amount (BTC)",
         "ID",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_bitcoin_core_csv),
     load_async: None,
@@ -115,7 +115,7 @@ static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "PeercoinCsv",
     label: "Peercoin Qt (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Confirmed",
         "Date",
         "Type",
@@ -123,7 +123,7 @@ static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "Address",
         "Amount (PPC)",
         "ID",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_peercoin_csv),
     load_async: None,
@@ -133,7 +133,7 @@ static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 static REDDCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "ReddcoinCoreCsv",
     label: "Reddcoin Core (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Confirmed",
         "Date",
         "Type",
@@ -141,7 +141,7 @@ static REDDCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "Address",
         "Amount (RDD)",
         "ID",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_reddcoin_core_csv),
     load_async: None,

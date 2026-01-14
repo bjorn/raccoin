@@ -197,7 +197,7 @@ fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static BITCOIN_DE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitcoinDeCsv",
     label: "bitcoin.de (CSV)",
-    csv: None,
+    csv: &[],
     detect: Some(is_bitcoin_de_csv),
     load_sync: Some(load_bitcoin_de_csv),
     load_async: None,

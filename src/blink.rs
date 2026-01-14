@@ -47,7 +47,7 @@ pub(crate) const BLINK_HEADERS: &[&str] = &[
 static BLINK_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BlinkCsv",
     label: "Blink (CSV)",
-    csv: Some(CsvSpec::new(BLINK_HEADERS)),
+    csv: &[CsvSpec::new(BLINK_HEADERS)],
     detect: None,
     load_sync: Some(load_blink_csv),
     load_async: None,

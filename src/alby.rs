@@ -182,7 +182,7 @@ fn load_alby_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static ALBY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "AlbyCsv",
     label: "Alby (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Invoice Type",
         "Amount",
         "Fee",
@@ -200,7 +200,7 @@ static ALBY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "USD In Cents",
         "Is Boostagram",
         "Is Zap",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_alby_csv),
     load_async: None,

@@ -306,9 +306,9 @@ fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitstampCsv",
     label: "Bitstamp Old (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Type", "Datetime", "Account", "Amount", "Value", "Rate", "Fee", "Sub Type",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_bitstamp_old_csv),
     load_async: None,
@@ -318,7 +318,7 @@ static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 static BITSTAMP_CSV_NEW_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BitstampCsvNew",
     label: "Bitstamp RFC 4180 (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "ID",
         "Account",
         "Type",
@@ -333,7 +333,7 @@ static BITSTAMP_CSV_NEW_SOURCE: TransactionSourceType = TransactionSourceType {
         "Fee",
         "Fee currency",
         "Order ID",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_bitstamp_csv),
     load_async: None,

@@ -419,7 +419,7 @@ fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static CTC_IMPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "CtcImportCsv",
     label: "CryptoTaxCalculator import (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Timestamp (UTC)",
         "Type",
         "Base Currency",
@@ -435,7 +435,7 @@ static CTC_IMPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "Description (Optional)",
         "Reference Price Per Unit (Optional)",
         "Reference Price Currency (Optional)",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_ctc_csv),
     load_async: None,

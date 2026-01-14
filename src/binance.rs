@@ -340,13 +340,13 @@ fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BinanceConvertCsv",
     label: "Binance Convert (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Date",
         "Coin",
         "Amount",
         "Fee",
         "Converted To",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_binance_convert_csv),
     load_async: None,
@@ -356,7 +356,7 @@ static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType
 static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BinanceSpotTradeHistoryCsv",
     label: "Binance Spot Trade History (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "Date(UTC)",
         "Pair",
         "Side",
@@ -364,7 +364,7 @@ static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType = Transactio
         "Executed",
         "Amount",
         "Fee",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_binance_spot_trades_csv),
     load_async: None,
@@ -374,7 +374,7 @@ static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType = Transactio
 static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "BinanceTransactionHistoryCsv",
     label: "Binance Transaction History (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "User_ID",
         "UTC_Time",
         "Account",
@@ -382,7 +382,7 @@ static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType = Transacti
         "Coin",
         "Change",
         "Remark",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_binance_transaction_records_csv),
     load_async: None,

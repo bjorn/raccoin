@@ -284,7 +284,7 @@ pub(crate) fn load_stellar_account_async(source_path: String) -> LoadFuture {
 static STELLAR_ACCOUNT_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "StellarAccount",
     label: "Stellar Account",
-    csv: None,
+    csv: &[],
     detect: None,
     load_sync: None,
     load_async: Some(load_stellar_account_async),

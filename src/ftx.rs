@@ -176,7 +176,7 @@ fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxDepositsCsv",
     label: "FTX Deposits (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         " ",
         "Time",
         "Coin",
@@ -184,7 +184,7 @@ static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "Status",
         "Additional info",
         "Transaction ID",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_ftx_deposits_csv),
     load_async: None,
@@ -194,7 +194,7 @@ static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxWithdrawalsCsv",
     label: "FTX Withdrawal (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         " ",
         "Time",
         "Coin",
@@ -203,7 +203,7 @@ static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType
         "Status",
         "Transaction ID",
         "fee",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_ftx_withdrawals_csv),
     load_async: None,
@@ -213,7 +213,7 @@ static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType
 static FTX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
     id: "FtxTradesCsv",
     label: "FTX Trades (CSV)",
-    csv: Some(CsvSpec::new(&[
+    csv: &[CsvSpec::new(&[
         "ID",
         "Time",
         "Market",
@@ -225,7 +225,7 @@ static FTX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
         "Fee",
         "Fee Currency",
         "TWAP",
-    ])),
+    ])],
     detect: None,
     load_sync: Some(load_ftx_trades_csv),
     load_async: None,

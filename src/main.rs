@@ -81,7 +81,7 @@ impl CsvSpec {
 pub(crate) struct TransactionSourceType {
     pub(crate) id: &'static str,
     pub(crate) label: &'static str,
-    pub(crate) csv: Option<CsvSpec>,
+    pub(crate) csv: &'static [CsvSpec],
     pub(crate) detect: Option<fn(&Path) -> Result<bool>>,
     pub(crate) load_sync: Option<fn(&Path) -> Result<Vec<Transaction>>>,
     pub(crate) load_async: Option<fn(String) -> LoadFuture>,
@@ -93,8 +93,10 @@ impl TransactionSourceType {
             return detect(path);
         }
 
-        if let Some(csv) = &self.csv {
-            return csv_matches(path, csv);
+        for csv in self.csv {
+            if csv_matches(path, csv)? {
+                return Ok(true);
+            }
         }
 
         Ok(false)
