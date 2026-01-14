@@ -337,7 +337,7 @@ fn load_binance_convert_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BINANCE_CONVERT_CSV: TransactionSourceType = TransactionSourceType {
     id: "BinanceConvertCsv",
     label: "Binance Convert (CSV)",
     csv: &[CsvSpec::new(&[
@@ -353,7 +353,7 @@ static BINANCE_CONVERT_CSV_SOURCE: TransactionSourceType = TransactionSourceType
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BINANCE_SPOT_TRADE_HISTORY_CSV: TransactionSourceType = TransactionSourceType {
     id: "BinanceSpotTradeHistoryCsv",
     label: "Binance Spot Trade History (CSV)",
     csv: &[CsvSpec::new(&[
@@ -371,7 +371,7 @@ static BINANCE_SPOT_TRADE_HISTORY_CSV_SOURCE: TransactionSourceType = Transactio
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BINANCE_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BINANCE_TRANSACTION_HISTORY_CSV: TransactionSourceType = TransactionSourceType {
     id: "BinanceTransactionHistoryCsv",
     label: "Binance Transaction History (CSV)",
     csv: &[CsvSpec::new(&[

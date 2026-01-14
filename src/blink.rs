@@ -44,7 +44,7 @@ pub(crate) const BLINK_HEADERS: &[&str] = &[
 ];
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BLINK_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BLINK_CSV: TransactionSourceType = TransactionSourceType {
     id: "BlinkCsv",
     label: "Blink (CSV)",
     csv: &[CsvSpec::new(BLINK_HEADERS)],

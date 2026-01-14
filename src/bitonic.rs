@@ -91,7 +91,7 @@ fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITONIC_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITONIC_CSV: TransactionSourceType = TransactionSourceType {
     id: "BitonicCsv",
     label: "Bitonic (CSV)",
     csv: &[CsvSpec::new(&["Date", "Action", "Amount", "Price"])],

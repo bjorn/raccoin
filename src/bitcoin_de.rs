@@ -194,7 +194,7 @@ fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITCOIN_DE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITCOIN_DE_CSV: TransactionSourceType = TransactionSourceType {
     id: "BitcoinDeCsv",
     label: "bitcoin.de (CSV)",
     csv: &[],

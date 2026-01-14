@@ -303,7 +303,7 @@ fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITSTAMP_CSV: TransactionSourceType = TransactionSourceType {
     id: "BitstampCsv",
     label: "Bitstamp Old (CSV)",
     csv: &[CsvSpec::new(&[
@@ -315,7 +315,7 @@ static BITSTAMP_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITSTAMP_CSV_NEW_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITSTAMP_CSV_NEW: TransactionSourceType = TransactionSourceType {
     id: "BitstampCsvNew",
     label: "Bitstamp RFC 4180 (CSV)",
     csv: &[CsvSpec::new(&[

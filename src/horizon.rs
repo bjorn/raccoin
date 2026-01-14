@@ -281,7 +281,7 @@ pub(crate) fn load_stellar_account_async(source_path: String) -> LoadFuture {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static STELLAR_ACCOUNT_SOURCE: TransactionSourceType = TransactionSourceType {
+static STELLAR_ACCOUNT: TransactionSourceType = TransactionSourceType {
     id: "StellarAccount",
     label: "Stellar Account",
     csv: &[],

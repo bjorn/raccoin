@@ -120,7 +120,7 @@ fn load_alby_hub_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static ALBY_HUB_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static ALBY_HUB_CSV: TransactionSourceType = TransactionSourceType {
     id: "AlbyHubCsv",
     label: "Alby Hub (CSV)",
     csv: &[CsvSpec::new(&[

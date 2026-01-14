@@ -173,7 +173,7 @@ fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static FTX_DEPOSITS_CSV: TransactionSourceType = TransactionSourceType {
     id: "FtxDepositsCsv",
     label: "FTX Deposits (CSV)",
     csv: &[CsvSpec::new(&[
@@ -191,7 +191,7 @@ static FTX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static FTX_WITHDRAWALS_CSV: TransactionSourceType = TransactionSourceType {
     id: "FtxWithdrawalsCsv",
     label: "FTX Withdrawal (CSV)",
     csv: &[CsvSpec::new(&[
@@ -210,7 +210,7 @@ static FTX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static FTX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static FTX_TRADES_CSV: TransactionSourceType = TransactionSourceType {
     id: "FtxTradesCsv",
     label: "FTX Trades (CSV)",
     csv: &[CsvSpec::new(&[

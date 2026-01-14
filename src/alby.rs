@@ -179,7 +179,7 @@ fn load_alby_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static ALBY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static ALBY_CSV: TransactionSourceType = TransactionSourceType {
     id: "AlbyCsv",
     label: "Alby (CSV)",
     csv: &[CsvSpec::new(&[

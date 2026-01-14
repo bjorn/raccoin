@@ -416,7 +416,7 @@ fn load_ctc_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static CTC_IMPORT_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static CTC_IMPORT_CSV: TransactionSourceType = TransactionSourceType {
     id: "CtcImportCsv",
     label: "CryptoTaxCalculator import (CSV)",
     csv: &[CsvSpec::new(&[

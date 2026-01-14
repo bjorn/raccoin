@@ -69,7 +69,7 @@ fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static MYCELIUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static MYCELIUM_CSV: TransactionSourceType = TransactionSourceType {
     id: "MyceliumCsv",
     label: "Mycelium (CSV)",
     csv: &[CsvSpec::new(&[

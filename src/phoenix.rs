@@ -138,7 +138,7 @@ fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static PHOENIX_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static PHOENIX_CSV: TransactionSourceType = TransactionSourceType {
     id: "PhoenixCsv",
     label: "Phoenix (CSV)",
     csv: &[CsvSpec::new(&[

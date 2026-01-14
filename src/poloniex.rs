@@ -402,7 +402,7 @@ fn load_poloniex_trades_before_august_2022_csv(input_path: &Path) -> Result<Vec<
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static POLONIEX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_DEPOSITS_CSV: TransactionSourceType = TransactionSourceType {
     id: "PoloniexDepositsCsv",
     label: "Poloniex Deposits (CSV)",
     csv: &[
@@ -422,7 +422,7 @@ static POLONIEX_DEPOSITS_CSV_SOURCE: TransactionSourceType = TransactionSourceTy
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV: TransactionSourceType = TransactionSourceType {
     id: "PoloniexTradesBeforeAugust2022Csv",
     label: "Poloniex Trades (CSV, before August 2022)",
     csv: &[CsvSpec::new(&[
@@ -449,7 +449,7 @@ static POLONIEX_TRADES_BEFORE_AUGUST_2022_CSV_SOURCE: TransactionSourceType = Tr
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static POLONIEX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_TRADES_CSV: TransactionSourceType = TransactionSourceType {
     id: "PoloniexTradesCsv",
     label: "Poloniex Trades (CSV)",
     csv: &[
@@ -501,7 +501,7 @@ static POLONIEX_TRADES_CSV_SOURCE: TransactionSourceType = TransactionSourceType
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static POLONIEX_WITHDRAWALS_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static POLONIEX_WITHDRAWALS_CSV: TransactionSourceType = TransactionSourceType {
     id: "PoloniexWithdrawalsCsv",
     label: "Poloniex Withdrawals (CSV)",
     csv: &[

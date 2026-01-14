@@ -301,7 +301,7 @@ pub(crate) fn load_ethereum_address_async(source_path: String) -> LoadFuture {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static ETHEREUM_ADDRESS_SOURCE: TransactionSourceType = TransactionSourceType {
+static ETHEREUM_ADDRESS: TransactionSourceType = TransactionSourceType {
     id: "EthereumAddress",
     label: "Ethereum Address",
     csv: &[],

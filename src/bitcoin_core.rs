@@ -94,7 +94,7 @@ fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITCOIN_CORE_CSV: TransactionSourceType = TransactionSourceType {
     id: "BitcoinCoreCsv",
     label: "Bitcoin Core (CSV)",
     csv: &[CsvSpec::new(&[
@@ -112,7 +112,7 @@ static BITCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static PEERCOIN_CSV: TransactionSourceType = TransactionSourceType {
     id: "PeercoinCsv",
     label: "Peercoin Qt (CSV)",
     csv: &[CsvSpec::new(&[
@@ -130,7 +130,7 @@ static PEERCOIN_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static REDDCOIN_CORE_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static REDDCOIN_CORE_CSV: TransactionSourceType = TransactionSourceType {
     id: "ReddcoinCoreCsv",
     label: "Reddcoin Core (CSV)",
     csv: &[CsvSpec::new(&[

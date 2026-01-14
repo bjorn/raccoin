@@ -55,7 +55,7 @@ fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static ELECTRUM_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static ELECTRUM_CSV: TransactionSourceType = TransactionSourceType {
     id: "ElectrumCsv",
     label: "Electrum (CSV)",
     csv: &[CsvSpec::new(&[

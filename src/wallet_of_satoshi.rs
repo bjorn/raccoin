@@ -152,7 +152,7 @@ fn load_wallet_of_satoshi_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static WALLET_OF_SATOSHI_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static WALLET_OF_SATOSHI_CSV: TransactionSourceType = TransactionSourceType {
     id: "WalletOfSatoshiCsv",
     label: "Wallet of Satoshi (CSV)",
     csv: &[

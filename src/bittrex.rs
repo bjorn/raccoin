@@ -148,7 +148,7 @@ fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transac
 }
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITTREX_ORDER_HISTORY_CSV: TransactionSourceType = TransactionSourceType {
     id: "BittrexOrderHistoryCsv",
     label: "Bittrex Order History (CSV)",
     csv: &[CsvSpec::new(&[
@@ -160,7 +160,7 @@ static BITTREX_ORDER_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSour
 };
 
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
-static BITTREX_TRANSACTION_HISTORY_CSV_SOURCE: TransactionSourceType = TransactionSourceType {
+static BITTREX_TRANSACTION_HISTORY_CSV: TransactionSourceType = TransactionSourceType {
     id: "BittrexTransactionHistoryCsv",
     label: "Bittrex Transaction History (CSV)",
     csv: &[CsvSpec::new(&[
