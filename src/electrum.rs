@@ -6,7 +6,8 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Transaction, Amount}};
+use crate::{time::deserialize_date_time, base::{Transaction, Amount}, CsvSpec, TransactionSource};
+use linkme::distributed_slice;
 
 #[derive(Debug, Deserialize)]
 struct ElectrumHistoryItem {
@@ -39,7 +40,7 @@ impl From<ElectrumHistoryItem> for Transaction {
 }
 
 // loads an Electrum CSV file into a list of unified transactions
-pub(crate) fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -52,3 +53,22 @@ pub(crate) fn load_electrum_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static ELECTRUM_CSV: TransactionSource = TransactionSource {
+    id: "ElectrumCsv",
+    label: "Electrum (CSV)",
+    csv: &[CsvSpec::new(&[
+        "transaction_hash",
+        "label",
+        "confirmations",
+        "value",
+        "fiat_value",
+        "fee",
+        "fiat_fee",
+        "timestamp",
+    ])],
+    detect: None,
+    load_sync: Some(load_electrum_csv),
+    load_async: None,
+};

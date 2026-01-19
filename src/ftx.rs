@@ -5,7 +5,8 @@ use chrono::{NaiveDateTime, FixedOffset, DateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount};
+use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSource};
+use linkme::distributed_slice;
 
 // function for reading NaiveDateTime in the format "2/25/2021, 2:24:46 PM"
 pub(crate) fn deserialize_date_time_mdy<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -135,7 +136,7 @@ impl TryFrom<FtxTrade> for Transaction {
     }
 }
 
-pub(crate) fn load_ftx_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_ftx_deposits_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -147,7 +148,7 @@ pub(crate) fn load_ftx_deposits_csv(input_path: &Path) -> Result<Vec<Transaction
     Ok(transactions)
 }
 
-pub(crate) fn load_ftx_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_ftx_withdrawals_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -159,7 +160,7 @@ pub(crate) fn load_ftx_withdrawals_csv(input_path: &Path) -> Result<Vec<Transact
     Ok(transactions)
 }
 
-pub(crate) fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -170,3 +171,62 @@ pub(crate) fn load_ftx_trades_csv(input_path: &Path) -> Result<Vec<Transaction>>
 
     Ok(transactions)
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static FTX_DEPOSITS_CSV: TransactionSource = TransactionSource {
+    id: "FtxDepositsCsv",
+    label: "FTX Deposits (CSV)",
+    csv: &[CsvSpec::new(&[
+        " ",
+        "Time",
+        "Coin",
+        "Amount",
+        "Status",
+        "Additional info",
+        "Transaction ID",
+    ])],
+    detect: None,
+    load_sync: Some(load_ftx_deposits_csv),
+    load_async: None,
+};
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static FTX_WITHDRAWALS_CSV: TransactionSource = TransactionSource {
+    id: "FtxWithdrawalsCsv",
+    label: "FTX Withdrawal (CSV)",
+    csv: &[CsvSpec::new(&[
+        " ",
+        "Time",
+        "Coin",
+        "Amount",
+        "Destination",
+        "Status",
+        "Transaction ID",
+        "fee",
+    ])],
+    detect: None,
+    load_sync: Some(load_ftx_withdrawals_csv),
+    load_async: None,
+};
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static FTX_TRADES_CSV: TransactionSource = TransactionSource {
+    id: "FtxTradesCsv",
+    label: "FTX Trades (CSV)",
+    csv: &[CsvSpec::new(&[
+        "ID",
+        "Time",
+        "Market",
+        "Side",
+        "Order Type",
+        "Size",
+        "Price",
+        "Total",
+        "Fee",
+        "Fee Currency",
+        "TWAP",
+    ])],
+    detect: None,
+    load_sync: Some(load_ftx_trades_csv),
+    load_async: None,
+};

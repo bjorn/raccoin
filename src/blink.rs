@@ -5,12 +5,53 @@ use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Amount, Operation, Transaction};
+use crate::{
+    base::{Amount, Operation, Transaction},
+    CsvSpec, TransactionSource,
+};
+use linkme::distributed_slice;
 
 const BTC_CURRENCY: &str = "BTC";
 const USD_CURRENCY: &str = "USD";
 const SATS_SCALE: u32 = 8;
 const USD_SCALE: u32 = 2;
+
+pub(crate) const BLINK_HEADERS: &[&str] = &[
+    "id",
+    "walletId",
+    "type",
+    "credit",
+    "debit",
+    "fee",
+    "currency",
+    "timestamp",
+    "pendingConfirmation",
+    "journalId",
+    "lnMemo",
+    "usd",
+    "feeUsd",
+    "recipientWalletId",
+    "username",
+    "memoFromPayer",
+    "paymentHash",
+    "pubkey",
+    "feeKnownInAdvance",
+    "address",
+    "txHash",
+    "displayAmount",
+    "displayFee",
+    "displayCurrency",
+];
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static BLINK_CSV: TransactionSource = TransactionSource {
+    id: "BlinkCsv",
+    label: "Blink (CSV)",
+    csv: &[CsvSpec::new(BLINK_HEADERS)],
+    detect: None,
+    load_sync: Some(load_blink_csv),
+    load_async: None,
+};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -251,7 +292,7 @@ enum Direction {
     Outgoing,
 }
 
-pub(crate) fn load_blink_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_blink_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut reader = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut records = Vec::new();
 
@@ -437,32 +478,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     fn parse_csv_row(csv: &str) -> BlinkRecord {
-        let header = StringRecord::from(vec![
-            "id",
-            "walletId",
-            "type",
-            "credit",
-            "debit",
-            "fee",
-            "currency",
-            "timestamp",
-            "pendingConfirmation",
-            "journalId",
-            "lnMemo",
-            "usd",
-            "feeUsd",
-            "recipientWalletId",
-            "username",
-            "memoFromPayer",
-            "paymentHash",
-            "pubkey",
-            "feeKnownInAdvance",
-            "address",
-            "txHash",
-            "displayAmount",
-            "displayFee",
-            "displayCurrency",
-        ]);
+        let header = StringRecord::from(BLINK_HEADERS);
         let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
         reader.set_headers(header);
         reader.deserialize().next().unwrap().unwrap()

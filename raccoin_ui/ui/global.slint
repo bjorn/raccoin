@@ -7,7 +7,7 @@ import {
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
-    UiTransactionSource,
+    UiWalletSource,
     UiWallet
 } from "structs.slint";
 import { TestData } from "test-data.slint";
@@ -16,7 +16,7 @@ export global Facade {
     // MODELS
 
     in-out property <[UiWallet]> wallets: TestData.wallets;
-    in-out property <[UiTransactionSource]> sources: TestData.sources;
+    in-out property <[UiWalletSource]> sources: TestData.sources;
     in-out property <[string]> source-types;
     in-out property <[UiTransaction]> transactions: TestData.transactions;
     in-out property <int> transaction-warning-count: 0;

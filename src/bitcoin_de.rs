@@ -6,7 +6,8 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{time::deserialize_date_time, base::{Transaction, Amount, Operation}};
+use crate::{time::deserialize_date_time, base::{Transaction, Amount, Operation}, TransactionSource};
+use linkme::distributed_slice;
 
 #[derive(Debug, Deserialize)]
 enum BitcoinDeActionType {
@@ -145,7 +146,7 @@ pub(crate) fn is_bitcoin_de_csv(path: &Path) -> Result<bool> {
 }
 
 // loads a bitcoin.de CSV file into a list of unified transactions
-pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -191,6 +192,16 @@ pub(crate) fn load_bitcoin_de_csv(input_path: &Path) -> Result<Vec<Transaction>>
 
     Ok(transactions)
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static BITCOIN_DE_CSV: TransactionSource = TransactionSource {
+    id: "BitcoinDeCsv",
+    label: "bitcoin.de (CSV)",
+    csv: &[],
+    detect: Some(is_bitcoin_de_csv),
+    load_sync: Some(load_bitcoin_de_csv),
+    load_async: None,
+};
 
 #[cfg(test)]
 mod tests {

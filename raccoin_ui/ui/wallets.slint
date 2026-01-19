@@ -1,7 +1,7 @@
 import { ListView, HorizontalBox, CheckBox, ComboBox, Button, VerticalBox, ScrollView , LineEdit} from "std-widgets.slint";
 import { Badge, ElidingText, TableHeader, HeaderCell, TextCell, MonoTextCell, CurrencyIcon, Cell } from "common.slint";
 import { Facade } from "global.slint";
-import { UiBalanceForWallet, UiTransactionSource, UiWallet } from "structs.slint";
+import { UiBalanceForWallet, UiWalletSource, UiWallet } from "structs.slint";
 
 component HoldingsButton inherits TouchArea {
     in property <[UiBalanceForWallet]> balances;

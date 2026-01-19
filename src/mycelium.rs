@@ -7,20 +7,13 @@ use csv::Trim;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount};
+use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSource};
+use linkme::distributed_slice;
 
 // serialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
     Ok(NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%MZ").unwrap())
-}
-
-#[derive(Debug, Clone, Deserialize)]
-enum TransferType {
-    #[serde(rename = "Sent to")]
-    SentTo,
-    #[serde(rename = "Received with")]
-    ReceivedWith,
 }
 
 // Stores values loaded from CSV file exported by Mycelium, with the following header:
@@ -60,7 +53,7 @@ impl From<MyceliumTransaction> for Transaction {
 }
 
 // loads a Mycelium CSV file into a list of unified transactions
-pub(crate) fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -74,3 +67,21 @@ pub(crate) fn load_mycelium_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static MYCELIUM_CSV: TransactionSource = TransactionSource {
+    id: "MyceliumCsv",
+    label: "Mycelium (CSV)",
+    csv: &[CsvSpec::new(&[
+        "Account",
+        "Transaction ID",
+        "Destination Address",
+        "Timestamp",
+        "Value",
+        "Currency",
+        "Transaction Label",
+    ])],
+    detect: None,
+    load_sync: Some(load_mycelium_csv),
+    load_async: None,
+};

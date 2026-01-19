@@ -39,6 +39,7 @@ use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
+use linkme::distributed_slice;
 use std::{
     cell::RefCell,
     cmp::{Eq, Ordering},
@@ -47,63 +48,63 @@ use std::{
     env,
     ffi::OsString,
     fs::File,
+    future::Future,
     hash::Hash,
     io::BufReader,
     path::{Path, PathBuf},
+    pin::Pin,
     rc::Rc,
 };
-use strum::{EnumIter, IntoEnumIterator};
 
 fn rounded_to_cent(amount: Decimal) -> Decimal {
     amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
 }
 
-#[derive(EnumIter, Serialize, Deserialize, Clone, Copy)]
-enum TransactionsSourceType {
-    AlbyCsv,
-    AlbyHubCsv,
-    WalletOfSatoshiCsv,
-    WalletOfSatoshiNonCustodialCsv,
-    PhoenixCsv,
-    BlinkCsv,
-    BitcoinAddresses,
-    BitcoinXpubs,
-    BitcoinCoreCsv,
-    BitcoinDeCsv,
-    BitonicCsv,     // todo: remove custom format
-    BitstampCsv,
-    BitstampCsvNew,
-    BittrexOrderHistoryCsv,
-    BittrexTransactionHistoryCsv,
-    CtcImportCsv,
-    ElectrumCsv,
-    EthereumAddress,
-    Json,
-    MyceliumCsv,
-    PeercoinCsv,
-    FtxDepositsCsv,
-    FtxWithdrawalsCsv,
-    FtxTradesCsv,
-    LiquidDepositsCsv,
-    LiquidTradesCsv,
-    LiquidWithdrawalsCsv,
-    PoloniexDepositsCsv,
-    PoloniexDepositsSupportCsv,
-    PoloniexDepositsSupport2Csv,
-    PoloniexTradesBeforeAugust2022Csv,
-    PoloniexTradesCsv,
-    PoloniexTradesSupportCsv,
-    PoloniexTradesSupport2Csv,
-    PoloniexWithdrawalsCsv,
-    PoloniexWithdrawalsSupportCsv,
-    PoloniexWithdrawalsSupport2Csv,
-    StellarAccount,
-    BinanceConvertCsv,  // todo: document custom format
-    BinanceSpotTradeHistoryCsv,
-    BinanceTransactionHistoryCsv,
-    ReddcoinCoreCsv,
-    TrezorCsv,
-    TrezorJson,
+pub(crate) type LoadFuture = Pin<Box<dyn Future<Output = Result<Vec<Transaction>>> + Send>>;
+
+pub(crate) struct CsvSpec {
+    pub(crate) headers: &'static [&'static str],
+    pub(crate) delimiters: &'static [u8],
+    pub(crate) skip_lines: usize,
+}
+
+impl CsvSpec {
+    pub(crate) const fn new(headers: &'static [&'static str]) -> Self {
+        Self {
+            headers,
+            delimiters: &[b','],
+            skip_lines: 0,
+        }
+    }
+}
+
+pub(crate) struct TransactionSource {
+    pub(crate) id: &'static str,
+    pub(crate) label: &'static str,
+    pub(crate) csv: &'static [CsvSpec],
+    pub(crate) detect: Option<fn(&Path) -> Result<bool>>,
+    pub(crate) load_sync: Option<fn(&Path) -> Result<Vec<Transaction>>>,
+    pub(crate) load_async: Option<fn(String) -> LoadFuture>,
+}
+
+impl TransactionSource {
+    pub(crate) fn detect_from_file(&self, path: &Path) -> Result<bool> {
+        if let Some(detect) = self.detect {
+            return detect(path);
+        }
+
+        for csv in self.csv {
+            if csv_matches(path, csv)? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub(crate) fn can_sync(&self) -> bool {
+        self.load_async.is_some()
+    }
 }
 
 fn csv_file_has_headers(path: &Path, delimiter: u8, skip_lines: usize, headers: &[&str]) -> Result<bool> {
@@ -124,157 +125,34 @@ fn csv_file_has_headers(path: &Path, delimiter: u8, skip_lines: usize, headers: 
     Ok(rdr.headers().map_or(false, |s| s == headers))
 }
 
-impl TransactionsSourceType {
-    fn detect_from_file(path: &Path) -> Option<Self> {
-        // Special case for Bitcoin.de CSV files with multiple header formats
-        if bitcoin_de::is_bitcoin_de_csv(path).unwrap_or(false) {
-            return Some(TransactionsSourceType::BitcoinDeCsv);
-        }
-
-        // Standard detection for other formats
-        Self::iter().find(|source_type| {
-            // Skip Bitcoin.de since we handled it above
-            if matches!(source_type, TransactionsSourceType::BitcoinDeCsv) {
-                return false;
-            }
-
-            source_type.delimiters().iter().any(|&delimiter| {
-                csv_file_has_headers(path, delimiter, source_type.skip_lines(), source_type.headers()).is_ok_and(|x| x)
-            })
-        })
-    }
-
-    fn delimiters(&self) -> &'static [u8] {
-        match self {
-            TransactionsSourceType::BitcoinAddresses |
-            TransactionsSourceType::BitcoinXpubs |
-            TransactionsSourceType::EthereumAddress |
-            TransactionsSourceType::StellarAccount |
-            TransactionsSourceType::TrezorJson |
-            TransactionsSourceType::Json => &[],
-
-            TransactionsSourceType::BitcoinDeCsv => &[b';'],
-
-            // TrezorCsv used to use ';' but now uses ',', so we check both
-            TransactionsSourceType::TrezorCsv => &[b',', b';'],
-
-            _ => &[b','],
+pub(crate) fn csv_matches(path: &Path, csv: &CsvSpec) -> Result<bool> {
+    for &delimiter in csv.delimiters {
+        if csv_file_has_headers(path, delimiter, csv.skip_lines, csv.headers).is_ok_and(|matched| matched) {
+            return Ok(true);
         }
     }
 
-    fn skip_lines(&self) -> usize {
-        match self {
-            TransactionsSourceType::LiquidTradesCsv => 2,
-            _ => 0,
-        }
-    }
-
-    fn headers(&self) -> &[&str] {
-        match self {
-            TransactionsSourceType::BitcoinAddresses |
-            TransactionsSourceType::BitcoinXpubs |
-            TransactionsSourceType::EthereumAddress |
-            TransactionsSourceType::StellarAccount |
-            TransactionsSourceType::TrezorJson |
-            TransactionsSourceType::Json => &[],
-
-            TransactionsSourceType::AlbyCsv => &[ "Invoice Type", "Amount", "Fee", "Creation Date", "Settled Date", "Memo", "Comment", "Message", "Payer Name", "Payer Pubkey", "Payment Hash", "Preimage", "Fiat In Cents", "Currency", "USD In Cents", "Is Boostagram", "Is Zap" ],
-            TransactionsSourceType::AlbyHubCsv => &[ "type", "state", "invoice", "description", "descriptionHash", "preimage", "paymentHash", "amount", "feesPaid", "updatedAt", "createdAt", "settledAt", "appId", "metadata", "failureReason" ],
-            TransactionsSourceType::WalletOfSatoshiCsv => &[ "utcDate", "type", "currency", "amount", "fees", "address", "description", "pointOfSale" ],
-            TransactionsSourceType::WalletOfSatoshiNonCustodialCsv => &[ "utcDate", "type", "currency", "amount", "fees", "status", "address", "description", "transactionId", "pointOfSale" ],
-            TransactionsSourceType::PhoenixCsv => &[ "date", "id", "type", "amount_msat", "amount_fiat", "fee_credit_msat", "mining_fee_sat", "mining_fee_fiat", "service_fee_msat", "service_fee_fiat", "payment_hash", "tx_id", "destination", "description" ],
-            TransactionsSourceType::BlinkCsv => &[ "id", "walletId", "type", "credit", "debit", "fee", "currency", "timestamp", "pendingConfirmation", "journalId", "lnMemo", "usd", "feeUsd", "recipientWalletId", "username", "memoFromPayer", "paymentHash", "pubkey", "feeKnownInAdvance", "address", "txHash", "displayAmount", "displayFee", "displayCurrency" ],
-            TransactionsSourceType::BitcoinDeCsv => &[],    // handled by bitcoin_de::is_bitcoin_de_csv
-            TransactionsSourceType::TrezorCsv => &["Timestamp", "Date", "Time", "Type", "Transaction ID", "Fee", "Fee unit", "Address", "Label", "Amount", "Amount unit", "Fiat (EUR)", "Other"],
-
-            TransactionsSourceType::BitcoinCoreCsv => &["Confirmed", "Date", "Type", "Label", "Address", "Amount (BTC)", "ID"],
-            TransactionsSourceType::PeercoinCsv => &["Confirmed", "Date", "Type", "Label", "Address", "Amount (PPC)", "ID"],
-            TransactionsSourceType::ReddcoinCoreCsv => &["Confirmed", "Date", "Type", "Label", "Address", "Amount (RDD)", "ID"],
-            TransactionsSourceType::BitonicCsv => &["Date", "Action", "Amount", "Price"],
-            TransactionsSourceType::BitstampCsv => &["Type", "Datetime", "Account", "Amount", "Value", "Rate", "Fee", "Sub Type"],
-            TransactionsSourceType::BitstampCsvNew => &["ID", "Account", "Type", "Subtype", "Datetime", "Amount", "Amount currency", "Value", "Value currency", "Rate", "Rate currency", "Fee", "Fee currency", "Order ID"],
-            TransactionsSourceType::BittrexOrderHistoryCsv => &["Date", "Market", "Side", "Type", "Price", "Quantity", "Total"],
-            TransactionsSourceType::BittrexTransactionHistoryCsv => &["Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount"],
-            TransactionsSourceType::CtcImportCsv => &["Timestamp (UTC)", "Type", "Base Currency", "Base Amount", "Quote Currency (Optional)", "Quote Amount (Optional)", "Fee Currency (Optional)", "Fee Amount (Optional)", "From (Optional)", "To (Optional)", "Blockchain (Optional)", "ID (Optional)", "Description (Optional)", "Reference Price Per Unit (Optional)", "Reference Price Currency (Optional)"],
-            TransactionsSourceType::ElectrumCsv => &["transaction_hash", "label", "confirmations", "value", "fiat_value", "fee", "fiat_fee", "timestamp"],
-            TransactionsSourceType::MyceliumCsv => &["Account", "Transaction ID", "Destination Address", "Timestamp", "Value", "Currency", "Transaction Label"],
-            TransactionsSourceType::FtxDepositsCsv => &[" ", "Time", "Coin", "Amount", "Status", "Additional info", "Transaction ID"],
-            TransactionsSourceType::FtxWithdrawalsCsv => &[" ", "Time", "Coin", "Amount", "Destination", "Status", "Transaction ID", "fee"],
-            TransactionsSourceType::FtxTradesCsv => &["ID", "Time", "Market", "Side", "Order Type", "Size", "Price", "Total", "Fee", "Fee Currency", "TWAP"],
-            TransactionsSourceType::LiquidDepositsCsv => &["ID", "Type", "Amount", "Status", "Created (YY/MM/DD)", "Hash"],
-            TransactionsSourceType::LiquidTradesCsv => &["Quoted currency", "Base currency", "Qex/liquid", "Execution", "Type", "Date", "Open qty", "Price", "Fee", "Fee currency", "Amount", "Trade side"],
-            TransactionsSourceType::LiquidWithdrawalsCsv => &["ID", "Wallet label", "Amount", "Created On", "Transfer network", "Status", "Address", "Liquid Fee", "Network Fee", "Broadcasted At", "Hash"],
-            TransactionsSourceType::PoloniexDepositsCsv => &["Currency", "Amount", "Address", "Date", "Status"],
-            TransactionsSourceType::PoloniexDepositsSupportCsv => &["", "timestamp", "currency", "amount", "address", "status"],
-            TransactionsSourceType::PoloniexDepositsSupport2Csv => &["f_created_at", "currency", "f_amount", "f_address", "f_status"],
-            TransactionsSourceType::PoloniexTradesBeforeAugust2022Csv => &["tradeid","markettradeid","base","quote","type","rate","amount","buyuser","selluser","buyerfee","sellerwallet","sellerfee","buyerwallet","buyerordernumber","sellerordernumber","date"],
-            TransactionsSourceType::PoloniexTradesCsv => &["Date", "Market", "Type", "Side", "Price", "Amount", "Total", "Fee", "Order Number", "Fee Currency", "Fee Total"],
-            TransactionsSourceType::PoloniexTradesSupportCsv => &["", "timestamp", "trade_id", "market", "wallet", "side", "price", "amount", "fee", "fee_currency", "fee_total"],
-            TransactionsSourceType::PoloniexTradesSupport2Csv => &["order_id", "activity", "order_role", "order_type", "base_currency_name", "quote_currency_name", "fee_currency_name", "price", "amount", "fee_amount", "usd_amount", "usd_fee_amount", "utc_time"],
-            TransactionsSourceType::PoloniexWithdrawalsCsv => &["Fee Deducted", "Date", "Currency", "Amount", "Amount-Fee", "Address", "Status"],
-            TransactionsSourceType::PoloniexWithdrawalsSupportCsv => &["", "timestamp", "currency", "amount", "fee_deducted", "status"],
-            TransactionsSourceType::PoloniexWithdrawalsSupport2Csv => &["f_date", "currency", "f_amount", "f_feededucted", "f_status"],
-            TransactionsSourceType::BinanceConvertCsv => &["Date", "Coin", "Amount", "Fee", "Converted To"],
-            TransactionsSourceType::BinanceSpotTradeHistoryCsv => &["Date(UTC)", "Pair", "Side", "Price", "Executed", "Amount", "Fee"],
-            TransactionsSourceType::BinanceTransactionHistoryCsv => &["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change", "Remark"],
-        }
-    }
+    Ok(false)
 }
 
-impl ToString for TransactionsSourceType {
-    fn to_string(&self) -> String {
-        match self {
-            TransactionsSourceType::AlbyCsv => "Alby (CSV)".to_owned(),
-            TransactionsSourceType::AlbyHubCsv => "Alby Hub (CSV)".to_owned(),
-            TransactionsSourceType::WalletOfSatoshiCsv => "Wallet of Satoshi (CSV)".to_owned(),
-            TransactionsSourceType::WalletOfSatoshiNonCustodialCsv => "Wallet of Satoshi Self-Custody (CSV)".to_owned(),
-            TransactionsSourceType::PhoenixCsv => "Phoenix (CSV)".to_owned(),
-            TransactionsSourceType::BlinkCsv => "Blink (CSV)".to_owned(),
-            TransactionsSourceType::BitcoinAddresses => "Bitcoin Address(es)".to_owned(),
-            TransactionsSourceType::BitcoinXpubs => "Bitcoin HD Wallet(s)".to_owned(),
-            TransactionsSourceType::BitcoinCoreCsv => "Bitcoin Core (CSV)".to_owned(),
-            TransactionsSourceType::BitcoinDeCsv => "bitcoin.de (CSV)".to_owned(),
-            TransactionsSourceType::BitonicCsv => "Bitonic (CSV)".to_owned(),
-            TransactionsSourceType::BitstampCsv => "Bitstamp Old (CSV)".to_owned(),
-            TransactionsSourceType::BitstampCsvNew => "Bitstamp RFC 4180 (CSV)".to_owned(),
-            TransactionsSourceType::BittrexOrderHistoryCsv => "Bittrex Order History (CSV)".to_owned(),
-            TransactionsSourceType::BittrexTransactionHistoryCsv => "Bittrex Transaction History (CSV)".to_owned(),
-            TransactionsSourceType::ElectrumCsv => "Electrum (CSV)".to_owned(),
-            TransactionsSourceType::EthereumAddress => "Ethereum Address".to_owned(),
-            TransactionsSourceType::Json => "JSON".to_owned(),
-            TransactionsSourceType::CtcImportCsv => "CryptoTaxCalculator import (CSV)".to_owned(),
-            TransactionsSourceType::MyceliumCsv => "Mycelium (CSV)".to_owned(),
-            TransactionsSourceType::PeercoinCsv => "Peercoin Qt (CSV)".to_owned(),
-            TransactionsSourceType::FtxDepositsCsv => "FTX Deposits (CSV)".to_owned(),
-            TransactionsSourceType::FtxWithdrawalsCsv => "FTX Withdrawal (CSV)".to_owned(),
-            TransactionsSourceType::FtxTradesCsv => "FTX Trades (CSV)".to_owned(),
-            TransactionsSourceType::LiquidDepositsCsv => "Liquid Deposits (CSV)".to_owned(),
-            TransactionsSourceType::LiquidTradesCsv => "Liquid Trades (CSV)".to_owned(),
-            TransactionsSourceType::LiquidWithdrawalsCsv => "Liquid Withdrawals (CSV)".to_owned(),
-            TransactionsSourceType::PoloniexDepositsCsv => "Poloniex Deposits (CSV)".to_owned(),
-            TransactionsSourceType::PoloniexDepositsSupportCsv |
-            TransactionsSourceType::PoloniexDepositsSupport2Csv => "Poloniex Deposits from Support (CSV)".to_owned(),
-            TransactionsSourceType::PoloniexTradesBeforeAugust2022Csv => "Poloniex Trades (CSV, before August 2022)".to_owned(),
-            TransactionsSourceType::PoloniexTradesCsv => "Poloniex Trades (CSV)".to_owned(),
-            TransactionsSourceType::PoloniexTradesSupportCsv |
-            TransactionsSourceType::PoloniexTradesSupport2Csv => "Poloniex Trades from Support (CSV)".to_owned(),
-            TransactionsSourceType::PoloniexWithdrawalsCsv => "Poloniex Withdrawals (CSV)".to_owned(),
-            TransactionsSourceType::PoloniexWithdrawalsSupportCsv |
-            TransactionsSourceType::PoloniexWithdrawalsSupport2Csv => "Poloniex Withdrawals from Support (CSV)".to_owned(),
-            TransactionsSourceType::StellarAccount => "Stellar Account".to_owned(),
-            TransactionsSourceType::BinanceConvertCsv => "Binance Convert (CSV)".to_owned(),
-            TransactionsSourceType::BinanceSpotTradeHistoryCsv => "Binance Spot Trade History (CSV)".to_owned(),
-            TransactionsSourceType::BinanceTransactionHistoryCsv => "Binance Transaction History (CSV)".to_owned(),
-            TransactionsSourceType::ReddcoinCoreCsv => "Reddcoin Core (CSV)".to_owned(),
-            TransactionsSourceType::TrezorCsv => "Trezor (CSV)".to_owned(),
-            TransactionsSourceType::TrezorJson => "Trezor (JSON)".to_owned(),
-        }
-    }
+#[distributed_slice]
+pub(crate) static TRANSACTION_SOURCES: [TransactionSource];
+
+fn transaction_source_by_id(id: &str) -> Option<&'static TransactionSource> {
+    TRANSACTION_SOURCES
+        .iter()
+        .find(|source| source.id == id)
+}
+
+fn detect_source_from_file(path: &Path) -> Option<&'static TransactionSource> {
+    TRANSACTION_SOURCES
+        .iter()
+        .find(|source| source.detect_from_file(path).ok().unwrap_or(false))
 }
 
 #[derive(Serialize, Deserialize)]
-struct TransactionSource {
-    source_type: TransactionsSourceType,
+struct WalletSource {
+    source_type: String,
     path: String,
     #[serde(skip_serializing_if = "String::is_empty", default)]
     name: String,
@@ -301,7 +179,7 @@ struct Wallet {
     /// Whether this wallet is expanded.
     #[serde(skip)]
     expanded: bool,
-    sources: Vec<TransactionSource>,
+    sources: Vec<WalletSource>,
     /// Currency balances, as calculated based on the transactions imported from this source.
     #[serde(skip)]
     balances: HashMap<String, Decimal>,
@@ -494,14 +372,10 @@ impl App {
         let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
         let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
         portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
-            match source.source_type {
-                TransactionsSourceType::BitcoinAddresses |
-                TransactionsSourceType::BitcoinXpubs |
-                TransactionsSourceType::EthereumAddress |
-                TransactionsSourceType::StellarAccount => {}
-                _ => {
-                    source.full_path = portfolio_path.join(&source.path);
-                }
+            let source_definition = transaction_source_by_id(&source.source_type);
+            let is_virtual = source_definition.map(|definition| definition.load_sync.is_none()).unwrap_or(false);
+            if !is_virtual {
+                source.full_path = portfolio_path.join(&source.path);
             }
         }));
 
@@ -522,15 +396,11 @@ impl App {
         if let Some(path) = portfolio_file.as_ref().or(self.state.portfolio_file.as_ref()) {
             let portfolio_path = path.parent().unwrap_or(Path::new(""));
             self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
-                match source.source_type {
-                    TransactionsSourceType::BitcoinAddresses |
-                    TransactionsSourceType::BitcoinXpubs |
-                    TransactionsSourceType::EthereumAddress |
-                    TransactionsSourceType::StellarAccount => {}
-                    _ => {
-                        if let Some(relative_path) = pathdiff::diff_paths(&source.full_path, portfolio_path) {
-                            source.path = relative_path.to_str().unwrap_or_default().to_owned();
-                        }
+                let source_definition = transaction_source_by_id(&source.source_type);
+                let is_virtual = source_definition.map(|definition| definition.load_sync.is_none()).unwrap_or(false);
+                if !is_virtual {
+                    if let Some(relative_path) = pathdiff::diff_paths(&source.full_path, portfolio_path) {
+                        source.path = relative_path.to_str().unwrap_or_default().to_owned();
                     }
                 }
             }));
@@ -711,119 +581,19 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
                 continue
             }
 
-            let source_txs = match source.source_type {
-                TransactionsSourceType::BitcoinAddresses |
-                TransactionsSourceType::BitcoinXpubs |
-                TransactionsSourceType::EthereumAddress |
-                TransactionsSourceType::StellarAccount => {
-                    anyhow::Ok(source.transactions.clone())
+            let source_definition = match transaction_source_by_id(&source.source_type) {
+                Some(definition) => definition,
+                None => {
+                    source.transaction_count = 0;
+                    println!("Unknown source type {}", source.source_type);
+                    continue;
                 }
-                TransactionsSourceType::BitcoinCoreCsv => {
-                    bitcoin_core::load_bitcoin_core_csv(&source.full_path)
-                }
-                TransactionsSourceType::BitcoinDeCsv => {
-                    bitcoin_de::load_bitcoin_de_csv(&source.full_path)
-                }
-                TransactionsSourceType::BitonicCsv => {
-                    bitonic::load_bitonic_csv(&source.full_path)
-                }
-                TransactionsSourceType::BitstampCsv => {
-                    bitstamp::load_bitstamp_old_csv(&source.full_path)
-                }
-                TransactionsSourceType::BitstampCsvNew => {
-                    bitstamp::load_bitstamp_csv(&source.full_path)
-                }
-                TransactionsSourceType::AlbyCsv => {
-                    alby::load_alby_csv(&source.full_path)
-                }
-                TransactionsSourceType::AlbyHubCsv => {
-                    alby_hub::load_alby_hub_csv(&source.full_path)
-                }
-                TransactionsSourceType::WalletOfSatoshiCsv |
-                TransactionsSourceType::WalletOfSatoshiNonCustodialCsv => {
-                    wallet_of_satoshi::load_wallet_of_satoshi_csv(&source.full_path)
-                }
-                TransactionsSourceType::PhoenixCsv => {
-                    phoenix::load_phoenix_csv(&source.full_path)
-                }
-                TransactionsSourceType::BlinkCsv => {
-                    blink::load_blink_csv(&source.full_path)
-                }
-                TransactionsSourceType::BittrexOrderHistoryCsv => {
-                    bittrex::load_bittrex_order_history_csv(&source.full_path)
-                }
-                TransactionsSourceType::BittrexTransactionHistoryCsv => {
-                    bittrex::load_bittrex_transaction_history_csv(&source.full_path)
-                }
-                TransactionsSourceType::ElectrumCsv => {
-                    electrum::load_electrum_csv(&source.full_path)
-                }
-                TransactionsSourceType::Json => {
-                    base::load_transactions_from_json(&source.full_path)
-                }
-                TransactionsSourceType::CtcImportCsv => {
-                    ctc::load_ctc_csv(&source.full_path)
-                }
-                TransactionsSourceType::MyceliumCsv => {
-                    mycelium::load_mycelium_csv(&source.full_path)
-                }
-                TransactionsSourceType::PeercoinCsv => {
-                    bitcoin_core::load_peercoin_csv(&source.full_path)
-                }
-                TransactionsSourceType::FtxDepositsCsv => {
-                    ftx::load_ftx_deposits_csv(&source.full_path)
-                }
-                TransactionsSourceType::FtxWithdrawalsCsv => {
-                    ftx::load_ftx_withdrawals_csv(&source.full_path)
-                }
-                TransactionsSourceType::FtxTradesCsv => {
-                    ftx::load_ftx_trades_csv(&source.full_path)
-                }
-                TransactionsSourceType::LiquidDepositsCsv => {
-                    liquid::load_liquid_deposits_csv(&source.full_path)
-                }
-                TransactionsSourceType::LiquidTradesCsv => {
-                    liquid::load_liquid_trades_csv(&source.full_path)
-                }
-                TransactionsSourceType::LiquidWithdrawalsCsv => {
-                    liquid::load_liquid_withdrawals_csv(&source.full_path)
-                }
-                TransactionsSourceType::PoloniexDepositsCsv |
-                TransactionsSourceType::PoloniexDepositsSupportCsv |
-                TransactionsSourceType::PoloniexDepositsSupport2Csv => {
-                    poloniex::load_poloniex_deposits_csv(&source.full_path)
-                }
-                TransactionsSourceType::PoloniexTradesBeforeAugust2022Csv => {
-                    poloniex::load_poloniex_trades_before_august_2022_csv(&source.full_path)
-                }
-                TransactionsSourceType::PoloniexTradesCsv |
-                TransactionsSourceType::PoloniexTradesSupportCsv |
-                TransactionsSourceType::PoloniexTradesSupport2Csv => {
-                    poloniex::load_poloniex_trades_csv(&source.full_path)
-                }
-                TransactionsSourceType::PoloniexWithdrawalsCsv |
-                TransactionsSourceType::PoloniexWithdrawalsSupportCsv |
-                TransactionsSourceType::PoloniexWithdrawalsSupport2Csv => {
-                    poloniex::load_poloniex_withdrawals_csv(&source.full_path)
-                }
-                TransactionsSourceType::BinanceConvertCsv => {
-                    binance::load_binance_convert_csv(&source.full_path)
-                }
-                TransactionsSourceType::BinanceSpotTradeHistoryCsv => {
-                    binance::load_binance_spot_trades_csv(&source.full_path)
-                }
-                TransactionsSourceType::BinanceTransactionHistoryCsv => {
-                    binance::load_binance_transaction_records_csv(&source.full_path)
-                }
-                TransactionsSourceType::ReddcoinCoreCsv => {
-                    bitcoin_core::load_reddcoin_core_csv(&source.full_path)
-                }
-                TransactionsSourceType::TrezorCsv => {
-                    trezor::load_trezor_csv(&source.full_path)
-                }
-                TransactionsSourceType::TrezorJson => {
-                    trezor::load_trezor_json(&source.full_path)
-                }
+            };
+
+            let source_txs = if let Some(load_sync) = source_definition.load_sync {
+                load_sync(&source.full_path)
+            } else {
+                anyhow::Ok(source.transactions.clone())
             };
 
             match source_txs {
@@ -1365,7 +1135,11 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
 
     let facade = ui.global::<Facade>();
 
-    let source_types: Vec<SharedString> = TransactionsSourceType::iter().map(|s| SharedString::from(s.to_string())).collect();
+    let mut source_types: Vec<SharedString> = TRANSACTION_SOURCES
+        .iter()
+        .map(|source| SharedString::from(source.label))
+        .collect();
+    source_types.sort();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
     facade.set_wallets(app.ui_wallets.clone().into());
@@ -1402,19 +1176,19 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
 
 fn ui_set_wallets(app: &App) {
     let ui_wallets: Vec<UiWallet> = app.portfolio.wallets.iter().map(|wallet| {
-        let ui_sources: Vec<UiTransactionSource> = wallet.sources.iter().map(|source| {
-            UiTransactionSource {
-                source_type: source.source_type.to_string().into(),
+        let ui_sources: Vec<UiWalletSource> = wallet.sources.iter().map(|source| {
+            let source_definition = transaction_source_by_id(&source.source_type);
+            let label = source_definition
+                .map(|definition| definition.label)
+                .unwrap_or(source.source_type.as_str());
+            let can_sync = source_definition.map(|definition| definition.can_sync()).unwrap_or(false);
+
+            UiWalletSource {
+                source_type: label.into(),
                 name: source.name.clone().into(),
                 path: source.path.clone().into(),
                 enabled: source.enabled,
-                can_sync: match &source.source_type {
-                    TransactionsSourceType::BitcoinAddresses |
-                    TransactionsSourceType::BitcoinXpubs |
-                    TransactionsSourceType::EthereumAddress |
-                    TransactionsSourceType::StellarAccount => true,
-                    _ => false,
-                },
+                can_sync,
                 transaction_count: source.transaction_count as i32,
             }
         }).collect();
@@ -1938,10 +1712,10 @@ async fn main() -> Result<()> {
 
             if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
                 if let Some(file_name) = dialog.pick_file() {
-                    if let Some(source_type) = TransactionsSourceType::detect_from_file(&file_name) {
+                    if let Some(source_type) = detect_source_from_file(&file_name) {
                         let source_directory = file_name.parent().unwrap().to_owned();
-                        wallet.sources.push(TransactionSource {
-                            source_type,
+                        wallet.sources.push(WalletSource {
+                            source_type: source_type.id.to_owned(),
                             path: file_name.to_str().unwrap_or_default().to_owned(),
                             name: String::default(),
                             enabled: true,
@@ -2051,29 +1825,18 @@ async fn main() -> Result<()> {
                 }
                 let source = source.unwrap();
 
-                (source.source_type, source.path.clone())
+                (source.source_type.clone(), source.path.clone())
             };
 
             slint::spawn_local(async move {
                 let transactions = tokio::task::spawn(async move {
-                    let esplora_client = esplora::async_esplora_client().unwrap();
-                    let mut transactions = match source_type {
-                        TransactionsSourceType::BitcoinAddresses => {
-                            esplora::address_transactions(&esplora_client, &source_path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).await
-                        }
-                        TransactionsSourceType::BitcoinXpubs => {
-                            esplora::xpub_addresses_transactions(&esplora_client, &source_path.split_ascii_whitespace().map(|s| s.to_owned()).collect()).await
-                        }
-                        TransactionsSourceType::EthereumAddress => {
-                            etherscan::address_transactions(&source_path).await
-                        }
-                        TransactionsSourceType::StellarAccount => {
-                            horizon::address_transactions(&source_path).await
-                        }
-                        _ => {
-                            Err(anyhow!("Sync not supported for this source type"))
-                        }
-                    };
+                    let source_definition = transaction_source_by_id(&source_type)
+                        .ok_or_else(|| anyhow!("Unknown source type {}", source_type))?;
+                    let load_async = source_definition
+                        .load_async
+                        .ok_or_else(|| anyhow!("Sync not supported for this source type"))?;
+
+                    let mut transactions = load_async(source_path).await;
 
                     let _ = transactions.as_mut().map(|transactions| {
                         transactions.sort_by(|a, b| a.cmp(b) );

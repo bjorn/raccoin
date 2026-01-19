@@ -7,7 +7,11 @@ use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{Amount, Transaction};
+use crate::{
+    base::{Amount, Transaction},
+    CsvSpec, TransactionSource,
+};
+use linkme::distributed_slice;
 
 const BTC_CURRENCY: &str = "BTC";
 
@@ -120,7 +124,7 @@ impl From<PhoenixRecord> for Transaction {
     }
 }
 
-pub(crate) fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut reader = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -132,6 +136,31 @@ pub(crate) fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static PHOENIX_CSV: TransactionSource = TransactionSource {
+    id: "PhoenixCsv",
+    label: "Phoenix (CSV)",
+    csv: &[CsvSpec::new(&[
+        "date",
+        "id",
+        "type",
+        "amount_msat",
+        "amount_fiat",
+        "fee_credit_msat",
+        "mining_fee_sat",
+        "mining_fee_fiat",
+        "service_fee_msat",
+        "service_fee_fiat",
+        "payment_hash",
+        "tx_id",
+        "destination",
+        "description",
+    ])],
+    detect: None,
+    load_sync: Some(load_phoenix_csv),
+    load_async: None,
+};
 
 /// Helpers
 

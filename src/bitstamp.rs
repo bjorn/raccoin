@@ -5,7 +5,11 @@ use chrono::{NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{deserialize_amount, Amount, Operation, Transaction};
+use crate::{
+    base::{deserialize_amount, Amount, Operation, Transaction},
+    CsvSpec, TransactionSource,
+};
+use linkme::distributed_slice;
 
 #[derive(Debug, Deserialize)]
 enum BitstampTransactionType {
@@ -274,7 +278,7 @@ impl BitstampTransactionsConverter {
     }
 }
 
-pub(crate) fn load_bitstamp_old_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bitstamp_old_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut converter = BitstampTransactionsConverter::new();
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
 
@@ -286,7 +290,7 @@ pub(crate) fn load_bitstamp_old_csv(input_path: &Path) -> Result<Vec<Transaction
     Ok(converter.finish())
 }
 
-pub(crate) fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut converter = BitstampTransactionsConverter::new();
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
 
@@ -297,3 +301,40 @@ pub(crate) fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(converter.finish())
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static BITSTAMP_CSV: TransactionSource = TransactionSource {
+    id: "BitstampCsv",
+    label: "Bitstamp Old (CSV)",
+    csv: &[CsvSpec::new(&[
+        "Type", "Datetime", "Account", "Amount", "Value", "Rate", "Fee", "Sub Type",
+    ])],
+    detect: None,
+    load_sync: Some(load_bitstamp_old_csv),
+    load_async: None,
+};
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static BITSTAMP_CSV_NEW: TransactionSource = TransactionSource {
+    id: "BitstampCsvNew",
+    label: "Bitstamp RFC 4180 (CSV)",
+    csv: &[CsvSpec::new(&[
+        "ID",
+        "Account",
+        "Type",
+        "Subtype",
+        "Datetime",
+        "Amount",
+        "Amount currency",
+        "Value",
+        "Value currency",
+        "Rate",
+        "Rate currency",
+        "Fee",
+        "Fee currency",
+        "Order ID",
+    ])],
+    detect: None,
+    load_sync: Some(load_bitstamp_csv),
+    load_async: None,
+};

@@ -7,7 +7,8 @@ use rust_decimal::{prelude::FromPrimitive, Decimal};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
-use crate::base::{Amount, Operation, Transaction};
+use crate::{base::{Amount, Operation, Transaction}, LoadFuture, TransactionSource};
+use linkme::distributed_slice;
 
 fn u256_to_decimal(value: U256) -> Result<Decimal> {
     Decimal::from_u128(value.uint_try_to()?).context("value cannot be represented")
@@ -294,3 +295,17 @@ pub(crate) async fn address_transactions(
 
     Ok(transactions)
 }
+
+pub(crate) fn load_ethereum_address_async(source_path: String) -> LoadFuture {
+    Box::pin(async move { address_transactions(&source_path).await })
+}
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static ETHEREUM_ADDRESS: TransactionSource = TransactionSource {
+    id: "EthereumAddress",
+    label: "Ethereum Address",
+    csv: &[],
+    detect: None,
+    load_sync: None,
+    load_async: Some(load_ethereum_address_async),
+};

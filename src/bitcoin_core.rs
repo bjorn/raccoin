@@ -6,7 +6,11 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::base::{Amount, Transaction, Operation};
+use crate::{
+    base::{Amount, Transaction, Operation},
+    CsvSpec, TransactionSource,
+};
+use linkme::distributed_slice;
 
 #[derive(Debug, Clone, Deserialize)]
 enum TransferType {
@@ -75,16 +79,70 @@ fn load_transactions(input_path: &Path, currency: &str) -> Result<Vec<Transactio
 }
 
 // loads a Bitcoin Core CSV file into a list of unified transactions
-pub(crate) fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bitcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "BTC")
 }
 
 // loads a Peercoin CSV file into a list of unified transactions
-pub(crate) fn load_peercoin_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_peercoin_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "PPC")
 }
 
 // loads a Reddcoin Core CSV file into a list of unified transactions
-pub(crate) fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_reddcoin_core_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     load_transactions(input_path, "RDD")
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static BITCOIN_CORE_CSV: TransactionSource = TransactionSource {
+    id: "BitcoinCoreCsv",
+    label: "Bitcoin Core (CSV)",
+    csv: &[CsvSpec::new(&[
+        "Confirmed",
+        "Date",
+        "Type",
+        "Label",
+        "Address",
+        "Amount (BTC)",
+        "ID",
+    ])],
+    detect: None,
+    load_sync: Some(load_bitcoin_core_csv),
+    load_async: None,
+};
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static PEERCOIN_CSV: TransactionSource = TransactionSource {
+    id: "PeercoinCsv",
+    label: "Peercoin Qt (CSV)",
+    csv: &[CsvSpec::new(&[
+        "Confirmed",
+        "Date",
+        "Type",
+        "Label",
+        "Address",
+        "Amount (PPC)",
+        "ID",
+    ])],
+    detect: None,
+    load_sync: Some(load_peercoin_csv),
+    load_async: None,
+};
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static REDDCOIN_CORE_CSV: TransactionSource = TransactionSource {
+    id: "ReddcoinCoreCsv",
+    label: "Reddcoin Core (CSV)",
+    csv: &[CsvSpec::new(&[
+        "Confirmed",
+        "Date",
+        "Type",
+        "Label",
+        "Address",
+        "Amount (RDD)",
+        "ID",
+    ])],
+    detect: None,
+    load_sync: Some(load_reddcoin_core_csv),
+    load_async: None,
+};

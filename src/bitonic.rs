@@ -6,7 +6,8 @@ use chrono_tz::Europe::Berlin;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::{base::{Transaction, Operation, Amount}, time::deserialize_date_time};
+use crate::{base::{Transaction, Operation, Amount}, time::deserialize_date_time, CsvSpec, TransactionSource};
+use linkme::distributed_slice;
 
 #[derive(Debug, Clone, Deserialize)]
 enum BitonicActionType {
@@ -49,7 +50,8 @@ impl From<BitonicAction> for Transaction {
 }
 
 // loads a bitonic CSV file into a list of unified transactions
-pub(crate) fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+// todo: document custom format
+fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut transactions = Vec::new();
 
     let mut rdr = csv::ReaderBuilder::new()
@@ -87,3 +89,13 @@ pub(crate) fn load_bitonic_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static BITONIC_CSV: TransactionSource = TransactionSource {
+    id: "BitonicCsv",
+    label: "Bitonic (CSV)",
+    csv: &[CsvSpec::new(&["Date", "Action", "Amount", "Price"])],
+    detect: None,
+    load_sync: Some(load_bitonic_csv),
+    load_async: None,
+};

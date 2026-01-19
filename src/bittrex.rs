@@ -5,7 +5,8 @@ use chrono::{NaiveDateTime, NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Transaction, Amount};
+use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSource};
+use linkme::distributed_slice;
 
 // deserialize function for reading NaiveDateTime
 pub(crate) fn deserialize_date_time<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
@@ -119,7 +120,7 @@ impl From<BittrexTransaction> for Transaction {
 }
 
 // loads a Bittrex Order History CSV file into a list of unified transactions
-pub(crate) fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -133,7 +134,7 @@ pub(crate) fn load_bittrex_order_history_csv(input_path: &Path) -> Result<Vec<Tr
 }
 
 // loads a Bittrex Transaction History CSV file into a list of unified transactions
-pub(crate) fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -145,3 +146,27 @@ pub(crate) fn load_bittrex_transaction_history_csv(input_path: &Path) -> Result<
     transactions.reverse();
     Ok(transactions)
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static BITTREX_ORDER_HISTORY_CSV: TransactionSource = TransactionSource {
+    id: "BittrexOrderHistoryCsv",
+    label: "Bittrex Order History (CSV)",
+    csv: &[CsvSpec::new(&[
+        "Date", "Market", "Side", "Type", "Price", "Quantity", "Total",
+    ])],
+    detect: None,
+    load_sync: Some(load_bittrex_order_history_csv),
+    load_async: None,
+};
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static BITTREX_TRANSACTION_HISTORY_CSV: TransactionSource = TransactionSource {
+    id: "BittrexTransactionHistoryCsv",
+    label: "Bittrex Transaction History (CSV)",
+    csv: &[CsvSpec::new(&[
+        "Date", "Currency", "Type", "Address", "Memo/Tag", "TxId", "Amount",
+    ])],
+    detect: None,
+    load_sync: Some(load_bittrex_transaction_history_csv),
+    load_async: None,
+};

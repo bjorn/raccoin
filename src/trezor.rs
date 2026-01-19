@@ -5,7 +5,8 @@ use chrono::DateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::base::{Amount, Operation, Transaction};
+use crate::{base::{Amount, Operation, Transaction}, CsvSpec, TransactionSource};
+use linkme::distributed_slice;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -109,7 +110,7 @@ impl<'a> TryFrom<TrezorTransactionCsv<'a>> for Transaction {
 }
 
 // loads a TREZOR Suite CSV file into a list of unified transactions
-pub(crate) fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+fn load_trezor_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     use std::fs::File;
     use std::io::{BufRead, BufReader};
 
@@ -336,3 +337,41 @@ pub(crate) fn load_trezor_json(input_path: &Path) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static TREZOR_CSV: TransactionSource = TransactionSource {
+    id: "TrezorCsv",
+    label: "Trezor (CSV)",
+    csv: &[CsvSpec {
+        headers: &[
+            "Timestamp",
+            "Date",
+            "Time",
+            "Type",
+            "Transaction ID",
+            "Fee",
+            "Fee unit",
+            "Address",
+            "Label",
+            "Amount",
+            "Amount unit",
+            "Fiat (EUR)",
+            "Other",
+        ],
+        delimiters: &[b',', b';'],
+        skip_lines: 0,
+    }],
+    detect: None,
+    load_sync: Some(load_trezor_csv),
+    load_async: None,
+};
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static TREZOR_JSON: TransactionSource = TransactionSource {
+    id: "TrezorJson",
+    label: "Trezor (JSON)",
+    csv: &[],
+    detect: None,
+    load_sync: Some(load_trezor_json),
+    load_async: None,
+};
