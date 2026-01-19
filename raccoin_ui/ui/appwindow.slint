@@ -87,6 +87,33 @@ component NavigationBar inherits HorizontalBox {
     }
 }
 
+component CloseButton inherits Rectangle {
+    in property <image> icon: @image-url("icons/x.svg");
+
+    callback clicked;
+
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border-width: close-button-area.has-hover ? 1px : 0px;
+    border-color: #3e3e3e;
+    background: close-button-area.has-hover ? #4564 : transparent;
+
+    Image {
+        source: root.icon;
+        width: 16px;
+        height: 16px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+
+    close-button-area := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.clicked(); }
+    }
+}
+
 component ModalDialog inherits PopupWindow {
     in property <string> title <=> title-text.text;
 
@@ -141,6 +168,12 @@ component ModalDialog inherits PopupWindow {
                 }
             }
 
+            close-button := CloseButton {
+                x: parent.width - self.width - 8px;
+                y: 8px;
+                clicked => { root.close(); }
+            }
+
             animate width, height {
                  duration: 200ms;
                  easing: ease-out;
@@ -163,6 +196,13 @@ component AddWalletSourceDialog inherits Rectangle {
 
     preferred-height: self.step == 0 ? page-1.preferred-height : page-2.preferred-height;
     min-height: 0px;
+
+    function select-kind(kind_id: string, kind_label: string) {
+        root.step = 1;
+        root.kind-id = kind_id;
+        root.kind-label = kind_label;
+        name-input.focus();
+    }
 
     page-1 := GridBox {
         visible: step == 0;
@@ -191,20 +231,12 @@ component AddWalletSourceDialog inherits Rectangle {
         Button {
             row: 2; col: 1;
             text: "Bitcoin Address(es)";
-            clicked => {
-                root.step = 1;
-                root.kind-id = "BitcoinAddresses";
-                root.kind-label = "Bitcoin Address(es)";
-            }
+            clicked => { root.select-kind("BitcoinAddresses", "Bitcoin Address(es)"); }
         }
         Button {
             row: 2; col: 2;
             text: "Bitcoin HD Wallet(s)";
-            clicked => {
-                root.step = 1;
-                root.kind-id = "BitcoinXpubs";
-                root.kind-label = "Bitcoin HD Wallet(s)";
-            }
+            clicked => { root.select-kind("BitcoinXpubs", "Bitcoin HD Wallet(s)"); }
         }
 
         Text {
@@ -215,11 +247,7 @@ component AddWalletSourceDialog inherits Rectangle {
         Button {
             row: 3; col: 1; colspan: 2;
             text: "Ethereum Address";
-            clicked => {
-                root.step = 1;
-                root.kind-id = "EthereumAddress";
-                root.kind-label = "Ethereum Address";
-            }
+            clicked => { root.select-kind("EthereumAddress", "Ethereum Address"); }
         }
 
         Text {
@@ -230,29 +258,14 @@ component AddWalletSourceDialog inherits Rectangle {
         Button {
             row: 4; col: 1; colspan: 2;
             text: "Stellar Account";
-            clicked => {
-                root.step = 1;
-                root.kind-id = "StellarAccount";
-                root.kind-label = "Stellar Address";
-            }
-        }
-
-        HorizontalBox {
-            row: 6; col: 0; colspan: 3;
-            padding: 0;
-            alignment: end;
-
-            StandardButton {
-                kind: cancel;
-                clicked => { root.close-requested(); }
-            }
+            clicked => { root.select-kind("StellarAccount", "Stellar Address"); }
         }
     }
 
     page-2 := VerticalBox {
         visible: step == 1;
 
-        LineEdit {
+        name-input := LineEdit {
             text <=> root.name;
             placeholder-text: "Name";
         }
