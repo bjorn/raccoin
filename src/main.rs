@@ -1696,7 +1696,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    facade.on_add_source({
+    facade.on_add_source_csv({
         let app = app.clone();
 
         move |wallet_index| {
@@ -1732,6 +1732,44 @@ async fn main() -> Result<()> {
                         app.report_error("Unrecognized file type. Please consider opening an issue on GitHub!");
                     }
                 }
+            }
+        }
+    });
+
+    facade.on_add_source_address({
+        let app = app.clone();
+
+        move |wallet_index, source_type, source_path, source_name| {
+            let mut app = app.borrow_mut();
+            let source_type = source_type.to_string();
+            let source_path = source_path.trim();
+            let source_name = source_name.trim();
+
+            if source_path.is_empty() {
+                app.report_error("Source address cannot be empty.");
+                return;
+            }
+
+            let source_definition = transaction_source_by_id(&source_type);
+            if source_definition.is_none() {
+                app.report_error("Unknown source type.");
+                return;
+            }
+
+            if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
+                wallet.sources.push(WalletSource {
+                    source_type,
+                    path: source_path.to_owned(),
+                    name: source_name.to_owned(),
+                    enabled: true,
+                    full_path: PathBuf::new(),
+                    transaction_count: 0,
+                    transactions: Vec::new(),
+                });
+
+                app.refresh_transactions();
+                app.refresh_ui();
+                app.save_portfolio(None);
             }
         }
     });

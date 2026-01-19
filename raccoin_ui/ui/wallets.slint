@@ -92,6 +92,7 @@ export component Wallets inherits ScrollView {
     in property <[UiWallet]> wallets: Facade.wallets;
 
     callback wallet-transactions-clicked(int);
+    callback add-source-requested(int);
 
     VerticalBox {
         padding-left: 17px;
@@ -219,7 +220,7 @@ export component Wallets inherits ScrollView {
 
                             Button {
                                 text: "Add Source";
-                                clicked => { Facade.add-source(wallet-index); }
+                                clicked => { root.add-source-requested(wallet-index); }
                             }
                         }
                     }

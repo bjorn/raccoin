@@ -37,7 +37,7 @@ Raccoin can import CSV files exported from the following sources:
 
 ### Blockchains
 
-Raccoin can also synchronize wallets from certain blockchains directly. Currently, adding these wallets requires manually editing the portfolio JSON file since the UI for adding them still needs to be written. Supported are:
+Raccoin can also synchronize wallets from certain blockchains directly. Supported are:
 
 * [Bitcoin](https://bitcoin.org/) wallets (either plain addresses or x/y/zpub addresses)
 * [Ethereum](https://ethereum.org/) wallets

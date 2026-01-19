@@ -41,32 +41,14 @@ Raccoin can import CSV files exported from the following sources:
 Raccoin can also synchronize wallets from certain blockchains directly.
 Supported are:
 
-* [Bitcoin](https://bitcoin.org/) wallets (either plain addresses or x/y/zpub addresses)
-* [Ethereum](https://ethereum.org/) wallets
-* [Stellar](https://stellar.org/) accounts
+* [Bitcoin](https://bitcoin.org/) wallets (either plain addresses or x/y/zpub addresses, using <https://blockstream.info/>)
+* [Ethereum](https://ethereum.org/) wallets (using <https://etherscan.io/>)
+* [Stellar](https://stellar.org/) accounts (using <https://horizon.stellar.org/>)
 
-> Currently, adding these wallets requires manually editing the portfolio JSON
-> file since the UI for adding them still needs to be written. An example
-> snippet for adding an Ethereum wallet would be:
-> ```json
-> "sources": [
->   {
->     "source_type": "EthereumAddress",
->     "path": "0xf87eC316C04bf44D87200AdCa0c9b4d6ecBd91D4",
->     "enabled": true
->   }
-> ]
-> ```
-> After making the edit, you'll have to restart Raccoin since it won't
-> auto-reload the portfolio. Then, on the Wallets page, click the "Sync" button
-> to fetch the transations. They will be stored inside the portfolio JSON file.
->
-> Supported source types:
->
-> * `BitcoinAddresses`: Plain Bitcoin addresses (separated by space)
-> * `BitcoinXpubs`: HD wallet x/y/zpub addresses (separated by space)
-> * `EthereumAddress`: A single Ethereum address
-> * `StellarAccount`: A single Stellar account
+> As of Raccoin 0.2, adding these wallets required manually editing the portfolio JSON
+> file since the UI for adding them still needed to be written. Also, Stellar and Ethereum wallets
+> can no longer be synchronized since the APIs and protocols needed an update. To use these
+> features, please install a [development snapshot](/snapshot/) of Raccoin.
 
 ### JSON Format
 
