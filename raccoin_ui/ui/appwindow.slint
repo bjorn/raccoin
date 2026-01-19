@@ -1,4 +1,4 @@
-import { HorizontalBox, CheckBox, ComboBox, Button, VerticalBox } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, GridBox, HorizontalBox, LineEdit, StandardButton, VerticalBox } from "std-widgets.slint";
 import { Portfolio } from "portfolio.slint";
 import { Wallets } from "wallets.slint";
 import { Transactions } from "transactions.slint";
@@ -48,76 +48,358 @@ component PageButton inherits Rectangle {
     }
 }
 
-component MainContent inherits VerticalLayout {
-    property <Page> active-page: Page.portfolio;
+component NavigationBar inherits HorizontalBox {
+    in-out property <Page> active-page;
 
-    HorizontalBox {
-        alignment: center;
+    alignment: center;
 
-        PageButton {
-            text: "Portfolio";
-            active: root.active-page == Page.portfolio;
-            pressed => { root.active-page = Page.portfolio; }
+    PageButton {
+        text: "Portfolio";
+        active: active-page == Page.portfolio;
+        pressed => { root.active-page = Page.portfolio; }
+    }
+    PageButton {
+        text: "Wallets";
+        active: active-page == Page.sources;
+        pressed => { root.active-page = Page.sources; }
+
+        Badge {
+            text: Facade.wallets.length;
         }
-        PageButton {
-            text: "Wallets";
-            active: root.active-page == Page.sources;
-            pressed => { root.active-page = Page.sources; }
+    }
+    PageButton {
+        text: "Transactions";
+        active: active-page == Page.transactions;
+        pressed => { root.active-page = Page.transactions; }
 
-            Badge {
-                text: Facade.wallets.length;
+        Badge {
+            text: Facade.transactions.length;
+        }
+    }
+    PageButton {
+        text: "Reports";
+        active: active-page == Page.reports;
+        pressed => { root.active-page = Page.reports; }
+
+        Badge {
+            text: Facade.reports.length;
+        }
+    }
+}
+
+component ModalDialog inherits PopupWindow {
+    in property <string> title <=> title-text.text;
+
+    close-policy: close-on-click-outside;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000080;
+
+        TouchArea {
+            clicked => { root.close(); }
+        }
+    }
+
+    forward-focus: focus-scope;
+
+    focus-scope := FocusScope {
+        focus-on-tab-navigation: false;
+
+        key_pressed(event) => {
+            if event.text == Key.Escape {
+                root.close();
+                return accept;
+            }
+
+            reject
+        }
+
+        Rectangle {
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #3e3e3e;
+            background: #1b1b1b;
+            drop-shadow-color: #000000;
+            drop-shadow-offset-y: 2px;
+            drop-shadow-blur: 4px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: self.preferred-width;
+            height: self.preferred-height;
+            clip: true;
+
+            TouchArea { // eats clicks, to avoid closing the dialog
+                VerticalBox {
+                    title-text := Text {
+                        horizontal-alignment: center;
+                        font-size: 18px;
+                    }
+
+                    @children
+                }
+            }
+
+            animate width, height {
+                 duration: 200ms;
+                 easing: ease-out;
             }
         }
-        PageButton {
-            text: "Transactions";
-            active: root.active-page == Page.transactions;
-            pressed => { root.active-page = Page.transactions; }
+    }
+}
 
-            Badge {
-                text: Facade.transactions.length;
+component AddWalletSourceDialog inherits Rectangle {
+    in-out property <int> wallet-index: -1;
+    in-out property <int> step: 0;
+    in-out property <string> kind-id: "";
+    in-out property <string> kind-label: "";
+    in-out property <string> input: "";
+    in-out property <string> name: "";
+
+    callback close-requested();
+    callback add-csv-requested(int);
+    callback add-address-requested(int, string, string, string);
+
+    preferred-height: self.step == 0 ? page-1.preferred-height : page-2.preferred-height;
+    min-height: 0px;
+
+    page-1 := GridBox {
+        visible: step == 0;
+        min-height: 0px;
+
+        Text {
+            row: 0; col: 0;
+            text: "Import CSV file";
+            vertical-alignment: center;
+        }
+        Button {
+            row: 0; col: 1; colspan: 2;
+            text: "CSV file";
+            clicked => {
+                root.add-csv-requested(wallet-index);
+                root.close-requested();
             }
         }
-        PageButton {
-            text: "Reports";
-            active: root.active-page == Page.reports;
-            pressed => { root.active-page = Page.reports; }
 
-            Badge {
-                text: Facade.reports.length;
+        Text {
+            row: 2; col: 0;
+            text: "Bitcoin";
+            vertical-alignment: center;
+
+        }
+        Button {
+            row: 2; col: 1;
+            text: "Bitcoin Address(es)";
+            clicked => {
+                root.step = 1;
+                root.kind-id = "BitcoinAddresses";
+                root.kind-label = "Bitcoin Address(es)";
+            }
+        }
+        Button {
+            row: 2; col: 2;
+            text: "Bitcoin HD Wallet(s)";
+            clicked => {
+                root.step = 1;
+                root.kind-id = "BitcoinXpubs";
+                root.kind-label = "Bitcoin HD Wallet(s)";
+            }
+        }
+
+        Text {
+            row: 3; col: 0;
+            text: "Ethereum";
+            vertical-alignment: TextVerticalAlignment.center;
+        }
+        Button {
+            row: 3; col: 1; colspan: 2;
+            text: "Ethereum Address";
+            clicked => {
+                root.step = 1;
+                root.kind-id = "EthereumAddress";
+                root.kind-label = "Ethereum Address";
+            }
+        }
+
+        Text {
+            row: 4; col: 0;
+            text: "Stellar";
+            vertical-alignment: TextVerticalAlignment.center;
+        }
+        Button {
+            row: 4; col: 1; colspan: 2;
+            text: "Stellar Account";
+            clicked => {
+                root.step = 1;
+                root.kind-id = "StellarAccount";
+                root.kind-label = "Stellar Address";
+            }
+        }
+
+        HorizontalBox {
+            row: 6; col: 0; colspan: 3;
+            padding: 0;
+            alignment: end;
+
+            StandardButton {
+                kind: cancel;
+                clicked => { root.close-requested(); }
             }
         }
     }
 
-    Rectangle {
-        Portfolio {
-            visible: active-page == Page.portfolio;
-            currency-filter-clicked(currency) => {
-                Facade.set-currency-filter(currency);
-                root.active-page = Page.transactions;
+    page-2 := VerticalBox {
+        visible: step == 1;
+
+        LineEdit {
+            text: name;
+            placeholder-text: "Name";
+            edited => { root.name = self.text; }
+        }
+        address-input := LineEdit {
+            text: input;
+            preferred-width: 300px;
+            placeholder-text: {
+                if (kind-id == "BitcoinAddresses") {
+                    "Address(es), separated by spaces";
+                } else if (kind-id == "BitcoinXpubs") {
+                    "Extended Public Key(s), separated by spaces";
+                } else if (kind-id == "StellarAccount") {
+                    "Stellar Account ID";
+                } else if (kind-id == "EthereumAddress") {
+                    "Ethereum Address";
+                } else {
+                    "Address";
+                }
+            }
+            accepted => {
+                if (self.text != "") {
+                    root.add-address-requested(wallet-index, kind-id, self.text, name);
+                    root.close-requested();
+                }
             }
         }
 
-        Wallets {
-            visible: active-page == Page.sources;
-            wallet-transactions-clicked(index) => {
-                Facade.set-wallet-filter(index);
-                root.active-page = Page.transactions;
+        Text {
+            font-size: 12px;
+            color: #666;
+            text: {
+                if (kind-id == "BitcoinAddresses" || kind-id == "BitcoinXpubs") {
+                    "Synced using https://blockstream.info/";
+                } else if (kind-id == "StellarAccount") {
+                    "Synced using https://horizon.stellar.org/";
+                } else if (kind-id == "EthereumAddress") {
+                    "Synced using https://etherscan.io/";
+                } else {
+                    "";
+                }
             }
+            horizontal-alignment: center;
         }
 
-        transactions := Transactions {
-            visible: active-page == Page.transactions;
+        Rectangle {}    // bit of space
+
+        HorizontalBox {
+            padding: 0;
+
+            Button {
+                text: "Back";
+                clicked => {
+                    root.step = 0;
+                    root.input = "";
+                    root.name = "";
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "Add Source";
+                enabled: address-input.text != "";
+                clicked => {
+                    root.add-address-requested(wallet-index, kind-id, address-input.text, name);
+                    root.close-requested();
+                }
+            }
+        }
+    }
+}
+
+component MainContent inherits Rectangle {
+    property <Page> active-page: Page.sources;
+    property <int> add-source-wallet-index: -1;
+    property <int> add-source-step: 0; // 0 = pick type, 1 = enter address
+    property <string> add-source-kind-id: "";
+    property <string> add-source-kind-label: "";
+    property <string> add-source-input: "";
+    property <string> add-source-name: "";
+
+    VerticalLayout {
+        NavigationBar {
+            active-page <=> root.active-page;
         }
 
-        Reports {
-            visible: active-page == Page.reports;
-            currency-filter-clicked(currency) => {
-                Facade.set-currency-filter(currency);
-                root.active-page = Page.transactions;
+        Rectangle {
+            Portfolio {
+                visible: active-page == Page.portfolio;
+                currency-filter-clicked(currency) => {
+                    Facade.set-currency-filter(currency);
+                    root.active-page = Page.transactions;
+                }
             }
-            select-transaction(id) => {
-                transactions.select-transaction(id);
-                root.active-page = Page.transactions;
+
+            Wallets {
+                visible: active-page == Page.sources;
+                wallet-transactions-clicked(index) => {
+                    Facade.set-wallet-filter(index);
+                    root.active-page = Page.transactions;
+                }
+                add-source-requested(index) => {
+                    root.add-source-wallet-index = index;
+                    root.add-source-step = 0;
+                    root.add-source-kind-id = "";
+                    root.add-source-kind-label = "";
+                    root.add-source-input = "";
+                    root.add-source-name = "";
+                    add-source-modal.show();
+                }
+            }
+
+            transactions := Transactions {
+                visible: active-page == Page.transactions;
+            }
+
+            Reports {
+                visible: active-page == Page.reports;
+                currency-filter-clicked(currency) => {
+                    Facade.set-currency-filter(currency);
+                    root.active-page = Page.transactions;
+                }
+                select-transaction(id) => {
+                    transactions.select-transaction(id);
+                    root.active-page = Page.transactions;
+                }
+            }
+        }
+    }
+
+    add-source-modal := ModalDialog {
+        width: root.width;
+        height: root.height;
+
+        title: root.add-source-step == 0 ? "Add Source" : "Add " + root.add-source-kind-label;
+
+        AddWalletSourceDialog {
+            wallet-index <=> root.add-source-wallet-index;
+            step <=> root.add-source-step;
+            kind-id <=> root.add-source-kind-id;
+            kind-label <=> root.add-source-kind-label;
+            input <=> root.add-source-input;
+            name <=> root.add-source-name;
+
+            close-requested() => { add-source-modal.close(); }
+            add-csv-requested(wallet_index) => { Facade.add-source-csv(wallet_index); }
+            add-address-requested(wallet_index, kind_id, input, name) => {
+                Facade.add-source-address(wallet_index, kind_id, input, name);
             }
         }
     }

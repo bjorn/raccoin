@@ -42,7 +42,8 @@ export global Facade {
     callback add-wallet(string);
     callback remove-wallet(int);
 
-    callback add-source(int);
+    callback add-source-csv(int);
+    callback add-source-address(int, string, string, string);
     callback remove-source(int,int);
 
     callback ignore-currency(string);
