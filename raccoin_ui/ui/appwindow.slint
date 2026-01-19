@@ -253,12 +253,11 @@ component AddWalletSourceDialog inherits Rectangle {
         visible: step == 1;
 
         LineEdit {
-            text: name;
+            text <=> root.name;
             placeholder-text: "Name";
-            edited => { root.name = self.text; }
         }
         address-input := LineEdit {
-            text: input;
+            text <=> root.input;
             preferred-width: 300px;
             placeholder-text: {
                 if (kind-id == "BitcoinAddresses") {
