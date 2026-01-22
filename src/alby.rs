@@ -21,6 +21,26 @@ const BTC_CURRENCY: &str = "BTC";
 /// Scale for converting satoshis to BTC (1 BTC = 100,000,000 sats)
 const SATS_SCALE: u32 = 8;
 
+const ALBY_HEADERS: [&str; 17] = [
+    "Invoice Type",
+    "Amount",
+    "Fee",
+    "Creation Date",
+    "Settled Date",
+    "Memo",
+    "Comment",
+    "Message",
+    "Payer Name",
+    "Payer Pubkey",
+    "Payment Hash",
+    "Preimage",
+    "Fiat In Cents",
+    "Currency",
+    "USD In Cents",
+    "Is Boostagram",
+    "Is Zap",
+];
+
 #[derive(Debug, Deserialize, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 enum InvoiceType {
@@ -182,25 +202,7 @@ fn load_alby_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static ALBY_CSV: TransactionSource = TransactionSource {
     id: "AlbyCsv",
     label: "Alby (CSV)",
-    csv: &[CsvSpec::new(&[
-        "Invoice Type",
-        "Amount",
-        "Fee",
-        "Creation Date",
-        "Settled Date",
-        "Memo",
-        "Comment",
-        "Message",
-        "Payer Name",
-        "Payer Pubkey",
-        "Payment Hash",
-        "Preimage",
-        "Fiat In Cents",
-        "Currency",
-        "USD In Cents",
-        "Is Boostagram",
-        "Is Zap",
-    ])],
+    csv: &[CsvSpec::new(&ALBY_HEADERS)],
     detect: None,
     load_sync: Some(load_alby_csv),
     load_async: None,
@@ -223,14 +225,13 @@ fn non_empty(value: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use crate::base::Operation;
+    use csv::StringRecord;
     use rust_decimal_macros::dec;
 
     fn parse_csv_row(csv: &str) -> Result<Transaction> {
-        let csv_with_header = format!(
-            "Invoice Type,Amount,Fee,Creation Date,Settled Date,Memo,Comment,Message,Payer Name,Payer Pubkey,Payment Hash,Preimage,Fiat In Cents,Currency,USD In Cents,Is Boostagram,Is Zap\n{}",
-            csv
-        );
-        let mut reader = csv::ReaderBuilder::new().from_reader(csv_with_header.as_bytes());
+        let header = StringRecord::from(&ALBY_HEADERS[..]);
+        let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
+        reader.set_headers(header);
         let record: AlbyRecord = reader.deserialize().next().unwrap().unwrap();
         Transaction::try_from(record)
     }

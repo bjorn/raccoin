@@ -13,7 +13,7 @@ use linkme::distributed_slice;
 
 const BTC_CURRENCY: &str = "BTC";
 const LIGHTNING_CURRENCY: &str = "LIGHTNING";
-const WALLET_OF_SATOSHI_HEADERS: &[&str] = &[
+const WALLET_OF_SATOSHI_HEADERS: [&str; 8] = [
     "utcDate",
     "type",
     "currency",
@@ -23,7 +23,7 @@ const WALLET_OF_SATOSHI_HEADERS: &[&str] = &[
     "description",
     "pointOfSale",
 ];
-const WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS: &[&str] = &[
+const WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS: [&str; 10] = [
     "utcDate",
     "type",
     "currency",
@@ -156,8 +156,8 @@ static WALLET_OF_SATOSHI_CSV: TransactionSource = TransactionSource {
     id: "WalletOfSatoshiCsv",
     label: "Wallet of Satoshi (CSV)",
     csv: &[
-        CsvSpec::new(WALLET_OF_SATOSHI_HEADERS),
-        CsvSpec::new(WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS),
+        CsvSpec::new(&WALLET_OF_SATOSHI_HEADERS),
+        CsvSpec::new(&WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS),
     ],
     detect: None,
     load_sync: Some(load_wallet_of_satoshi_csv),
@@ -250,7 +250,7 @@ mod tests {
     }
 
     fn parse_csv_row(csv: &str) -> Result<Transaction> {
-        let header = StringRecord::from(WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS);
+        let header = StringRecord::from(&WALLET_OF_SATOSHI_NON_CUSTODIAL_HEADERS[..]);
         let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
         reader.set_headers(header);
         let record: WalletOfSatoshiRecord = reader.deserialize().next().unwrap().unwrap();
