@@ -28,6 +28,7 @@ mod price_history;
 mod time;
 mod trezor;
 mod wallet_of_satoshi;
+mod wave_space;
 
 use anyhow::{anyhow, Context, Result};
 use coinmarketcap::CmcInterval;
