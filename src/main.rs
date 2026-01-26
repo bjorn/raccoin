@@ -26,6 +26,7 @@ mod poloniex;
 mod time;
 mod trezor;
 mod wallet_of_satoshi;
+mod wave_space;
 
 use anyhow::{anyhow, Context, Result};
 use base::{cmc_id, Amount, Operation, PriceHistory, Transaction};
