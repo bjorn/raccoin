@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
@@ -55,6 +55,8 @@ struct Quote {
     // timestamp: DateTime<FixedOffset>,
 }
 
+#[allow(dead_code)]
+#[derive(Copy, Clone)]
 pub(crate) enum CmcInterval {
     Hourly,
     Daily,
@@ -67,6 +69,14 @@ impl CmcInterval {
             CmcInterval::Hourly => "1h",
             CmcInterval::Daily => "1d",
             CmcInterval::Weekly => "7d",
+        }
+    }
+
+    pub(crate) fn duration(&self) -> Duration {
+        match self {
+            CmcInterval::Hourly => Duration::hours(1),
+            CmcInterval::Daily => Duration::days(1),
+            CmcInterval::Weekly => Duration::weeks(1),
         }
     }
 }

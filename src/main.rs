@@ -35,7 +35,7 @@ use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use directories::ProjectDirs;
 use fifo::{CapitalGain, CostBasisTracking, FIFO};
 use raccoin_ui::*;
-use price_history::{PriceHistory, PriceRequirements};
+use price_history::{PriceHistory, PriceRequirements, split_ranges};
 use regex::{Regex, RegexBuilder};
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
@@ -984,38 +984,132 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
     transactions.iter_mut().for_each(estimate_transaction_value);
 }
 
-async fn download_price_history(requirements: PriceRequirements, mut price_history: PriceHistory) -> Result<PriceHistory> {
-    // price_history.debug_dump();
-    let tolerance = Duration::hours(1);
+async fn update_price_history(app: Rc<RefCell<App>>) {
+    // Determine which price points we need to know for our transactions and clone the
+    // available price history so that it can be extended in a thread.
+    let (requirements, mut price_history) = {
+        app.borrow_mut().stop_update_price_history = false;
+        let app = app.borrow();
+        app.ui().global::<Facade>().set_updating_price_history(true);
+
+        (collect_price_requirements(&app.transactions), app.price_history.clone())
+    };
+
+    // Determine ranges of missing price points that need to be requested
+    let cmc_interval = CmcInterval::Hourly;
+    let tolerance = cmc_interval.duration();
     let padding = Duration::days(7);
-    let missing_ranges = requirements.missing_ranges(&price_history, tolerance, padding);
-    dbg!(&missing_ranges);
+    let mut missing_ranges = requirements.missing_ranges(&price_history, tolerance, padding);
+    let mut save = false;
+    // price_history.debug_dump();
+    // dbg!(&missing_ranges);
+
+    let mut total_ranges = 0;
+    let mut processed_ranges = 0;
+
+    let max_span = cmc_interval.duration() * 400;
+    for (_, ranges) in missing_ranges.iter_mut() {
+        split_ranges(ranges, max_span);
+        total_ranges += ranges.len();
+    }
+
+    app.borrow().ui().global::<Facade>().set_updating_price_history_progress(0.0);
 
     // Download missing price points
     for (currency, ranges) in missing_ranges {
-        if cmc_id(&currency) == -1 {
-            continue;
-        }
-        if currency != "BTC" {
-            continue;
-        }
-
-        let price_data = price_history.price_data(currency.to_owned());
         for range in ranges {
             println!("Downloading price points for {:} from {:} to {:}", currency, range.start, range.end);
-            let price_points = coinmarketcap::download_price_points(range.start, range.end, currency.as_str(), CmcInterval::Hourly).await;
+            let currency_for_task = currency.clone();
+            let price_points = tokio::task::spawn(async move {
+                coinmarketcap::download_price_points(range.start, range.end, currency_for_task.as_str(), cmc_interval).await
+            }).await.unwrap();
+
             match price_points {
                 Ok(price_points) => {
-                    price_data.add_points(price_points);
+                    let count = price_points.len();
+                    price_history.price_data(currency.to_owned()).add_points(price_points);
+                    let mut app = app.borrow_mut();
+                    app.price_history = price_history.clone();
+                    app.refresh_transactions();
+                    app.refresh_ui();
+                    app.report_info(&format!("Price history updated for {:} from {:} to {:} ({:} points)", currency, range.start, range.end, count));
+                    save = true;
                 }
                 Err(e) => {
-                    println!("warning: failed to download price points for {:}: {:?}", currency, e);
+                    app.borrow().report_warning(&format!("Failed to download price points for {:}: {:}", currency, e));
                 }
+            }
+
+            processed_ranges += 1;
+            let progress = if total_ranges > 0 {
+                processed_ranges as f32 / total_ranges as f32
+            } else {
+                0.0
+            };
+            app.borrow().ui().global::<Facade>().set_updating_price_history_progress(progress);
+
+            if app.borrow().stop_update_price_history {
+                break;
+            }
+        }
+
+        if app.borrow().stop_update_price_history {
+            break;
+        }
+    }
+
+    // On success, update the app's price history and refresh the UI
+    if save {
+        let mut app = app.borrow_mut();
+        app.save_portfolio(None);
+
+        if let Some(dirs) = app.project_dirs.as_ref() {
+            let data_dir = dirs.data_local_dir();
+            if let Err(e) = app.price_history.save_to_dir(&data_dir) {
+                eprintln!("Error saving price history: {}", e);
             }
         }
     }
 
-    Ok(price_history)
+    app.borrow().ui().global::<Facade>().set_updating_price_history(false);
+}
+
+fn collect_price_requirements(transactions: &[Transaction]) -> PriceRequirements {
+    let mut requirements = PriceRequirements::new();
+
+    for tx in transactions.iter() {
+        // For transactions to or from fiat, we know the value exactly and don't
+        // need to estimate the value.
+        match tx.incoming_outgoing() {
+            (None, None) => {}
+            (None, Some(amount)) |
+            (Some(amount), None) => {
+                if !amount.is_fiat() {
+                    requirements.add(&amount.currency, tx.timestamp);
+                }
+            }
+            (Some(incoming), Some(outgoing)) => {
+                if !incoming.is_fiat() && !outgoing.is_fiat() {
+                    // In case neither side is fiat, we want to know the price of both
+                    // currencies, since it can give a better value estimate.
+                    requirements.add(&incoming.currency, tx.timestamp);
+                    requirements.add(&outgoing.currency, tx.timestamp);
+                }
+            }
+        }
+
+        // We may also need to know the price of the fee currency.
+        match &tx.fee {
+            Some(amount) => {
+                if !amount.is_fiat() {
+                    requirements.add(&amount.currency, tx.timestamp);
+                }
+            }
+            None => {}
+        };
+    }
+
+    requirements
 }
 
 fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasisTracking) -> Vec<TaxReport> {
@@ -1970,119 +2064,7 @@ async fn main() -> Result<()> {
 
         move || {
             let app = app.clone();
-
-            slint::spawn_local(async move {
-                // Determine which price points we need to know for our transactions and clone the
-                // available price history so that it can be extended in a thread.
-                let (requirements, mut price_history) = {
-                    app.borrow_mut().stop_update_price_history = false;
-                    let app = app.borrow();
-                    app.ui().global::<Facade>().set_updating_price_history(true);
-
-                    let mut requirements = PriceRequirements::new();
-
-                    for tx in app.transactions.iter() {
-                        // For transactions to or from fiat, we know the value exactly and don't
-                        // need to estimate the value.
-                        match tx.incoming_outgoing() {
-                            (None, None) => {}
-                            (None, Some(amount)) |
-                            (Some(amount), None) => {
-                                if !amount.is_fiat() {
-                                    requirements.add(&amount.currency, tx.timestamp);
-                                }
-                            }
-                            (Some(incoming), Some(outgoing)) => {
-                                if !incoming.is_fiat() && !outgoing.is_fiat() {
-                                    // In case neither side is fiat, we want to know the price of both
-                                    // currencies, since it can give a better value estimate.
-                                    requirements.add(&incoming.currency, tx.timestamp);
-                                    requirements.add(&outgoing.currency, tx.timestamp);
-                                }
-                            }
-                        }
-
-                        // We may also need to know the price of the fee currency.
-                        match &tx.fee {
-                            Some(amount) => {
-                                if !amount.is_fiat() {
-                                    requirements.add(&amount.currency, tx.timestamp);
-                                }
-                            }
-                            None => {}
-                        };
-                    }
-
-                    (requirements, app.price_history.clone())
-                };
-
-                // Spawn a task to download the missing price history
-                price_history.debug_dump();
-
-                // price_history.debug_dump();
-                let tolerance = Duration::hours(1);
-                let padding = Duration::days(7);
-                let missing_ranges = requirements.missing_ranges(&price_history, tolerance, padding);
-                let mut save = false;
-                dbg!(&missing_ranges);
-
-                // Download missing price points
-                for (currency, ranges) in missing_ranges {
-                    if cmc_id(&currency) == -1 {
-                        continue;
-                    }
-
-                    for range in ranges {
-                        println!("Downloading price points for {:} from {:} to {:}", currency, range.start, range.end);
-                        let currency_for_task = currency.clone();
-                        let price_points = tokio::task::spawn(async move {
-                            coinmarketcap::download_price_points(range.start, range.end, currency_for_task.as_str(), CmcInterval::Hourly).await
-                        }).await.unwrap();
-
-                        match price_points {
-                            Ok(price_points) => {
-                                let count = price_points.len();
-                                price_history.price_data(currency.to_owned()).add_points(price_points);
-                                let mut app = app.borrow_mut();
-                                app.price_history = price_history.clone();
-                                app.refresh_transactions();
-                                app.refresh_ui();
-                                app.report_info(&format!("Price history updated for {:} from {:} to {:} ({:} points)", currency, range.start, range.end, count));
-                                save = true;
-                            }
-                            Err(e) => {
-                                app.borrow().report_warning(&format!("Failed to download price points for {:}: {:}", currency, e));
-                            }
-                        }
-
-                        if app.borrow().stop_update_price_history {
-                            break;
-                        }
-                    }
-
-                    if app.borrow().stop_update_price_history {
-                        break;
-                    }
-                }
-
-                // On success, update the app's price history and refresh the UI
-                if save {
-                    let mut app = app.borrow_mut();
-                    app.save_portfolio(None);
-
-                    if let Some(dirs) = app.project_dirs.as_ref() {
-                        let data_dir = dirs.data_local_dir();
-                        if let Err(e) = app.price_history.save_to_dir(&data_dir) {
-                            eprintln!("Error saving price history: {}", e);
-                        }
-                        if let Err(e) = app.price_history.save_to_dir_as_json(&data_dir) {
-                            eprintln!("Error saving price history: {}", e);
-                        }
-                    }
-                }
-
-                app.borrow().ui().global::<Facade>().set_updating_price_history(false);
-            }).unwrap();
+            slint::spawn_local(update_price_history(app)).unwrap();
         }
     });
 

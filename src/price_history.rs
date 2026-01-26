@@ -13,7 +13,7 @@ use chrono::{Duration, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::base::Amount;
+use crate::base::{Amount, cmc_id};
 
 /// A single price point with timestamp and price.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
@@ -73,6 +73,33 @@ impl TimeRange {
             end: self.end.max(other.end),
         }
     }
+}
+
+/// Split ranges so none exceeds the provided maximum span.
+pub(crate) fn split_ranges(ranges: &mut Vec<TimeRange>, max_span: Duration) {
+    let step = Duration::seconds(1);
+    let mut split: Vec<TimeRange> = Vec::new();
+
+    for range in ranges.drain(..) {
+        let mut current_start = range.start;
+        let end = range.end;
+
+        while current_start <= end {
+            let mut current_end = current_start + max_span - step;
+            if current_end > end {
+                current_end = end;
+            }
+
+            split.push(TimeRange::new(current_start, current_end));
+
+            if current_end == end {
+                break;
+            }
+            current_start = current_end + step;
+        }
+    }
+
+    ranges.extend(split);
 }
 
 /// Price data for a single currency, stored as a sorted vector of price points.
@@ -230,7 +257,7 @@ impl PriceHistory {
         Ok(())
     }
 
-    /// Save price history to a directory as JSON file.
+    /// Save price history to a directory as JSON file (mostly for debugging).
     #[allow(dead_code)]
     pub fn save_to_dir_as_json(&self, dir: &Path) -> Result<()> {
         fs::create_dir_all(dir).context("Failed to create price history directory")?;
@@ -348,6 +375,9 @@ impl PriceRequirements {
             if currency == "EUR" {
                 continue; // No price data needed for base currency
             }
+            if cmc_id(&currency) == -1 {
+                continue;
+            }
 
             let missing = price_history
                 .currencies
@@ -443,6 +473,29 @@ mod tests {
         let merged = r1.merge(&r2);
         assert_eq!(merged.start, make_datetime(2024, 1, 1, 0));
         assert_eq!(merged.end, make_datetime(2024, 1, 1, 15));
+    }
+
+    #[test]
+    fn test_split_ranges() {
+        let start = make_datetime(2024, 1, 1, 0);
+        let end = start + Duration::hours(5);
+        let mut ranges = vec![TimeRange::new(start, end)];
+
+        split_ranges(&mut ranges, Duration::hours(2));
+
+        assert_eq!(ranges.len(), 3);
+        assert_eq!(ranges[0].start, start);
+        assert_eq!(
+            ranges[0].end,
+            start + Duration::hours(2) - Duration::seconds(1)
+        );
+        assert_eq!(ranges[1].start, start + Duration::hours(2));
+        assert_eq!(
+            ranges[1].end,
+            start + Duration::hours(4) - Duration::seconds(1)
+        );
+        assert_eq!(ranges[2].start, start + Duration::hours(4));
+        assert_eq!(ranges[2].end, end);
     }
 
     #[test]
