@@ -106,9 +106,6 @@ impl TryFrom<WaveSpaceRecord> for Transaction {
         if !memo.is_empty() {
             tx.description = Some(memo.to_owned());
         }
-        if !record.transaction_id.trim().is_empty() {
-            tx.tx_hash = Some(record.transaction_id);
-        }
 
         Ok(tx)
     }
