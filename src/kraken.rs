@@ -139,3 +139,126 @@ static KRAKEN_TRADES_CSV: TransactionSource = TransactionSource {
     load_sync: Some(load_kraken_trades_csv),
     load_async: None,
 };
+
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum KrakenLedgerType {
+    Deposit,
+    Withdrawal,
+    Trade,
+    Spend,
+    Receive,
+    Transfer,
+    Staking,
+    Dividend,
+    Reward,
+    Settled,
+    Sale,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Kraken ledger CSV record
+/// Headers: txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+#[derive(Debug, Deserialize)]
+struct KrakenLedger {
+    #[serde(rename = "txid")]
+    tx_id: String,
+    #[serde(rename = "refid")]
+    ref_id: String,
+    #[serde(rename = "time", deserialize_with = "deserialize_kraken_datetime")]
+    time: NaiveDateTime,
+    #[serde(rename = "type")]
+    ledger_type: KrakenLedgerType,
+    // subtype: String,   // Not needed
+    // aclass: String,    // Not needed
+    asset: String,
+    // wallet: String,    // Not needed
+    amount: Decimal,
+    fee: Decimal,
+    // balance: Decimal,  // Not needed
+}
+
+impl From<KrakenLedger> for Transaction {
+    fn from(ledger: KrakenLedger) -> Self {
+        let currency = normalize_currency(&ledger.asset);
+        let amount = Amount::new(ledger.amount.abs(), currency.clone());
+
+        let mut tx = match ledger.ledger_type {
+            KrakenLedgerType::Deposit => Transaction::receive(ledger.time, amount),
+            KrakenLedgerType::Withdrawal => Transaction::send(ledger.time, amount),
+            KrakenLedgerType::Staking | KrakenLedgerType::Reward => {
+                Transaction::new(ledger.time, crate::base::Operation::Staking(amount))
+            }
+            KrakenLedgerType::Dividend => {
+                Transaction::new(ledger.time, crate::base::Operation::Income(amount))
+            }
+            KrakenLedgerType::Spend => {
+                Transaction::send(ledger.time, amount)
+            }
+            KrakenLedgerType::Receive => {
+                Transaction::receive(ledger.time, amount)
+            }
+            KrakenLedgerType::Trade => {
+                if ledger.amount.is_sign_positive() {
+                    Transaction::receive(ledger.time, amount)
+                } else {
+                    Transaction::send(ledger.time, amount)
+                }
+            }
+            KrakenLedgerType::Transfer => {
+                if ledger.amount.is_sign_positive() {
+                    Transaction::receive(ledger.time, amount)
+                } else {
+                    Transaction::send(ledger.time, amount)
+                }
+            }
+            KrakenLedgerType::Settled | KrakenLedgerType::Sale | KrakenLedgerType::Unknown => {
+                if ledger.amount.is_sign_positive() {
+                    Transaction::receive(ledger.time, amount)
+                } else {
+                    Transaction::send(ledger.time, amount)
+                }
+            }
+        };
+
+        if !ledger.fee.is_zero() {
+            tx.fee = Some(Amount::new(ledger.fee.abs(), currency));
+        }
+
+        tx.description = Some(format!("Kraken {} (ref: {})", ledger.tx_id, ledger.ref_id));
+        tx
+    }
+}
+
+fn load_kraken_ledger_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+    let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
+    let mut transactions = Vec::new();
+
+    for result in rdr.deserialize() {
+        let record: KrakenLedger = result?;
+        // Skip trade entries as they should be imported via trades CSV
+        if record.ledger_type == KrakenLedgerType::Trade
+            || record.ledger_type == KrakenLedgerType::Spend
+            || record.ledger_type == KrakenLedgerType::Receive {
+            continue;
+        }
+        transactions.push(record.into());
+    }
+
+    transactions.reverse();
+    Ok(transactions)
+}
+
+#[distributed_slice(crate::TRANSACTION_SOURCES)]
+static KRAKEN_LEDGER_CSV: TransactionSource = TransactionSource {
+    id: "KrakenLedgerCsv",
+    label: "Kraken Ledger (CSV)",
+    csv: &[CsvSpec::new(&[
+        "txid", "refid", "time", "type", "subtype", "aclass",
+        "asset", "wallet", "amount", "fee", "balance",
+    ])],
+    detect: None,
+    load_sync: Some(load_kraken_ledger_csv),
+    load_async: None,
+};
