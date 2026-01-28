@@ -401,6 +401,10 @@ impl PriceRequirements {
 #[allow(dead_code)]
 pub(crate) fn save_price_history_data(prices: &Vec<PricePoint>, path: &Path) -> Result<()> {
     let mut writer = csv::Writer::from_path(path)?;
+
+    // manually write a CSV header, since PricePoint serializes as tuple with unnamed members
+    writer.write_record(&["timestamp", "price"])?;
+
     for price in prices {
         writer.serialize(price)?;
     }
