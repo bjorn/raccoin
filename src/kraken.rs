@@ -826,6 +826,57 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_ledger_margin() {
+        // Positive margin (receiving collateral back)
+        let csv_data = format!("{}\n\"MRG123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"margin\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"500.0\",\"0.0\",\"1500.0\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        assert_eq!(record.ledger_type, KrakenLedgerType::Margin);
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_receive());
+
+        // Negative margin (posting collateral)
+        let csv_data = format!("{}\n\"MRG124\",\"REF790\",\"2024-02-01 00:00:00.0000\",\"margin\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"-500.0\",\"0.0\",\"500.0\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_send());
+    }
+
+    #[test]
+    fn test_parse_ledger_rollover() {
+        // Rollover fee (negative)
+        let csv_data = format!("{}\n\"ROL123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"rollover\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"-0.50\",\"0.0\",\"999.50\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        assert_eq!(record.ledger_type, KrakenLedgerType::Rollover);
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_send());
+    }
+
+    #[test]
+    fn test_parse_ledger_settled() {
+        // Settled position (positive = profit)
+        let csv_data = format!("{}\n\"STL123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"settled\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"100.0\",\"0.0\",\"1100.0\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        assert_eq!(record.ledger_type, KrakenLedgerType::Settled);
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_receive());
+    }
+
+    #[test]
+    fn test_parse_ledger_sale() {
+        // Sale (fiat conversion, negative = selling)
+        let csv_data = format!("{}\n\"SAL123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"sale\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"-0.1\",\"0.0\",\"0.9\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        assert_eq!(record.ledger_type, KrakenLedgerType::Sale);
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_send());
+    }
+
+    #[test]
     fn test_ledger_trade_entries_are_skipped() {
         let csv_data = format!("{}\n\"TRD1\",\"REF1\",\"2024-01-15 10:30:45\",\"trade\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.01\",\"0.0\",\"0.01\"\n\"TRD2\",\"REF1\",\"2024-01-15 10:30:45\",\"spend\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"-400.0\",\"0.0\",\"600.0\"\n\"TRD3\",\"REF1\",\"2024-01-15 10:30:45\",\"receive\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.01\",\"0.0\",\"0.01\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
@@ -929,5 +980,160 @@ mod tests {
             _ => panic!("Expected Trade operation"),
         }
         assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(100.00));
+    }
+
+    // ------------------------------------------------------------------------
+    // Error Handling Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_invalid_datetime_format() {
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"invalid-date\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
+        let result: Result<KrakenTrade, _> = rdr.deserialize().next().unwrap();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid datetime"));
+    }
+
+    #[test]
+    fn test_invalid_trade_type() {
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"invalid\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
+        let result: Result<KrakenTrade, _> = rdr.deserialize().next().unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_decimal_format() {
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"not-a-number\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
+        let result: Result<KrakenTrade, _> = rdr.deserialize().next().unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_missing_required_field() {
+        // Missing the 'vol' field (truncated row)
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
+        let result: Result<KrakenTrade, _> = rdr.deserialize().next().unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_nonexistent_file() {
+        let result = load_kraken_trades_csv(Path::new("/nonexistent/path/trades.csv"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_csv_with_parse_error() {
+        // Create a CSV with invalid data in the middle
+        let csv_content = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n\"TX2\",\"ORD2\",\"XXBTZEUR\",\"currency\",\"\",\"invalid-date\",\"sell\",\"market\",\"41000.0\",\"410.00\",\"0.15\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_content.as_bytes()).unwrap();
+
+        let result = load_kraken_trades_csv(temp_file.path());
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("line 3")); // Error should indicate the problematic line
+    }
+
+    #[test]
+    fn test_ledger_invalid_amount() {
+        let csv_data = format!("{}\n\"LED123\",\"REF456\",\"2024-01-10 08:00:00\",\"deposit\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"not-a-number\",\"0.0\",\"0.5\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let result: Result<KrakenLedger, _> = rdr.deserialize().next().unwrap();
+        assert!(result.is_err());
+    }
+
+    // ------------------------------------------------------------------------
+    // Edge Case Tests - Pair Parsing
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_pair_empty_string() {
+        let (base, quote) = parse_pair("");
+        assert_eq!(base, "");
+        assert_eq!(quote, "");
+    }
+
+    #[test]
+    fn test_parse_pair_very_short() {
+        let (base, quote) = parse_pair("AB");
+        assert_eq!(base, "AB");
+        assert_eq!(quote, "");
+    }
+
+    #[test]
+    fn test_parse_pair_exactly_six_chars() {
+        // Should split at position 3
+        let (base, quote) = parse_pair("ABCDEF");
+        assert_eq!(base, "ABC");
+        assert_eq!(quote, "DEF");
+    }
+
+    #[test]
+    fn test_normalize_currency_empty_string() {
+        assert_eq!(normalize_currency(""), "");
+    }
+
+    #[test]
+    fn test_normalize_currency_single_char() {
+        assert_eq!(normalize_currency("X"), "X");
+        assert_eq!(normalize_currency("Z"), "Z");
+    }
+
+    // ------------------------------------------------------------------------
+    // Zero Amount Edge Cases
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_trade_with_zero_volume() {
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"0.0\",\"0.0\",\"0.0\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.quantity, dec!(0.0));
+                assert_eq!(outgoing.quantity, dec!(0.0));
+            }
+            _ => panic!("Expected Trade operation"),
+        }
+        assert!(tx.fee.is_none()); // Zero fee should not be set
+    }
+
+    #[test]
+    fn test_ledger_with_zero_amount() {
+        let csv_data = format!("{}\n\"LED123\",\"REF456\",\"2024-01-10 08:00:00\",\"deposit\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.0\",\"0.0\",\"0.0\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Receive(amount) => {
+                assert_eq!(amount.quantity, dec!(0.0));
+            }
+            _ => panic!("Expected Receive operation"),
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Negative Amount Edge Cases
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_trade_with_negative_values() {
+        // Negative cost and fee values (shouldn't happen in real data, but test handling)
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"-400.00\",\"-0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        // Should parse without error (negative values are passed through)
+        let tx: Transaction = record.into();
+        assert!(tx.description.is_some());
     }
 }
