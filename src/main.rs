@@ -19,6 +19,7 @@ mod etherscan;
 mod fifo;
 mod ftx;
 mod horizon;
+mod kraken;
 mod liquid;
 mod mycelium;
 mod phoenix;

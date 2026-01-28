@@ -1,3 +1,24 @@
+//! Kraken CSV import support for trades and ledger history.
+//!
+//! This module provides two transaction sources:
+//! - **Kraken Trades CSV**: Import buy/sell trades with proper pair parsing
+//! - **Kraken Ledger CSV**: Import deposits, withdrawals, staking rewards, dividends
+//!
+//! # Recommended Usage
+//!
+//! Export both files from Kraken and import them:
+//! 1. Trades CSV for trading history (buy/sell)
+//! 2. Ledger CSV for deposits, withdrawals, staking, dividends
+//!
+//! Note: The ledger CSV contains trade entries (spend/receive pairs) that are
+//! automatically skipped to avoid double-counting with the trades CSV.
+//!
+//! # Margin Trading
+//!
+//! Margin trades are partially supported. The trades CSV captures margin trades,
+//! but margin-specific ledger entries (rollover fees, liquidations) may require
+//! manual review. For full margin support, consider using Kraken's API directly.
+
 use std::path::Path;
 
 use anyhow::Result;
@@ -5,8 +26,12 @@ use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
-use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSource};
+use crate::{base::{Transaction, Amount, Operation}, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
+
+// ============================================================================
+// Currency Normalization
+// ============================================================================
 
 /// Normalize Kraken currency codes to standard format.
 ///
@@ -17,9 +42,18 @@ use linkme::distributed_slice;
 ///
 /// This function handles known mappings explicitly, then falls back to
 /// stripping X/Z prefixes for unknown 4+ character codes.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(normalize_currency("XXBT"), "BTC");
+/// assert_eq!(normalize_currency("ZEUR"), "EUR");
+/// assert_eq!(normalize_currency("DOT"), "DOT");
+/// assert_eq!(normalize_currency("XADA"), "ADA"); // Generic stripping
+/// ```
 fn normalize_currency(currency: &str) -> String {
     match currency {
-        // Bitcoin special cases (XBT is ISO code, BTC is common)
+        // Bitcoin special cases (XBT is ISO 4217 code, BTC is common usage)
         "XXBT" | "XBT" => "BTC".to_owned(),
         // Known crypto with X prefix
         "XETH" => "ETH".to_owned(),
@@ -28,6 +62,10 @@ fn normalize_currency(currency: &str) -> String {
         "XXLM" => "XLM".to_owned(),
         "XXMR" => "XMR".to_owned(),
         "XXDG" => "DOGE".to_owned(),
+        "XZEC" => "ZEC".to_owned(),
+        "XETC" => "ETC".to_owned(),
+        "XREP" => "REP".to_owned(),
+        "XMLN" => "MLN".to_owned(),
         // Known fiat with Z prefix
         "ZEUR" => "EUR".to_owned(),
         "ZUSD" => "USD".to_owned(),
@@ -36,6 +74,7 @@ fn normalize_currency(currency: &str) -> String {
         "ZCAD" => "CAD".to_owned(),
         "ZAUD" => "AUD".to_owned(),
         "ZCHF" => "CHF".to_owned(),
+        "ZKRW" => "KRW".to_owned(),
         other => {
             // For unknown codes, try stripping X/Z prefix if 4+ chars
             // e.g., XDOGE -> DOGE, XADA -> ADA, ZSEK -> SEK
@@ -50,6 +89,10 @@ fn normalize_currency(currency: &str) -> String {
     }
 }
 
+// ============================================================================
+// Pair Parsing
+// ============================================================================
+
 /// Parse Kraken trading pair into (base, quote) currencies.
 ///
 /// Kraken uses concatenated currency codes for pairs, e.g.:
@@ -61,68 +104,120 @@ fn normalize_currency(currency: &str) -> String {
 /// 1. Try matching known base currencies at the start
 /// 2. Try matching known quote currencies at the end
 /// 3. Fallback: split at position 3-4 for unknown pairs
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(parse_pair("XXBTZEUR"), ("BTC".to_owned(), "EUR".to_owned()));
+/// assert_eq!(parse_pair("DOTUSD"), ("DOT".to_owned(), "USD".to_owned()));
+/// ```
 fn parse_pair(pair: &str) -> (String, String) {
-    // Known Kraken currency codes for matching
-    let known_bases = ["XXBT", "XETH", "XXRP", "XLTC", "XXLM", "XXMR", "XBT", "ETH"];
-    let known_quotes = ["ZEUR", "ZUSD", "ZGBP", "ZCAD", "ZAUD", "ZJPY", "XXBT", "XBT", "EUR", "USD"];
+    // Known Kraken currency codes for matching (ordered by length, longest first)
+    let known_bases = [
+        "XXBT", "XETH", "XXRP", "XLTC", "XXLM", "XXMR", "XZEC", "XETC", "XREP", "XMLN",
+        "XBT", "ETH",
+    ];
+    let known_quotes = [
+        "ZEUR", "ZUSD", "ZGBP", "ZCAD", "ZAUD", "ZJPY", "ZCHF",
+        "XXBT", "XETH",
+        "XBT", "ETH", "EUR", "USD", "GBP", "CAD", "AUD", "JPY", "CHF",
+    ];
 
+    // Strategy 1: Match known base at start
     for base in known_bases {
         if pair.starts_with(base) {
             let quote = &pair[base.len()..];
-            return (normalize_currency(base), normalize_currency(quote));
+            if !quote.is_empty() {
+                return (normalize_currency(base), normalize_currency(quote));
+            }
         }
     }
 
-    // Fallback: try splitting at common quote currencies
+    // Strategy 2: Match known quote at end
     for quote in known_quotes {
-        if pair.ends_with(quote) {
+        if pair.ends_with(quote) && pair.len() > quote.len() {
             let base = &pair[..pair.len() - quote.len()];
-            return (normalize_currency(base), normalize_currency(quote));
+            if !base.is_empty() {
+                return (normalize_currency(base), normalize_currency(quote));
+            }
         }
     }
 
-    // Last resort: assume 3-4 char base + rest is quote
-    let mid = if pair.len() > 6 { 4 } else { 3 };
-    (normalize_currency(&pair[..mid]), normalize_currency(&pair[mid..]))
+    // Strategy 3: Fallback - split at position based on length
+    // Most pairs are 6-8 chars, assume 3-4 char base
+    if pair.len() >= 6 {
+        let mid = if pair.len() > 6 { 4 } else { 3 };
+        (normalize_currency(&pair[..mid]), normalize_currency(&pair[mid..]))
+    } else {
+        // Very short pair, just return as-is
+        (pair.to_owned(), String::new())
+    }
 }
 
-/// Deserialize Kraken's datetime format
+// ============================================================================
+// DateTime Parsing
+// ============================================================================
+
+/// Deserialize Kraken's datetime format.
+///
+/// Supports multiple formats found in Kraken exports:
+/// - "2024-01-15 10:30:45.1234" (with subseconds)
+/// - "2024-01-15 10:30:45" (without subseconds)
+/// - "2024-01-15T10:30:45Z" (ISO 8601)
+/// - "2024-01-15T10:30:45.123Z" (ISO 8601 with subseconds)
 fn deserialize_kraken_datetime<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
-    // Kraken format: "2024-01-15 10:30:45.1234" or "2024-01-15T10:30:45Z"
+
+    // Try formats in order of likelihood
     NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f")
-        .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%SZ"))
         .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S"))
-        .map_err(serde::de::Error::custom)
+        .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.fZ"))
+        .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%SZ"))
+        .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S"))
+        .map_err(|e| serde::de::Error::custom(format!("Invalid datetime '{}': {}", raw, e)))
 }
 
-#[derive(Debug, Deserialize)]
+// ============================================================================
+// Trades CSV
+// ============================================================================
+
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum KrakenTradeType {
     Buy,
     Sell,
 }
 
-/// Kraken trades CSV record
+/// Kraken trades CSV record.
+///
 /// Headers: txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+///
+/// Note: The `price` field is not used as we can derive it from cost/vol.
+/// The `margin` field is present but margin-specific handling is limited.
 #[derive(Debug, Deserialize)]
 struct KrakenTrade {
     #[serde(rename = "txid")]
     tx_id: String,
-    // ordertxid: String,  // Not needed
+    #[serde(rename = "ordertxid")]
+    _order_tx_id: String,
     pair: String,
     #[serde(rename = "time", deserialize_with = "deserialize_kraken_datetime")]
     time: NaiveDateTime,
     #[serde(rename = "type")]
     trade_type: KrakenTradeType,
-    // ordertype: String,  // Not needed
-    // price: Decimal,     // Not needed (can calculate from cost/vol)
+    #[serde(rename = "ordertype")]
+    _order_type: String,
+    #[serde(rename = "price")]
+    _price: Decimal,
     cost: Decimal,
     fee: Decimal,
     vol: Decimal,
-    // margin: Decimal,    // Not needed for spot trades
-    // misc: String,       // Not needed
-    // ledgers: String,    // Not needed
+    #[serde(rename = "margin")]
+    _margin: Decimal,
+    #[serde(rename = "misc")]
+    _misc: String,
+    #[serde(rename = "ledgers")]
+    _ledgers: String,
 }
 
 impl From<KrakenTrade> for Transaction {
@@ -139,6 +234,7 @@ impl From<KrakenTrade> for Transaction {
         // Kraken reports fees in the quote currency for spot trades.
         // The trades CSV doesn't include a separate fee currency field,
         // so we assume the fee is denominated in the quote currency.
+        // This is consistent with Kraken's behavior for spot trading.
         if !trade.fee.is_zero() {
             tx.fee = Some(Amount::new(trade.fee, quote));
         }
@@ -149,14 +245,19 @@ impl From<KrakenTrade> for Transaction {
 }
 
 fn load_kraken_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
-    let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
+    let mut rdr = csv::ReaderBuilder::new()
+        .flexible(true) // Allow varying number of fields
+        .from_path(input_path)?;
     let mut transactions = Vec::new();
 
-    for result in rdr.deserialize() {
-        let record: KrakenTrade = result?;
+    for (line_num, result) in rdr.deserialize().enumerate() {
+        let record: KrakenTrade = result.map_err(|e| {
+            anyhow::anyhow!("Failed to parse trade at line {}: {}", line_num + 2, e)
+        })?;
         transactions.push(record.into());
     }
 
+    // Reverse to get chronological order (Kraken exports newest first)
     transactions.reverse();
     Ok(transactions)
 }
@@ -174,7 +275,11 @@ static KRAKEN_TRADES_CSV: TransactionSource = TransactionSource {
     load_async: None,
 };
 
-#[derive(Debug, Deserialize, PartialEq)]
+// ============================================================================
+// Ledger CSV
+// ============================================================================
+
+#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 enum KrakenLedgerType {
     Deposit,
@@ -188,12 +293,18 @@ enum KrakenLedgerType {
     Reward,
     Settled,
     Sale,
+    Margin,
+    Rollover,
+    Adjustment,
     #[serde(other)]
     Unknown,
 }
 
-/// Kraken ledger CSV record
+/// Kraken ledger CSV record.
+///
 /// Headers: txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+///
+/// The `refid` field links related entries (e.g., spend/receive pairs for trades).
 #[derive(Debug, Deserialize)]
 struct KrakenLedger {
     #[serde(rename = "txid")]
@@ -204,13 +315,31 @@ struct KrakenLedger {
     time: NaiveDateTime,
     #[serde(rename = "type")]
     ledger_type: KrakenLedgerType,
-    // subtype: String,   // Not needed
-    // aclass: String,    // Not needed
+    #[serde(rename = "subtype")]
+    _subtype: String,
+    #[serde(rename = "aclass")]
+    _aclass: String,
     asset: String,
-    // wallet: String,    // Not needed
+    #[serde(rename = "wallet")]
+    _wallet: String,
     amount: Decimal,
     fee: Decimal,
-    // balance: Decimal,  // Not needed
+    #[serde(rename = "balance")]
+    _balance: Decimal,
+}
+
+impl KrakenLedger {
+    /// Check if this ledger entry should be skipped when importing.
+    ///
+    /// Trade-related entries (Trade, Spend, Receive) are skipped because:
+    /// 1. They duplicate information from the trades CSV
+    /// 2. Importing both would result in double-counting
+    fn should_skip(&self) -> bool {
+        matches!(
+            self.ledger_type,
+            KrakenLedgerType::Trade | KrakenLedgerType::Spend | KrakenLedgerType::Receive
+        )
+    }
 }
 
 impl From<KrakenLedger> for Transaction {
@@ -219,27 +348,23 @@ impl From<KrakenLedger> for Transaction {
         let amount = Amount::new(ledger.amount.abs(), currency.clone());
 
         let mut tx = match ledger.ledger_type {
+            // Deposits: External funds coming in
             KrakenLedgerType::Deposit => Transaction::receive(ledger.time, amount),
+
+            // Withdrawals: Funds leaving the exchange
             KrakenLedgerType::Withdrawal => Transaction::send(ledger.time, amount),
+
+            // Staking rewards and general rewards
             KrakenLedgerType::Staking | KrakenLedgerType::Reward => {
-                Transaction::new(ledger.time, crate::base::Operation::Staking(amount))
+                Transaction::new(ledger.time, Operation::Staking(amount))
             }
+
+            // Dividends from holding certain assets
             KrakenLedgerType::Dividend => {
-                Transaction::new(ledger.time, crate::base::Operation::Income(amount))
+                Transaction::new(ledger.time, Operation::Income(amount))
             }
-            KrakenLedgerType::Spend => {
-                Transaction::send(ledger.time, amount)
-            }
-            KrakenLedgerType::Receive => {
-                Transaction::receive(ledger.time, amount)
-            }
-            KrakenLedgerType::Trade => {
-                if ledger.amount.is_sign_positive() {
-                    Transaction::receive(ledger.time, amount)
-                } else {
-                    Transaction::send(ledger.time, amount)
-                }
-            }
+
+            // Transfers between wallets (internal)
             KrakenLedgerType::Transfer => {
                 if ledger.amount.is_sign_positive() {
                     Transaction::receive(ledger.time, amount)
@@ -247,7 +372,44 @@ impl From<KrakenLedger> for Transaction {
                     Transaction::send(ledger.time, amount)
                 }
             }
-            KrakenLedgerType::Settled | KrakenLedgerType::Sale | KrakenLedgerType::Unknown => {
+
+            // Margin-related entries
+            KrakenLedgerType::Margin | KrakenLedgerType::Rollover | KrakenLedgerType::Settled => {
+                if ledger.amount.is_sign_positive() {
+                    Transaction::receive(ledger.time, amount)
+                } else {
+                    Transaction::send(ledger.time, amount)
+                }
+            }
+
+            // Adjustments (corrections, airdrops, etc.)
+            KrakenLedgerType::Adjustment => {
+                if ledger.amount.is_sign_positive() {
+                    Transaction::new(ledger.time, Operation::Income(amount))
+                } else {
+                    Transaction::new(ledger.time, Operation::Expense(amount))
+                }
+            }
+
+            // Sale (fiat conversion)
+            KrakenLedgerType::Sale => {
+                if ledger.amount.is_sign_positive() {
+                    Transaction::receive(ledger.time, amount)
+                } else {
+                    Transaction::send(ledger.time, amount)
+                }
+            }
+
+            // Trade/Spend/Receive are typically skipped, but handle them just in case
+            KrakenLedgerType::Trade | KrakenLedgerType::Spend => {
+                Transaction::send(ledger.time, amount)
+            }
+            KrakenLedgerType::Receive => {
+                Transaction::receive(ledger.time, amount)
+            }
+
+            // Unknown types: use sign to determine direction
+            KrakenLedgerType::Unknown => {
                 if ledger.amount.is_sign_positive() {
                     Transaction::receive(ledger.time, amount)
                 } else {
@@ -256,6 +418,7 @@ impl From<KrakenLedger> for Transaction {
             }
         };
 
+        // Add fee if present (fees are always positive in the CSV)
         if !ledger.fee.is_zero() {
             tx.fee = Some(Amount::new(ledger.fee.abs(), currency));
         }
@@ -266,22 +429,21 @@ impl From<KrakenLedger> for Transaction {
 }
 
 fn load_kraken_ledger_csv(input_path: &Path) -> Result<Vec<Transaction>> {
-    let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
+    let mut rdr = csv::ReaderBuilder::new()
+        .flexible(true)
+        .from_path(input_path)?;
     let mut transactions = Vec::new();
 
-    for result in rdr.deserialize() {
-        let record: KrakenLedger = result?;
-        // Skip trade-related entries (Trade, Spend, Receive) as they should be
-        // imported via the separate trades CSV export. The ledger CSV contains
-        // duplicate information for trades as paired spend/receive entries,
-        // and importing from both sources would result in double-counting.
-        // Users should import both trades.csv (for trades) and ledger.csv
-        // (for deposits, withdrawals, staking) to get complete history.
-        if record.ledger_type == KrakenLedgerType::Trade
-            || record.ledger_type == KrakenLedgerType::Spend
-            || record.ledger_type == KrakenLedgerType::Receive {
+    for (line_num, result) in rdr.deserialize().enumerate() {
+        let record: KrakenLedger = result.map_err(|e| {
+            anyhow::anyhow!("Failed to parse ledger at line {}: {}", line_num + 2, e)
+        })?;
+
+        // Skip trade-related entries to avoid double-counting with trades CSV
+        if record.should_skip() {
             continue;
         }
+
         transactions.push(record.into());
     }
 
@@ -302,44 +464,152 @@ static KRAKEN_LEDGER_CSV: TransactionSource = TransactionSource {
     load_async: None,
 };
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    // ------------------------------------------------------------------------
+    // Currency Normalization Tests
+    // ------------------------------------------------------------------------
 
     #[test]
-    fn test_normalize_currency() {
-        // Known mappings
+    fn test_normalize_currency_known_crypto() {
         assert_eq!(normalize_currency("XXBT"), "BTC");
         assert_eq!(normalize_currency("XBT"), "BTC");
         assert_eq!(normalize_currency("XETH"), "ETH");
-        assert_eq!(normalize_currency("ZEUR"), "EUR");
-        assert_eq!(normalize_currency("ZUSD"), "USD");
+        assert_eq!(normalize_currency("XXRP"), "XRP");
+        assert_eq!(normalize_currency("XLTC"), "LTC");
+        assert_eq!(normalize_currency("XXLM"), "XLM");
+        assert_eq!(normalize_currency("XXMR"), "XMR");
         assert_eq!(normalize_currency("XXDG"), "DOGE");
-        assert_eq!(normalize_currency("ZCHF"), "CHF");
-        // Passthrough for non-prefixed
-        assert_eq!(normalize_currency("DOT"), "DOT");
-        assert_eq!(normalize_currency("SOL"), "SOL");
-        // Generic X/Z prefix stripping for unknown codes
-        assert_eq!(normalize_currency("XADA"), "ADA");
-        assert_eq!(normalize_currency("XDOGE"), "DOGE");
-        assert_eq!(normalize_currency("ZSEK"), "SEK");
-        // Short codes should not be stripped
-        assert_eq!(normalize_currency("XRP"), "XRP");
+        assert_eq!(normalize_currency("XZEC"), "ZEC");
+        assert_eq!(normalize_currency("XETC"), "ETC");
     }
 
     #[test]
-    fn test_parse_pair() {
-        // Classic Kraken pairs with X/Z prefixes
+    fn test_normalize_currency_known_fiat() {
+        assert_eq!(normalize_currency("ZEUR"), "EUR");
+        assert_eq!(normalize_currency("ZUSD"), "USD");
+        assert_eq!(normalize_currency("ZGBP"), "GBP");
+        assert_eq!(normalize_currency("ZJPY"), "JPY");
+        assert_eq!(normalize_currency("ZCAD"), "CAD");
+        assert_eq!(normalize_currency("ZAUD"), "AUD");
+        assert_eq!(normalize_currency("ZCHF"), "CHF");
+        assert_eq!(normalize_currency("ZKRW"), "KRW");
+    }
+
+    #[test]
+    fn test_normalize_currency_passthrough() {
+        // Non-prefixed currencies should pass through unchanged
+        assert_eq!(normalize_currency("DOT"), "DOT");
+        assert_eq!(normalize_currency("SOL"), "SOL");
+        assert_eq!(normalize_currency("MATIC"), "MATIC");
+        assert_eq!(normalize_currency("ATOM"), "ATOM");
+        assert_eq!(normalize_currency("LINK"), "LINK");
+    }
+
+    #[test]
+    fn test_normalize_currency_generic_stripping() {
+        // Unknown 4+ char codes with X/Z prefix should be stripped
+        assert_eq!(normalize_currency("XADA"), "ADA");
+        assert_eq!(normalize_currency("XDOGE"), "DOGE");
+        assert_eq!(normalize_currency("XMATIC"), "MATIC");
+        assert_eq!(normalize_currency("ZSEK"), "SEK");
+        assert_eq!(normalize_currency("ZNOK"), "NOK");
+    }
+
+    #[test]
+    fn test_normalize_currency_short_codes_not_stripped() {
+        // Short codes (< 4 chars) should not be stripped even with X/Z
+        assert_eq!(normalize_currency("XRP"), "XRP");
+        assert_eq!(normalize_currency("XMR"), "XMR");
+        assert_eq!(normalize_currency("ZEC"), "ZEC");
+    }
+
+    // ------------------------------------------------------------------------
+    // Pair Parsing Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_pair_classic_kraken() {
         assert_eq!(parse_pair("XXBTZEUR"), ("BTC".to_owned(), "EUR".to_owned()));
         assert_eq!(parse_pair("XETHXXBT"), ("ETH".to_owned(), "BTC".to_owned()));
         assert_eq!(parse_pair("XXBTZUSD"), ("BTC".to_owned(), "USD".to_owned()));
         assert_eq!(parse_pair("XETHZEUR"), ("ETH".to_owned(), "EUR".to_owned()));
+        assert_eq!(parse_pair("XXRPZEUR"), ("XRP".to_owned(), "EUR".to_owned()));
+        assert_eq!(parse_pair("XLTCZUSD"), ("LTC".to_owned(), "USD".to_owned()));
+    }
+
+    #[test]
+    fn test_parse_pair_altcoins() {
         // Newer altcoin pairs without X prefix
         assert_eq!(parse_pair("DOTUSD"), ("DOT".to_owned(), "USD".to_owned()));
         assert_eq!(parse_pair("DOTEUR"), ("DOT".to_owned(), "EUR".to_owned()));
         assert_eq!(parse_pair("SOLUSD"), ("SOL".to_owned(), "USD".to_owned()));
+        assert_eq!(parse_pair("SOLEUR"), ("SOL".to_owned(), "EUR".to_owned()));
+        assert_eq!(parse_pair("MATICUSD"), ("MATIC".to_owned(), "USD".to_owned()));
+        assert_eq!(parse_pair("ATOMUSD"), ("ATOM".to_owned(), "USD".to_owned()));
     }
+
+    #[test]
+    fn test_parse_pair_crypto_to_crypto() {
+        assert_eq!(parse_pair("XETHXXBT"), ("ETH".to_owned(), "BTC".to_owned()));
+        assert_eq!(parse_pair("XXRPXXBT"), ("XRP".to_owned(), "BTC".to_owned()));
+        assert_eq!(parse_pair("DOTXBT"), ("DOT".to_owned(), "BTC".to_owned()));
+        assert_eq!(parse_pair("SOLETH"), ("SOL".to_owned(), "ETH".to_owned()));
+    }
+
+    #[test]
+    fn test_parse_pair_fallback() {
+        // Test fallback logic for unusual pairs
+        assert_eq!(parse_pair("ABCDEF"), ("ABC".to_owned(), "DEF".to_owned()));
+        assert_eq!(parse_pair("ABCDEFGH"), ("ABCD".to_owned(), "EFGH".to_owned()));
+    }
+
+    // ------------------------------------------------------------------------
+    // DateTime Parsing Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_datetime_with_subseconds() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45.1234","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+        assert_eq!(record.time.format("%Y-%m-%d %H:%M:%S").to_string(), "2024-01-15 10:30:45");
+    }
+
+    #[test]
+    fn test_datetime_without_subseconds() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+        assert_eq!(record.time.format("%Y-%m-%d %H:%M:%S").to_string(), "2024-01-15 10:30:45");
+    }
+
+    #[test]
+    fn test_datetime_iso8601() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"TX1","ORD1","XXBTZEUR","2024-01-15T10:30:45Z","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+        assert_eq!(record.time.format("%Y-%m-%d %H:%M:%S").to_string(), "2024-01-15 10:30:45");
+    }
+
+    // ------------------------------------------------------------------------
+    // Trade CSV Parsing Tests
+    // ------------------------------------------------------------------------
 
     #[test]
     fn test_parse_trade_buy() {
@@ -349,9 +619,15 @@ mod tests {
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
 
+        assert_eq!(record.tx_id, "ABC123");
+        assert_eq!(record.trade_type, KrakenTradeType::Buy);
+        assert_eq!(record.vol, dec!(0.01));
+        assert_eq!(record.cost, dec!(400.00));
+        assert_eq!(record.fee, dec!(0.10));
+
         let tx: Transaction = record.into();
         match &tx.operation {
-            crate::base::Operation::Trade { incoming, outgoing } => {
+            Operation::Trade { incoming, outgoing } => {
                 assert_eq!(incoming.currency, "BTC");
                 assert_eq!(incoming.quantity, dec!(0.01));
                 assert_eq!(outgoing.currency, "EUR");
@@ -360,6 +636,8 @@ mod tests {
             _ => panic!("Expected Trade operation"),
         }
         assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(0.10));
+        assert_eq!(tx.fee.as_ref().unwrap().currency, "EUR");
+        assert!(tx.description.unwrap().contains("ABC123"));
     }
 
     #[test]
@@ -372,7 +650,7 @@ mod tests {
 
         let tx: Transaction = record.into();
         match &tx.operation {
-            crate::base::Operation::Trade { incoming, outgoing } => {
+            Operation::Trade { incoming, outgoing } => {
                 assert_eq!(incoming.currency, "EUR");
                 assert_eq!(incoming.quantity, dec!(410.00));
                 assert_eq!(outgoing.currency, "BTC");
@@ -380,7 +658,44 @@ mod tests {
             }
             _ => panic!("Expected Trade operation"),
         }
+        assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(0.15));
     }
+
+    #[test]
+    fn test_parse_trade_zero_fee() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"TX123","ORD456","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","400.00","0.0","0.01","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        assert!(tx.fee.is_none());
+    }
+
+    #[test]
+    fn test_parse_trade_altcoin_pair() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"TX123","ORD456","DOTUSD","2024-01-15 10:30:45","buy","limit","7.5","75.00","0.05","10.0","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.currency, "DOT");
+                assert_eq!(incoming.quantity, dec!(10.0));
+                assert_eq!(outgoing.currency, "USD");
+                assert_eq!(outgoing.quantity, dec!(75.00));
+            }
+            _ => panic!("Expected Trade operation"),
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Ledger CSV Parsing Tests
+    // ------------------------------------------------------------------------
 
     #[test]
     fn test_parse_ledger_deposit() {
@@ -390,8 +705,18 @@ mod tests {
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
+        assert_eq!(record.ledger_type, KrakenLedgerType::Deposit);
+        assert!(!record.should_skip());
+
         let tx: Transaction = record.into();
         assert!(tx.operation.is_receive());
+        match &tx.operation {
+            Operation::Receive(amount) => {
+                assert_eq!(amount.currency, "BTC");
+                assert_eq!(amount.quantity, dec!(0.5));
+            }
+            _ => panic!("Expected Receive operation"),
+        }
     }
 
     #[test]
@@ -402,9 +727,12 @@ mod tests {
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
+        assert_eq!(record.ledger_type, KrakenLedgerType::Withdrawal);
+
         let tx: Transaction = record.into();
         assert!(tx.operation.is_send());
         assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(0.005));
+        assert_eq!(tx.fee.as_ref().unwrap().currency, "ETH");
     }
 
     #[test]
@@ -415,13 +743,232 @@ mod tests {
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
+        assert_eq!(record.ledger_type, KrakenLedgerType::Staking);
+
         let tx: Transaction = record.into();
         match &tx.operation {
-            crate::base::Operation::Staking(amount) => {
+            Operation::Staking(amount) => {
                 assert_eq!(amount.currency, "DOT");
                 assert_eq!(amount.quantity, dec!(0.1));
             }
             _ => panic!("Expected Staking operation"),
         }
+    }
+
+    #[test]
+    fn test_parse_ledger_reward() {
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"RWD123","REF789","2024-02-01 00:00:00.0000","reward","","currency","ETH","","0.001","0.0","1.001"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        assert_eq!(record.ledger_type, KrakenLedgerType::Reward);
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Staking(amount) => {
+                assert_eq!(amount.currency, "ETH");
+                assert_eq!(amount.quantity, dec!(0.001));
+            }
+            _ => panic!("Expected Staking operation for reward"),
+        }
+    }
+
+    #[test]
+    fn test_parse_ledger_dividend() {
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"DIV123","REF789","2024-03-15 00:00:00.0000","dividend","","currency","XXBT","","0.0001","0.0","1.0001"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        assert_eq!(record.ledger_type, KrakenLedgerType::Dividend);
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Income(amount) => {
+                assert_eq!(amount.currency, "BTC");
+                assert_eq!(amount.quantity, dec!(0.0001));
+            }
+            _ => panic!("Expected Income operation for dividend"),
+        }
+    }
+
+    #[test]
+    fn test_parse_ledger_transfer() {
+        // Positive transfer (receiving)
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"TRF123","REF789","2024-02-01 00:00:00.0000","transfer","","currency","ZEUR","","100.0","0.0","1100.0"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_receive());
+
+        // Negative transfer (sending)
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"TRF124","REF790","2024-02-01 00:00:00.0000","transfer","","currency","ZEUR","","-100.0","0.0","900.0"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_send());
+    }
+
+    #[test]
+    fn test_parse_ledger_adjustment() {
+        // Positive adjustment (e.g., airdrop, correction)
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"ADJ123","REF789","2024-02-01 00:00:00.0000","adjustment","","currency","DOT","","5.0","0.0","105.0"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Income(amount) => {
+                assert_eq!(amount.quantity, dec!(5.0));
+            }
+            _ => panic!("Expected Income operation for positive adjustment"),
+        }
+
+        // Negative adjustment
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"ADJ124","REF790","2024-02-01 00:00:00.0000","adjustment","","currency","DOT","","-5.0","0.0","95.0"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Expense(amount) => {
+                assert_eq!(amount.quantity, dec!(5.0));
+            }
+            _ => panic!("Expected Expense operation for negative adjustment"),
+        }
+    }
+
+    #[test]
+    fn test_ledger_trade_entries_are_skipped() {
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"TRD1","REF1","2024-01-15 10:30:45","trade","","currency","XXBT","","0.01","0.0","0.01"
+"TRD2","REF1","2024-01-15 10:30:45","spend","","currency","ZEUR","","-400.0","0.0","600.0"
+"TRD3","REF1","2024-01-15 10:30:45","receive","","currency","XXBT","","0.01","0.0","0.01"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+
+        for result in rdr.deserialize() {
+            let record: KrakenLedger = result.unwrap();
+            assert!(record.should_skip(), "Trade/Spend/Receive entries should be skipped");
+        }
+    }
+
+    #[test]
+    fn test_parse_ledger_unknown_type() {
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"UNK123","REF789","2024-02-01 00:00:00.0000","newtype","","currency","DOT","","1.0","0.0","11.0"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        assert_eq!(record.ledger_type, KrakenLedgerType::Unknown);
+
+        let tx: Transaction = record.into();
+        // Unknown positive amount should become receive
+        assert!(tx.operation.is_receive());
+    }
+
+    // ------------------------------------------------------------------------
+    // Load Function Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_load_kraken_trades_csv() {
+        // Kraken exports newest first, so TX2 (newer) comes before TX1 (older) in the file
+        let csv_content = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"TX2","ORD2","XXBTZEUR","2024-01-16 14:20:00","sell","market","41000.0","410.00","0.15","0.01","0.0","",""
+"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
+"#;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_content.as_bytes()).unwrap();
+
+        let transactions = load_kraken_trades_csv(temp_file.path()).unwrap();
+
+        assert_eq!(transactions.len(), 2);
+        // After reverse, oldest (TX1) should be first
+        assert!(transactions[0].description.as_ref().unwrap().contains("TX1"));
+        assert!(transactions[1].description.as_ref().unwrap().contains("TX2"));
+    }
+
+    #[test]
+    fn test_load_kraken_ledger_csv_skips_trades() {
+        // Kraken exports newest first, so WTH1 (newest) comes first, DEP1 (oldest) comes last
+        let csv_content = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"WTH1","REF3","2024-01-20 16:00:00","withdrawal","","currency","XETH","","-1.0","0.005","0.0"
+"TRD1","REF2","2024-01-15 10:30:45","trade","","currency","XXBT","","0.01","0.0","0.51"
+"TRD2","REF2","2024-01-15 10:30:45","spend","","currency","ZEUR","","-400.0","0.0","600.0"
+"DEP1","REF1","2024-01-10 08:00:00","deposit","","currency","XXBT","","0.5","0.0","0.5"
+"#;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_content.as_bytes()).unwrap();
+
+        let transactions = load_kraken_ledger_csv(temp_file.path()).unwrap();
+
+        // Should only have 2 transactions (deposit and withdrawal), not 4
+        // After reverse, oldest (DEP1) should be first
+        assert_eq!(transactions.len(), 2);
+        assert!(transactions[0].description.as_ref().unwrap().contains("DEP1"));
+        assert!(transactions[1].description.as_ref().unwrap().contains("WTH1"));
+    }
+
+    #[test]
+    fn test_load_empty_csv() {
+        let csv_content = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"#;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_content.as_bytes()).unwrap();
+
+        let transactions = load_kraken_trades_csv(temp_file.path()).unwrap();
+        assert!(transactions.is_empty());
+    }
+
+    // ------------------------------------------------------------------------
+    // Edge Case Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_very_small_amounts() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","0.0001","0.00000001","0.0000000025","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.quantity, dec!(0.0000000025));
+                assert_eq!(outgoing.quantity, dec!(0.0001));
+            }
+            _ => panic!("Expected Trade operation"),
+        }
+    }
+
+    #[test]
+    fn test_large_amounts() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","1000000.00","100.00","25.0","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.quantity, dec!(25.0));
+                assert_eq!(outgoing.quantity, dec!(1000000.00));
+            }
+            _ => panic!("Expected Trade operation"),
+        }
+        assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(100.00));
     }
 }
