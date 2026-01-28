@@ -18,6 +18,15 @@
 //! Margin trades are partially supported. The trades CSV captures margin trades,
 //! but margin-specific ledger entries (rollover fees, liquidations) may require
 //! manual review. For full margin support, consider using Kraken's API directly.
+//!
+//! # Known Limitations
+//!
+//! - **Fee currency**: Fees are assumed to be in the quote currency, which is
+//!   Kraken's default. If you've configured fees to be paid in the base currency,
+//!   the fee amounts will still be correct but attributed to the wrong currency.
+//! - **Timezone**: All timestamps are in UTC as exported by Kraken.
+//! - **Ledger-only import**: If you import only the ledger CSV without the trades
+//!   CSV, you will miss all trading activity. Always import both files.
 
 use std::path::Path;
 
@@ -221,10 +230,10 @@ impl From<KrakenTrade> for Transaction {
             KrakenTradeType::Sell => Transaction::trade(trade.time, quote_amount, base_amount),
         };
 
-        // Kraken reports fees in the quote currency for spot trades.
-        // The trades CSV doesn't include a separate fee currency field,
-        // so we assume the fee is denominated in the quote currency.
-        // This is consistent with Kraken's behavior for spot trading.
+        // Kraken fees are in quote currency by default, but users can configure
+        // fees to be paid in base currency for some pairs. Since the CSV doesn't
+        // include a fee currency field, we assume quote currency (the default).
+        // See: https://support.kraken.com/hc/en-us/articles/360000526126
         if !trade.fee.is_zero() {
             tx.fee = Some(Amount::new(trade.fee, quote));
         }
