@@ -262,3 +262,112 @@ static KRAKEN_LEDGER_CSV: TransactionSource = TransactionSource {
     load_sync: Some(load_kraken_ledger_csv),
     load_async: None,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn test_normalize_currency() {
+        assert_eq!(normalize_currency("XXBT"), "BTC");
+        assert_eq!(normalize_currency("XBT"), "BTC");
+        assert_eq!(normalize_currency("XETH"), "ETH");
+        assert_eq!(normalize_currency("ZEUR"), "EUR");
+        assert_eq!(normalize_currency("ZUSD"), "USD");
+        assert_eq!(normalize_currency("DOT"), "DOT");
+        assert_eq!(normalize_currency("SOL"), "SOL");
+    }
+
+    #[test]
+    fn test_parse_pair() {
+        assert_eq!(parse_pair("XXBTZEUR"), ("BTC".to_owned(), "EUR".to_owned()));
+        assert_eq!(parse_pair("XETHXXBT"), ("ETH".to_owned(), "BTC".to_owned()));
+        assert_eq!(parse_pair("XXBTZUSD"), ("BTC".to_owned(), "USD".to_owned()));
+        assert_eq!(parse_pair("XETHZEUR"), ("ETH".to_owned(), "EUR".to_owned()));
+    }
+
+    #[test]
+    fn test_parse_trade_buy() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"ABC123","ORD456","XXBTZEUR","2024-01-15 10:30:45.1234","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            crate::base::Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.currency, "BTC");
+                assert_eq!(incoming.quantity, dec!(0.01));
+                assert_eq!(outgoing.currency, "EUR");
+                assert_eq!(outgoing.quantity, dec!(400.00));
+            }
+            _ => panic!("Expected Trade operation"),
+        }
+        assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(0.10));
+    }
+
+    #[test]
+    fn test_parse_trade_sell() {
+        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+"DEF789","ORD012","XXBTZEUR","2024-01-16 14:20:00.0000","sell","market","41000.0","410.00","0.15","0.01","0.0","",""
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            crate::base::Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.currency, "EUR");
+                assert_eq!(incoming.quantity, dec!(410.00));
+                assert_eq!(outgoing.currency, "BTC");
+                assert_eq!(outgoing.quantity, dec!(0.01));
+            }
+            _ => panic!("Expected Trade operation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_ledger_deposit() {
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"LED123","REF456","2024-01-10 08:00:00.0000","deposit","","currency","XXBT","","0.5","0.0","0.5"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_receive());
+    }
+
+    #[test]
+    fn test_parse_ledger_withdrawal() {
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"LED789","REF012","2024-01-20 16:00:00.0000","withdrawal","","currency","XETH","","-1.0","0.005","0.0"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        assert!(tx.operation.is_send());
+        assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(0.005));
+    }
+
+    #[test]
+    fn test_parse_ledger_staking() {
+        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+"STK123","REF789","2024-02-01 00:00:00.0000","staking","","currency","DOT","","0.1","0.0","10.1"
+"#;
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        match &tx.operation {
+            crate::base::Operation::Staking(amount) => {
+                assert_eq!(amount.currency, "DOT");
+                assert_eq!(amount.quantity, dec!(0.1));
+            }
+            _ => panic!("Expected Staking operation"),
+        }
+    }
+}
