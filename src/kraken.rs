@@ -210,8 +210,7 @@ struct KrakenTrade {
     cost: Decimal,
     fee: Decimal,
     vol: Decimal,
-    #[serde(rename = "margin")]
-    _margin: Decimal,
+    margin: Decimal,
     #[serde(rename = "misc")]
     _misc: String,
     #[serde(rename = "ledgers")]
@@ -230,6 +229,17 @@ impl From<KrakenTrade> for Transaction {
             KrakenTradeType::Sell => Transaction::trade(trade.time, quote_amount, base_amount),
         };
 
+        // Add description with margin warning if applicable
+        if trade.margin.is_zero() {
+            tx.description = Some(format!("Kraken trade {}", trade.tx_id));
+        } else {
+            // Margin trade: include warning in description for manual review
+            tx.description = Some(format!(
+                "Kraken trade {} [MARGIN: {} {} used - review for tax implications]",
+                trade.tx_id, trade.margin, quote
+            ));
+        }
+
         // Kraken fees are in quote currency by default, but users can configure
         // fees to be paid in base currency for some pairs. Since the CSV doesn't
         // include a fee currency field, we assume quote currency (the default).
@@ -237,8 +247,6 @@ impl From<KrakenTrade> for Transaction {
         if !trade.fee.is_zero() {
             tx.fee = Some(Amount::new(trade.fee, quote));
         }
-
-        tx.description = Some(format!("Kraken trade {}", trade.tx_id));
         tx
     }
 }
@@ -710,6 +718,23 @@ mod tests {
 
         let tx: Transaction = record.into();
         assert!(tx.fee.is_none());
+    }
+
+    #[test]
+    fn test_parse_trade_margin() {
+        // Margin trade with 100 EUR margin used
+        let csv_data = format!("{}\n\"TX123\",\"ORD456\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"100.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        assert_eq!(record.margin, dec!(100.0));
+
+        let tx: Transaction = record.into();
+        // Description should contain MARGIN warning
+        let desc = tx.description.unwrap();
+        assert!(desc.contains("MARGIN"));
+        assert!(desc.contains("100"));
+        assert!(desc.contains("review for tax implications"));
     }
 
     #[test]
