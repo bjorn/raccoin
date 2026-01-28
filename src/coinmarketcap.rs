@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -81,7 +81,12 @@ impl CmcInterval {
     }
 }
 
-pub(crate) async fn download_price_points(time_start: NaiveDateTime, time_end: NaiveDateTime, currency: &str, interval: CmcInterval) -> Result<Vec<PricePoint>> {
+pub(crate) async fn download_price_points(
+    time_start: NaiveDateTime,
+    time_end: NaiveDateTime,
+    currency: &str,
+    interval: CmcInterval,
+) -> Result<Vec<PricePoint>> {
     let id = cmc_id(currency);
     if id == -1 {
         bail!("Unsupported currency (cmc id not known): {}", currency);
@@ -94,14 +99,24 @@ pub(crate) async fn download_price_points(time_start: NaiveDateTime, time_end: N
     if time_end > Utc::now().timestamp() {
         time_end = Utc::now().timestamp();
     }
-    let url = format!("https://api.coinmarketcap.com/data-api/v3.3/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval={}", id, convert_id, time_start, time_end, interval.as_str());
+    let url = format!(
+        "https://api.coinmarketcap.com/data-api/v3.3/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval={}",
+        id, convert_id, time_start, time_end, interval.as_str()
+    );
     println!("Downloading {}", url);
 
     let response: CmcHistoricalDataResponse = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0")
-        .build()?.get(url.clone()).send().await?.json().await?;
+        .build()?
+        .get(url.clone())
+        .send()
+        .await?
+        .json()
+        .await?;
 
-    let prices: Vec<PricePoint> = response.data.quotes
+    let prices: Vec<PricePoint> = response
+        .data
+        .quotes
         .into_iter()
         .map(|quote| PricePoint {
             timestamp: quote.time_open.naive_utc(),
@@ -121,30 +136,22 @@ pub(crate) async fn download_price_history(currency: &str) -> Result<()> {
         return Ok(());
     }
 
-    let convert_id = cmc_id("EUR");
-
     let mut prices: Vec<PricePoint> = Vec::new();
 
     for year in 2010..2024 {
-        let time_start = DateTime::parse_from_rfc3339(&format!("{}-01-01T00:00:00+00:00", year)).unwrap().timestamp();
-        let time_end = DateTime::parse_from_rfc3339(&format!("{}-12-31T23:59:59+00:00", year)).unwrap().timestamp();
-        let url = format!("https://api.coinmarketcap.com/data-api/v3.1/cryptocurrency/historical?id={}&convertId={}&timeStart={}&timeEnd={}&interval=1d", id, convert_id, time_start, time_end);
-        println!("Downloading {}", url);
+        let time_start = DateTime::parse_from_rfc3339(&format!("{}-01-01T00:00:00+00:00", year))
+            .unwrap()
+            .naive_utc();
+        let time_end = DateTime::parse_from_rfc3339(&format!("{}-12-31T23:59:59+00:00", year))
+            .unwrap()
+            .naive_utc();
 
-        let response: CmcHistoricalDataResponse = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0")
-            .build()?.get(url.clone()).send().await?.json().await?;
+        let mut year_prices =
+            download_price_points(time_start, time_end, currency, CmcInterval::Daily).await?;
+        let price_point_count = year_prices.len();
+        prices.append(&mut year_prices);
 
-        let price_point_count = response.data.quotes.len();
-
-        for quote in response.data.quotes {
-            prices.push(PricePoint {
-                timestamp: quote.time_open.naive_utc(),
-                price: quote.quote.open,
-            });
-        }
-
-        println!("Loaded {} price points from {}", price_point_count, url);
+        println!("Loaded {} price points for {}", price_point_count, year);
     }
 
     let path = format!("src/data/{}-price-history-eur.csv", currency.to_lowercase());
