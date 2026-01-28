@@ -15,9 +15,12 @@
 //!
 //! # Margin Trading
 //!
-//! Margin trades are partially supported. The trades CSV captures margin trades,
-//! but margin-specific ledger entries (rollover fees, liquidations) may require
-//! manual review. For full margin support, consider using Kraken's API directly.
+//! Margin trades are detected and flagged with a warning in the description:
+//! `[MARGIN: 100 EUR used - review for tax implications]`
+//!
+//! This helps identify trades that may require special tax treatment. However,
+//! margin-specific ledger entries (rollover fees, liquidations) are imported
+//! separately and may require manual review to correlate with the trades.
 //!
 //! # Known Limitations
 //!
