@@ -42,15 +42,6 @@ use linkme::distributed_slice;
 ///
 /// This function handles known mappings explicitly, then falls back to
 /// stripping X/Z prefixes for unknown 4+ character codes.
-///
-/// # Examples
-///
-/// ```ignore
-/// assert_eq!(normalize_currency("XXBT"), "BTC");
-/// assert_eq!(normalize_currency("ZEUR"), "EUR");
-/// assert_eq!(normalize_currency("DOT"), "DOT");
-/// assert_eq!(normalize_currency("XADA"), "ADA"); // Generic stripping
-/// ```
 fn normalize_currency(currency: &str) -> String {
     match currency {
         // Bitcoin special cases (XBT is ISO 4217 code, BTC is common usage)
@@ -104,13 +95,6 @@ fn normalize_currency(currency: &str) -> String {
 /// 1. Try matching known base currencies at the start
 /// 2. Try matching known quote currencies at the end
 /// 3. Fallback: split at position 3-4 for unknown pairs
-///
-/// # Examples
-///
-/// ```ignore
-/// assert_eq!(parse_pair("XXBTZEUR"), ("BTC".to_owned(), "EUR".to_owned()));
-/// assert_eq!(parse_pair("DOTUSD"), ("DOT".to_owned(), "USD".to_owned()));
-/// ```
 fn parse_pair(pair: &str) -> (String, String) {
     // Known Kraken currency codes for matching (ordered by length, longest first)
     let known_bases = [
@@ -190,10 +174,11 @@ enum KrakenTradeType {
 
 /// Kraken trades CSV record.
 ///
-/// Headers: txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+/// Headers: txid,ordertxid,pair,aclass,subclass,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers,posttxid,poststatuscode,cprice,ccost,cfee,cvol,cmargin,net,trades
 ///
 /// Note: The `price` field is not used as we can derive it from cost/vol.
 /// The `margin` field is present but margin-specific handling is limited.
+/// Fields after `ledgers` are for closed position info and are optional.
 #[derive(Debug, Deserialize)]
 struct KrakenTrade {
     #[serde(rename = "txid")]
@@ -201,6 +186,10 @@ struct KrakenTrade {
     #[serde(rename = "ordertxid")]
     _order_tx_id: String,
     pair: String,
+    #[serde(rename = "aclass")]
+    _aclass: String,
+    #[serde(rename = "subclass")]
+    _subclass: String,
     #[serde(rename = "time", deserialize_with = "deserialize_kraken_datetime")]
     time: NaiveDateTime,
     #[serde(rename = "type")]
@@ -218,6 +207,7 @@ struct KrakenTrade {
     _misc: String,
     #[serde(rename = "ledgers")]
     _ledgers: String,
+    // Additional fields for closed positions (optional, handled by flexible parsing)
 }
 
 impl From<KrakenTrade> for Transaction {
@@ -246,7 +236,7 @@ impl From<KrakenTrade> for Transaction {
 
 fn load_kraken_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     let mut rdr = csv::ReaderBuilder::new()
-        .flexible(true) // Allow varying number of fields
+        .flexible(true) // Allow varying number of fields (some exports have extra columns)
         .from_path(input_path)?;
     let mut transactions = Vec::new();
 
@@ -267,7 +257,7 @@ static KRAKEN_TRADES_CSV: TransactionSource = TransactionSource {
     id: "KrakenTradesCsv",
     label: "Kraken Trades (CSV)",
     csv: &[CsvSpec::new(&[
-        "txid", "ordertxid", "pair", "time", "type", "ordertype",
+        "txid", "ordertxid", "pair", "aclass", "subclass", "time", "type", "ordertype",
         "price", "cost", "fee", "vol", "margin", "misc", "ledgers",
     ])],
     detect: None,
@@ -302,7 +292,7 @@ enum KrakenLedgerType {
 
 /// Kraken ledger CSV record.
 ///
-/// Headers: txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
+/// Headers: txid,refid,time,type,subtype,aclass,subclass,asset,wallet,amount,fee,balance
 ///
 /// The `refid` field links related entries (e.g., spend/receive pairs for trades).
 #[derive(Debug, Deserialize)]
@@ -319,6 +309,8 @@ struct KrakenLedger {
     _subtype: String,
     #[serde(rename = "aclass")]
     _aclass: String,
+    #[serde(rename = "subclass")]
+    _subclass: String,
     asset: String,
     #[serde(rename = "wallet")]
     _wallet: String,
@@ -456,7 +448,7 @@ static KRAKEN_LEDGER_CSV: TransactionSource = TransactionSource {
     id: "KrakenLedgerCsv",
     label: "Kraken Ledger (CSV)",
     csv: &[CsvSpec::new(&[
-        "txid", "refid", "time", "type", "subtype", "aclass",
+        "txid", "refid", "time", "type", "subtype", "aclass", "subclass",
         "asset", "wallet", "amount", "fee", "balance",
     ])],
     detect: None,
@@ -474,6 +466,12 @@ mod tests {
     use rust_decimal_macros::dec;
     use std::io::Write;
     use tempfile::NamedTempFile;
+
+    // Kraken CSV headers - minimum required fields for parsing
+    // Note: Actual exports may have additional fields (posttxid, poststatuscode, etc.)
+    // but flexible parsing handles this
+    const TRADES_HEADER: &str = "txid,ordertxid,pair,aclass,subclass,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers";
+    const LEDGER_HEADER: &str = "txid,refid,time,type,subtype,aclass,subclass,asset,wallet,amount,fee,balance";
 
     // ------------------------------------------------------------------------
     // Currency Normalization Tests
@@ -579,30 +577,24 @@ mod tests {
 
     #[test]
     fn test_datetime_with_subseconds() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45.1234","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45.1234\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
         assert_eq!(record.time.format("%Y-%m-%d %H:%M:%S").to_string(), "2024-01-15 10:30:45");
     }
 
     #[test]
     fn test_datetime_without_subseconds() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
         assert_eq!(record.time.format("%Y-%m-%d %H:%M:%S").to_string(), "2024-01-15 10:30:45");
     }
 
     #[test]
     fn test_datetime_iso8601() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"TX1","ORD1","XXBTZEUR","2024-01-15T10:30:45Z","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15T10:30:45Z\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
         assert_eq!(record.time.format("%Y-%m-%d %H:%M:%S").to_string(), "2024-01-15 10:30:45");
     }
@@ -613,10 +605,8 @@ mod tests {
 
     #[test]
     fn test_parse_trade_buy() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"ABC123","ORD456","XXBTZEUR","2024-01-15 10:30:45.1234","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"ABC123\",\"ORD456\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45.1234\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
 
         assert_eq!(record.tx_id, "ABC123");
@@ -642,10 +632,8 @@ mod tests {
 
     #[test]
     fn test_parse_trade_sell() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"DEF789","ORD012","XXBTZEUR","2024-01-16 14:20:00.0000","sell","market","41000.0","410.00","0.15","0.01","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"DEF789\",\"ORD012\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-16 14:20:00.0000\",\"sell\",\"market\",\"41000.0\",\"410.00\",\"0.15\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
 
         let tx: Transaction = record.into();
@@ -663,10 +651,8 @@ mod tests {
 
     #[test]
     fn test_parse_trade_zero_fee() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"TX123","ORD456","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","400.00","0.0","0.01","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"TX123\",\"ORD456\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.0\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
 
         let tx: Transaction = record.into();
@@ -675,10 +661,8 @@ mod tests {
 
     #[test]
     fn test_parse_trade_altcoin_pair() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"TX123","ORD456","DOTUSD","2024-01-15 10:30:45","buy","limit","7.5","75.00","0.05","10.0","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"TX123\",\"ORD456\",\"DOTUSD\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"7.5\",\"75.00\",\"0.05\",\"10.0\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
 
         let tx: Transaction = record.into();
@@ -693,15 +677,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_parse_trade_with_all_fields() {
+        // Test with all fields including the extended position fields
+        let csv_data = format!("{}\n\"TX123\",\"ORD456\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"L1,L2\",\"POST1\",\"ok\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"0.0\",\"1\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
+        let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
+
+        // Should still parse correctly with extra fields
+        assert_eq!(record.tx_id, "TX123");
+        assert_eq!(record.vol, dec!(0.01));
+    }
+
     // ------------------------------------------------------------------------
     // Ledger CSV Parsing Tests
     // ------------------------------------------------------------------------
 
     #[test]
     fn test_parse_ledger_deposit() {
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"LED123","REF456","2024-01-10 08:00:00.0000","deposit","","currency","XXBT","","0.5","0.0","0.5"
-"#;
+        let csv_data = format!("{}\n\"LED123\",\"REF456\",\"2024-01-10 08:00:00.0000\",\"deposit\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.5\",\"0.0\",\"0.5\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
@@ -721,9 +715,7 @@ mod tests {
 
     #[test]
     fn test_parse_ledger_withdrawal() {
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"LED789","REF012","2024-01-20 16:00:00.0000","withdrawal","","currency","XETH","","-1.0","0.005","0.0"
-"#;
+        let csv_data = format!("{}\n\"LED789\",\"REF012\",\"2024-01-20 16:00:00.0000\",\"withdrawal\",\"\",\"currency\",\"\",\"XETH\",\"\",\"-1.0\",\"0.005\",\"0.0\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
@@ -737,9 +729,7 @@ mod tests {
 
     #[test]
     fn test_parse_ledger_staking() {
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"STK123","REF789","2024-02-01 00:00:00.0000","staking","","currency","DOT","","0.1","0.0","10.1"
-"#;
+        let csv_data = format!("{}\n\"STK123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"staking\",\"\",\"currency\",\"\",\"DOT\",\"\",\"0.1\",\"0.0\",\"10.1\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
@@ -757,9 +747,7 @@ mod tests {
 
     #[test]
     fn test_parse_ledger_reward() {
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"RWD123","REF789","2024-02-01 00:00:00.0000","reward","","currency","ETH","","0.001","0.0","1.001"
-"#;
+        let csv_data = format!("{}\n\"RWD123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"reward\",\"\",\"currency\",\"\",\"ETH\",\"\",\"0.001\",\"0.0\",\"1.001\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
@@ -777,9 +765,7 @@ mod tests {
 
     #[test]
     fn test_parse_ledger_dividend() {
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"DIV123","REF789","2024-03-15 00:00:00.0000","dividend","","currency","XXBT","","0.0001","0.0","1.0001"
-"#;
+        let csv_data = format!("{}\n\"DIV123\",\"REF789\",\"2024-03-15 00:00:00.0000\",\"dividend\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.0001\",\"0.0\",\"1.0001\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
@@ -798,18 +784,14 @@ mod tests {
     #[test]
     fn test_parse_ledger_transfer() {
         // Positive transfer (receiving)
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"TRF123","REF789","2024-02-01 00:00:00.0000","transfer","","currency","ZEUR","","100.0","0.0","1100.0"
-"#;
+        let csv_data = format!("{}\n\"TRF123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"transfer\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"100.0\",\"0.0\",\"1100.0\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
         let tx: Transaction = record.into();
         assert!(tx.operation.is_receive());
 
         // Negative transfer (sending)
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"TRF124","REF790","2024-02-01 00:00:00.0000","transfer","","currency","ZEUR","","-100.0","0.0","900.0"
-"#;
+        let csv_data = format!("{}\n\"TRF124\",\"REF790\",\"2024-02-01 00:00:00.0000\",\"transfer\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"-100.0\",\"0.0\",\"900.0\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
         let tx: Transaction = record.into();
@@ -819,9 +801,7 @@ mod tests {
     #[test]
     fn test_parse_ledger_adjustment() {
         // Positive adjustment (e.g., airdrop, correction)
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"ADJ123","REF789","2024-02-01 00:00:00.0000","adjustment","","currency","DOT","","5.0","0.0","105.0"
-"#;
+        let csv_data = format!("{}\n\"ADJ123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"adjustment\",\"\",\"currency\",\"\",\"DOT\",\"\",\"5.0\",\"0.0\",\"105.0\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
         let tx: Transaction = record.into();
@@ -833,9 +813,7 @@ mod tests {
         }
 
         // Negative adjustment
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"ADJ124","REF790","2024-02-01 00:00:00.0000","adjustment","","currency","DOT","","-5.0","0.0","95.0"
-"#;
+        let csv_data = format!("{}\n\"ADJ124\",\"REF790\",\"2024-02-01 00:00:00.0000\",\"adjustment\",\"\",\"currency\",\"\",\"DOT\",\"\",\"-5.0\",\"0.0\",\"95.0\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
         let tx: Transaction = record.into();
@@ -849,11 +827,7 @@ mod tests {
 
     #[test]
     fn test_ledger_trade_entries_are_skipped() {
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"TRD1","REF1","2024-01-15 10:30:45","trade","","currency","XXBT","","0.01","0.0","0.01"
-"TRD2","REF1","2024-01-15 10:30:45","spend","","currency","ZEUR","","-400.0","0.0","600.0"
-"TRD3","REF1","2024-01-15 10:30:45","receive","","currency","XXBT","","0.01","0.0","0.01"
-"#;
+        let csv_data = format!("{}\n\"TRD1\",\"REF1\",\"2024-01-15 10:30:45\",\"trade\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.01\",\"0.0\",\"0.01\"\n\"TRD2\",\"REF1\",\"2024-01-15 10:30:45\",\"spend\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"-400.0\",\"0.0\",\"600.0\"\n\"TRD3\",\"REF1\",\"2024-01-15 10:30:45\",\"receive\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.01\",\"0.0\",\"0.01\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
 
         for result in rdr.deserialize() {
@@ -864,9 +838,7 @@ mod tests {
 
     #[test]
     fn test_parse_ledger_unknown_type() {
-        let csv_data = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"UNK123","REF789","2024-02-01 00:00:00.0000","newtype","","currency","DOT","","1.0","0.0","11.0"
-"#;
+        let csv_data = format!("{}\n\"UNK123\",\"REF789\",\"2024-02-01 00:00:00.0000\",\"newtype\",\"\",\"currency\",\"\",\"DOT\",\"\",\"1.0\",\"0.0\",\"11.0\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
 
@@ -884,10 +856,7 @@ mod tests {
     #[test]
     fn test_load_kraken_trades_csv() {
         // Kraken exports newest first, so TX2 (newer) comes before TX1 (older) in the file
-        let csv_content = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"TX2","ORD2","XXBTZEUR","2024-01-16 14:20:00","sell","market","41000.0","410.00","0.15","0.01","0.0","",""
-"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","400.00","0.10","0.01","0.0","",""
-"#;
+        let csv_content = format!("{}\n\"TX2\",\"ORD2\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-16 14:20:00\",\"sell\",\"market\",\"41000.0\",\"410.00\",\"0.15\",\"0.01\",\"0.0\",\"\",\"\"\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(csv_content.as_bytes()).unwrap();
 
@@ -902,12 +871,7 @@ mod tests {
     #[test]
     fn test_load_kraken_ledger_csv_skips_trades() {
         // Kraken exports newest first, so WTH1 (newest) comes first, DEP1 (oldest) comes last
-        let csv_content = r#"txid,refid,time,type,subtype,aclass,asset,wallet,amount,fee,balance
-"WTH1","REF3","2024-01-20 16:00:00","withdrawal","","currency","XETH","","-1.0","0.005","0.0"
-"TRD1","REF2","2024-01-15 10:30:45","trade","","currency","XXBT","","0.01","0.0","0.51"
-"TRD2","REF2","2024-01-15 10:30:45","spend","","currency","ZEUR","","-400.0","0.0","600.0"
-"DEP1","REF1","2024-01-10 08:00:00","deposit","","currency","XXBT","","0.5","0.0","0.5"
-"#;
+        let csv_content = format!("{}\n\"WTH1\",\"REF3\",\"2024-01-20 16:00:00\",\"withdrawal\",\"\",\"currency\",\"\",\"XETH\",\"\",\"-1.0\",\"0.005\",\"0.0\"\n\"TRD1\",\"REF2\",\"2024-01-15 10:30:45\",\"trade\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.01\",\"0.0\",\"0.51\"\n\"TRD2\",\"REF2\",\"2024-01-15 10:30:45\",\"spend\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"-400.0\",\"0.0\",\"600.0\"\n\"DEP1\",\"REF1\",\"2024-01-10 08:00:00\",\"deposit\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.5\",\"0.0\",\"0.5\"\n", LEDGER_HEADER);
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(csv_content.as_bytes()).unwrap();
 
@@ -922,8 +886,7 @@ mod tests {
 
     #[test]
     fn test_load_empty_csv() {
-        let csv_content = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"#;
+        let csv_content = format!("{}\n", TRADES_HEADER);
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(csv_content.as_bytes()).unwrap();
 
@@ -937,10 +900,8 @@ mod tests {
 
     #[test]
     fn test_very_small_amounts() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","0.0001","0.00000001","0.0000000025","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"0.0001\",\"0.00000001\",\"0.0000000025\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
 
         let tx: Transaction = record.into();
@@ -955,10 +916,8 @@ mod tests {
 
     #[test]
     fn test_large_amounts() {
-        let csv_data = r#"txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
-"TX1","ORD1","XXBTZEUR","2024-01-15 10:30:45","buy","limit","40000.0","1000000.00","100.00","25.0","0.0","",""
-"#;
-        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let csv_data = format!("{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"1000000.00\",\"100.00\",\"25.0\",\"0.0\",\"\",\"\"\n", TRADES_HEADER);
+        let mut rdr = csv::ReaderBuilder::new().flexible(true).from_reader(csv_data.as_bytes());
         let record: KrakenTrade = rdr.deserialize().next().unwrap().unwrap();
 
         let tx: Transaction = record.into();
