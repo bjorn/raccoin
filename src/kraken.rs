@@ -8,30 +8,61 @@ use serde::{Deserialize, Deserializer};
 use crate::{base::{Transaction, Amount}, CsvSpec, TransactionSource};
 use linkme::distributed_slice;
 
-/// Normalize Kraken currency codes to standard format
-/// XXBT -> BTC, XETH -> ETH, ZEUR -> EUR, etc.
+/// Normalize Kraken currency codes to standard format.
+///
+/// Kraken uses special prefixes for currencies:
+/// - `X` prefix for crypto (XXBT = BTC, XETH = ETH, XDOGE = DOGE)
+/// - `Z` prefix for fiat (ZEUR = EUR, ZUSD = USD, ZCHF = CHF)
+/// - Some newer assets have no prefix (DOT, SOL, MATIC)
+///
+/// This function handles known mappings explicitly, then falls back to
+/// stripping X/Z prefixes for unknown 4+ character codes.
 fn normalize_currency(currency: &str) -> String {
     match currency {
+        // Bitcoin special cases (XBT is ISO code, BTC is common)
         "XXBT" | "XBT" => "BTC".to_owned(),
+        // Known crypto with X prefix
         "XETH" => "ETH".to_owned(),
         "XXRP" => "XRP".to_owned(),
         "XLTC" => "LTC".to_owned(),
         "XXLM" => "XLM".to_owned(),
         "XXMR" => "XMR".to_owned(),
+        "XXDG" => "DOGE".to_owned(),
+        // Known fiat with Z prefix
         "ZEUR" => "EUR".to_owned(),
         "ZUSD" => "USD".to_owned(),
         "ZGBP" => "GBP".to_owned(),
         "ZJPY" => "JPY".to_owned(),
         "ZCAD" => "CAD".to_owned(),
         "ZAUD" => "AUD".to_owned(),
-        other => other.to_owned(),
+        "ZCHF" => "CHF".to_owned(),
+        other => {
+            // For unknown codes, try stripping X/Z prefix if 4+ chars
+            // e.g., XDOGE -> DOGE, XADA -> ADA, ZSEK -> SEK
+            if other.len() >= 4 {
+                let first_char = other.chars().next().unwrap();
+                if first_char == 'X' || first_char == 'Z' {
+                    return other[1..].to_owned();
+                }
+            }
+            other.to_owned()
+        }
     }
 }
 
-/// Parse Kraken trading pair into (base, quote) currencies
+/// Parse Kraken trading pair into (base, quote) currencies.
+///
+/// Kraken uses concatenated currency codes for pairs, e.g.:
+/// - "XXBTZEUR" -> ("BTC", "EUR") - Bitcoin/Euro
+/// - "XETHXXBT" -> ("ETH", "BTC") - Ethereum/Bitcoin
+/// - "DOTUSD" -> ("DOT", "USD") - Polkadot/USD (newer format)
+///
+/// The parsing strategy:
+/// 1. Try matching known base currencies at the start
+/// 2. Try matching known quote currencies at the end
+/// 3. Fallback: split at position 3-4 for unknown pairs
 fn parse_pair(pair: &str) -> (String, String) {
-    // Common Kraken pairs: XXBTZEUR, XETHXXBT, XXBTZUSD, etc.
-    // Try known patterns first
+    // Known Kraken currency codes for matching
     let known_bases = ["XXBT", "XETH", "XXRP", "XLTC", "XXLM", "XXMR", "XBT", "ETH"];
     let known_quotes = ["ZEUR", "ZUSD", "ZGBP", "ZCAD", "ZAUD", "ZJPY", "XXBT", "XBT", "EUR", "USD"];
 
@@ -105,6 +136,9 @@ impl From<KrakenTrade> for Transaction {
             KrakenTradeType::Sell => Transaction::trade(trade.time, quote_amount, base_amount),
         };
 
+        // Kraken reports fees in the quote currency for spot trades.
+        // The trades CSV doesn't include a separate fee currency field,
+        // so we assume the fee is denominated in the quote currency.
         if !trade.fee.is_zero() {
             tx.fee = Some(Amount::new(trade.fee, quote));
         }
@@ -237,7 +271,12 @@ fn load_kraken_ledger_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 
     for result in rdr.deserialize() {
         let record: KrakenLedger = result?;
-        // Skip trade entries as they should be imported via trades CSV
+        // Skip trade-related entries (Trade, Spend, Receive) as they should be
+        // imported via the separate trades CSV export. The ledger CSV contains
+        // duplicate information for trades as paired spend/receive entries,
+        // and importing from both sources would result in double-counting.
+        // Users should import both trades.csv (for trades) and ledger.csv
+        // (for deposits, withdrawals, staking) to get complete history.
         if record.ledger_type == KrakenLedgerType::Trade
             || record.ledger_type == KrakenLedgerType::Spend
             || record.ledger_type == KrakenLedgerType::Receive {
@@ -270,21 +309,36 @@ mod tests {
 
     #[test]
     fn test_normalize_currency() {
+        // Known mappings
         assert_eq!(normalize_currency("XXBT"), "BTC");
         assert_eq!(normalize_currency("XBT"), "BTC");
         assert_eq!(normalize_currency("XETH"), "ETH");
         assert_eq!(normalize_currency("ZEUR"), "EUR");
         assert_eq!(normalize_currency("ZUSD"), "USD");
+        assert_eq!(normalize_currency("XXDG"), "DOGE");
+        assert_eq!(normalize_currency("ZCHF"), "CHF");
+        // Passthrough for non-prefixed
         assert_eq!(normalize_currency("DOT"), "DOT");
         assert_eq!(normalize_currency("SOL"), "SOL");
+        // Generic X/Z prefix stripping for unknown codes
+        assert_eq!(normalize_currency("XADA"), "ADA");
+        assert_eq!(normalize_currency("XDOGE"), "DOGE");
+        assert_eq!(normalize_currency("ZSEK"), "SEK");
+        // Short codes should not be stripped
+        assert_eq!(normalize_currency("XRP"), "XRP");
     }
 
     #[test]
     fn test_parse_pair() {
+        // Classic Kraken pairs with X/Z prefixes
         assert_eq!(parse_pair("XXBTZEUR"), ("BTC".to_owned(), "EUR".to_owned()));
         assert_eq!(parse_pair("XETHXXBT"), ("ETH".to_owned(), "BTC".to_owned()));
         assert_eq!(parse_pair("XXBTZUSD"), ("BTC".to_owned(), "USD".to_owned()));
         assert_eq!(parse_pair("XETHZEUR"), ("ETH".to_owned(), "EUR".to_owned()));
+        // Newer altcoin pairs without X prefix
+        assert_eq!(parse_pair("DOTUSD"), ("DOT".to_owned(), "USD".to_owned()));
+        assert_eq!(parse_pair("DOTEUR"), ("DOT".to_owned(), "EUR".to_owned()));
+        assert_eq!(parse_pair("SOLUSD"), ("SOL".to_owned(), "USD".to_owned()));
     }
 
     #[test]
