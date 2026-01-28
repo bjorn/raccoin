@@ -16,6 +16,7 @@ include = ["src/**/*", "LICENSE", "README.md", "build.rs"]
 alloy-chains = "0.2"
 alloy-primitives = "1.5"
 anyhow = "1.0.75"
+ciborium = "0.2"
 bitcoin = "0.32"
 chrono = { version = "0.4.31", features = ["serde"] }
 chrono-tz = "0.10"

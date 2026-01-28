@@ -134,6 +134,8 @@ fn normalize_currency_for_amount(timestamp: NaiveDateTime, amount: Amount) -> Am
 #[derive(Debug)]
 enum ConversionError {
     IncompleteConvert(base::Operation),
+    // we do keep track of ignore reason, but don't use it for now since it is too verbose
+    #[allow(dead_code)]
     IgnoreReason(&'static str),
     InvalidValue(Operation, Decimal),
 }
