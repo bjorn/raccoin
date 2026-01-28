@@ -343,17 +343,35 @@ impl KrakenLedger {
     }
 }
 
+/// Check if a currency is fiat (for FiatDeposit/FiatWithdrawal operations)
+fn is_fiat_currency(currency: &str) -> bool {
+    matches!(currency, "EUR" | "USD" | "GBP" | "JPY" | "CAD" | "AUD" | "CHF" | "KRW")
+}
+
 impl From<KrakenLedger> for Transaction {
     fn from(ledger: KrakenLedger) -> Self {
         let currency = normalize_currency(&ledger.asset);
         let amount = Amount::new(ledger.amount.abs(), currency.clone());
+        let is_fiat = is_fiat_currency(&currency);
 
         let mut tx = match ledger.ledger_type {
             // Deposits: External funds coming in
-            KrakenLedgerType::Deposit => Transaction::receive(ledger.time, amount),
+            KrakenLedgerType::Deposit => {
+                if is_fiat {
+                    Transaction::fiat_deposit(ledger.time, amount)
+                } else {
+                    Transaction::receive(ledger.time, amount)
+                }
+            }
 
             // Withdrawals: Funds leaving the exchange
-            KrakenLedgerType::Withdrawal => Transaction::send(ledger.time, amount),
+            KrakenLedgerType::Withdrawal => {
+                if is_fiat {
+                    Transaction::fiat_withdrawal(ledger.time, amount)
+                } else {
+                    Transaction::send(ledger.time, amount)
+                }
+            }
 
             // Staking rewards and general rewards
             KrakenLedgerType::Staking | KrakenLedgerType::Reward => {
@@ -421,7 +439,14 @@ impl From<KrakenLedger> for Transaction {
 
         // Add fee if present (fees are always positive in the CSV)
         if !ledger.fee.is_zero() {
-            tx.fee = Some(Amount::new(ledger.fee.abs(), currency));
+            tx.fee = Some(Amount::new(ledger.fee.abs(), currency.clone()));
+        }
+
+        // Set blockchain for deposit/withdrawal to enable transaction matching
+        // across different wallets (e.g., matching a Kraken withdrawal with a
+        // hardware wallet deposit)
+        if matches!(ledger.ledger_type, KrakenLedgerType::Deposit | KrakenLedgerType::Withdrawal) {
+            tx.blockchain = Some(currency);
         }
 
         tx.description = Some(format!("Kraken {} (ref: {})", ledger.tx_id, ledger.ref_id));
@@ -538,6 +563,25 @@ mod tests {
         assert_eq!(normalize_currency("XRP"), "XRP");
         assert_eq!(normalize_currency("XMR"), "XMR");
         assert_eq!(normalize_currency("ZEC"), "ZEC");
+    }
+
+    #[test]
+    fn test_is_fiat_currency() {
+        // Fiat currencies
+        assert!(is_fiat_currency("EUR"));
+        assert!(is_fiat_currency("USD"));
+        assert!(is_fiat_currency("GBP"));
+        assert!(is_fiat_currency("JPY"));
+        assert!(is_fiat_currency("CAD"));
+        assert!(is_fiat_currency("AUD"));
+        assert!(is_fiat_currency("CHF"));
+        assert!(is_fiat_currency("KRW"));
+        // Crypto currencies
+        assert!(!is_fiat_currency("BTC"));
+        assert!(!is_fiat_currency("ETH"));
+        assert!(!is_fiat_currency("DOT"));
+        assert!(!is_fiat_currency("USDT")); // Stablecoin is not fiat
+        assert!(!is_fiat_currency("USDC")); // Stablecoin is not fiat
     }
 
     // ------------------------------------------------------------------------
@@ -703,7 +747,7 @@ mod tests {
     // ------------------------------------------------------------------------
 
     #[test]
-    fn test_parse_ledger_deposit() {
+    fn test_parse_ledger_crypto_deposit() {
         let csv_data = format!("{}\n\"LED123\",\"REF456\",\"2024-01-10 08:00:00.0000\",\"deposit\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.5\",\"0.0\",\"0.5\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
@@ -712,18 +756,40 @@ mod tests {
         assert!(!record.should_skip());
 
         let tx: Transaction = record.into();
+        // Crypto deposits should use Receive operation
         assert!(tx.operation.is_receive());
         match &tx.operation {
             Operation::Receive(amount) => {
                 assert_eq!(amount.currency, "BTC");
                 assert_eq!(amount.quantity, dec!(0.5));
             }
-            _ => panic!("Expected Receive operation"),
+            _ => panic!("Expected Receive operation for crypto deposit"),
         }
+        // Blockchain should be set for transaction matching
+        assert_eq!(tx.blockchain, Some("BTC".to_owned()));
     }
 
     #[test]
-    fn test_parse_ledger_withdrawal() {
+    fn test_parse_ledger_fiat_deposit() {
+        let csv_data = format!("{}\n\"LED123\",\"REF456\",\"2024-01-10 08:00:00.0000\",\"deposit\",\"\",\"currency\",\"\",\"ZEUR\",\"\",\"1000.0\",\"0.0\",\"1000.0\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        // Fiat deposits should use FiatDeposit operation
+        match &tx.operation {
+            Operation::FiatDeposit(amount) => {
+                assert_eq!(amount.currency, "EUR");
+                assert_eq!(amount.quantity, dec!(1000.0));
+            }
+            _ => panic!("Expected FiatDeposit operation for EUR deposit"),
+        }
+        // Blockchain should be set even for fiat (for consistency)
+        assert_eq!(tx.blockchain, Some("EUR".to_owned()));
+    }
+
+    #[test]
+    fn test_parse_ledger_crypto_withdrawal() {
         let csv_data = format!("{}\n\"LED789\",\"REF012\",\"2024-01-20 16:00:00.0000\",\"withdrawal\",\"\",\"currency\",\"\",\"XETH\",\"\",\"-1.0\",\"0.005\",\"0.0\"\n", LEDGER_HEADER);
         let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
         let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
@@ -731,9 +797,31 @@ mod tests {
         assert_eq!(record.ledger_type, KrakenLedgerType::Withdrawal);
 
         let tx: Transaction = record.into();
+        // Crypto withdrawals should use Send operation
         assert!(tx.operation.is_send());
         assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(0.005));
         assert_eq!(tx.fee.as_ref().unwrap().currency, "ETH");
+        // Blockchain should be set for transaction matching
+        assert_eq!(tx.blockchain, Some("ETH".to_owned()));
+    }
+
+    #[test]
+    fn test_parse_ledger_fiat_withdrawal() {
+        let csv_data = format!("{}\n\"LED789\",\"REF012\",\"2024-01-20 16:00:00.0000\",\"withdrawal\",\"\",\"currency\",\"\",\"ZUSD\",\"\",\"-500.0\",\"5.0\",\"0.0\"\n", LEDGER_HEADER);
+        let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+        let record: KrakenLedger = rdr.deserialize().next().unwrap().unwrap();
+
+        let tx: Transaction = record.into();
+        // Fiat withdrawals should use FiatWithdrawal operation
+        match &tx.operation {
+            Operation::FiatWithdrawal(amount) => {
+                assert_eq!(amount.currency, "USD");
+                assert_eq!(amount.quantity, dec!(500.0));
+            }
+            _ => panic!("Expected FiatWithdrawal operation for USD withdrawal"),
+        }
+        assert_eq!(tx.fee.as_ref().unwrap().quantity, dec!(5.0));
+        assert_eq!(tx.blockchain, Some("USD".to_owned()));
     }
 
     #[test]
