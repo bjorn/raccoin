@@ -1261,4 +1261,156 @@ mod tests {
         let tx: Transaction = record.into();
         assert!(tx.description.is_some());
     }
+
+    // ------------------------------------------------------------------------
+    // Integration Tests - Load Actual CSV Files
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_load_actual_trades_csv_file() {
+        let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/kraken_trades.csv");
+
+        if !test_file.exists() {
+            eprintln!("Skipping test: test file not found at {:?}", test_file);
+            return;
+        }
+
+        let transactions = load_kraken_trades_csv(&test_file).unwrap();
+
+        // kraken_trades.csv has 5 trades
+        assert_eq!(transactions.len(), 5, "Expected 5 trades from test file");
+
+        // Verify first trade (TXXXX-AAAAA-111111): BTC buy for EUR
+        // Trades are loaded in reverse order (newest first in CSV, so first becomes last)
+        let first_trade = &transactions[0];
+        match &first_trade.operation {
+            Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.currency, "BTC");
+                assert_eq!(incoming.quantity, dec!(0.01));
+                assert_eq!(outgoing.currency, "EUR");
+                assert_eq!(outgoing.quantity, dec!(420.00));
+            }
+            _ => panic!("Expected Trade operation"),
+        }
+        // Fee: 0.10920 EUR
+        let fee = first_trade.fee.as_ref().expect("Should have fee");
+        assert_eq!(fee.currency, "EUR");
+        assert_eq!(fee.quantity, dec!(0.10920));
+
+        // Verify margin trade (last in file = index 4): should have margin warning
+        let margin_trade = &transactions[4];
+        let desc = margin_trade.description.as_ref().expect("Should have description");
+        assert!(desc.contains("MARGIN"), "Margin trade should have MARGIN warning");
+    }
+
+    #[test]
+    fn test_load_actual_ledger_csv_file() {
+        let test_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/kraken_ledger.csv");
+
+        if !test_file.exists() {
+            eprintln!("Skipping test: test file not found at {:?}", test_file);
+            return;
+        }
+
+        let transactions = load_kraken_ledger_csv(&test_file).unwrap();
+
+        // kraken_ledger.csv has 10 entries, but trade/spend/receive are skipped
+        // Expected: 2 deposits + 1 staking + 2 withdrawals + 1 dividend = 6
+        // (trade, spend, receive are skipped because they're handled by trades CSV)
+        assert_eq!(transactions.len(), 6, "Expected 6 transactions from ledger (excluding trade/spend/receive)");
+
+        // Check for expected operations
+        let mut has_crypto_deposit = false;
+        let mut has_fiat_deposit = false;
+        let mut has_staking = false;
+        let mut has_crypto_withdrawal = false;
+        let mut has_fiat_withdrawal = false;
+        let mut has_dividend = false;
+
+        for tx in &transactions {
+            match &tx.operation {
+                Operation::Receive(amount) => {
+                    if amount.currency == "BTC" {
+                        has_crypto_deposit = true;
+                        // Crypto deposit should have blockchain set
+                        assert_eq!(tx.blockchain, Some("BTC".to_owned()));
+                    }
+                }
+                Operation::FiatDeposit(amount) => {
+                    if amount.currency == "EUR" {
+                        has_fiat_deposit = true;
+                    }
+                }
+                Operation::Staking(amount) => {
+                    if amount.currency == "DOT" {
+                        has_staking = true;
+                        assert_eq!(amount.quantity, dec!(0.125));
+                    }
+                }
+                Operation::Send(amount) => {
+                    if amount.currency == "ETH" {
+                        has_crypto_withdrawal = true;
+                        // Crypto withdrawal should have blockchain set
+                        assert_eq!(tx.blockchain, Some("ETH".to_owned()));
+                    }
+                }
+                Operation::FiatWithdrawal(amount) => {
+                    if amount.currency == "EUR" {
+                        has_fiat_withdrawal = true;
+                    }
+                }
+                Operation::Income(amount) => {
+                    if amount.currency == "BTC" {
+                        has_dividend = true;
+                        assert_eq!(amount.quantity, dec!(0.0001));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        assert!(has_crypto_deposit, "Should have crypto deposit (BTC)");
+        assert!(has_fiat_deposit, "Should have fiat deposit (EUR)");
+        assert!(has_staking, "Should have staking reward (DOT)");
+        assert!(has_crypto_withdrawal, "Should have crypto withdrawal (ETH)");
+        assert!(has_fiat_withdrawal, "Should have fiat withdrawal (EUR)");
+        assert!(has_dividend, "Should have dividend (BTC)");
+    }
+
+    #[test]
+    fn test_integration_trade_and_ledger_consistency() {
+        // Verify that the same timestamp/amount between trades and ledger
+        // would be correctly handled (ledger should skip trade/spend/receive)
+        let trades_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/kraken_trades.csv");
+        let ledger_file = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/data/kraken_ledger.csv");
+
+        if !trades_file.exists() || !ledger_file.exists() {
+            eprintln!("Skipping test: test files not found");
+            return;
+        }
+
+        let trades = load_kraken_trades_csv(&trades_file).unwrap();
+        let ledger = load_kraken_ledger_csv(&ledger_file).unwrap();
+
+        // Trades should have 5 entries
+        assert_eq!(trades.len(), 5);
+
+        // Ledger should NOT have duplicates of trade operations
+        for tx in &ledger {
+            match &tx.operation {
+                Operation::Trade { .. } => {
+                    panic!("Ledger should not produce Trade operations (they should be skipped)");
+                }
+                _ => {}
+            }
+        }
+
+        // Combining both should give us complete picture without duplicates
+        let total = trades.len() + ledger.len();
+        assert_eq!(total, 11, "Combined should have 11 transactions (5 trades + 6 ledger entries)");
+    }
 }
