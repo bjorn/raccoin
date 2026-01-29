@@ -5,7 +5,7 @@ import { Transactions } from "transactions.slint";
 import { Reports } from "reports.slint";
 import { Badge } from "common.slint";
 import { Facade } from "global.slint";
-import { UiCapitalGain } from "structs.slint";
+import { UiCapitalGain, UiNotificationType } from "structs.slint";
 
 export { UiCapitalGain, Facade }
 
@@ -471,8 +471,12 @@ export component AppWindow inherits Window {
 
             for notification[index] in Facade.notifications: Rectangle {
                 border-radius: 5px;
-                background: darkred;
-                border-color: red;
+                background: notification.notification-type == UiNotificationType.error ? darkred :
+                            notification.notification-type == UiNotificationType.warning ? darkorange :
+                            notification.notification-type == UiNotificationType.info ? darkblue : darkgreen;
+                border-color: notification.notification-type == UiNotificationType.error ? red :
+                              notification.notification-type == UiNotificationType.warning ? orange :
+                              notification.notification-type == UiNotificationType.info ? blue : green;
                 border-width: 1px;
 
                 HorizontalBox {

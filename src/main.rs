@@ -23,22 +23,25 @@ mod liquid;
 mod mycelium;
 mod phoenix;
 mod poloniex;
+mod price_history;
 mod time;
 mod trezor;
 mod wallet_of_satoshi;
 
 use anyhow::{anyhow, Context, Result};
-use base::{cmc_id, Amount, Operation, PriceHistory, Transaction};
+use coinmarketcap::CmcInterval;
+use base::{cmc_id, Amount, Operation, Transaction};
 use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use directories::ProjectDirs;
 use fifo::{CapitalGain, CostBasisTracking, FIFO};
 use raccoin_ui::*;
+use price_history::{PriceHistory, PriceRequirements, split_ranges};
 use regex::{Regex, RegexBuilder};
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
-use slint::{ModelRc, SharedString, StandardListViewItem, VecModel};
+use slint::{Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 use linkme::distributed_slice;
 use std::{
     cell::RefCell,
@@ -327,6 +330,7 @@ struct App {
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
     price_history: PriceHistory,
+    stop_update_price_history: bool,
 
     transaction_filters: Vec<TransactionFilter>,
 
@@ -339,14 +343,20 @@ struct App {
 
 impl App {
     fn new() -> Self {
-        let mut price_history = PriceHistory::new();
-
         let project_dirs = ProjectDirs::from("org", "raccoin",  "Raccoin");
+
+        // Try to restore application state
         let state = project_dirs.as_ref().and_then(|dirs| {
             let config_dir = dirs.config_local_dir();
             std::fs::create_dir_all(config_dir).map(|_| config_dir.join("state.json")).ok()
         }).and_then(|state_file| std::fs::read_to_string(state_file).ok()).and_then(|json| {
             serde_json::from_str::<AppState>(&json).ok()
+        }).unwrap_or_default();
+
+        // Try to load available price history
+        let price_history = project_dirs.as_ref().map(|dirs| {
+            let data_dir = dirs.data_local_dir();
+            PriceHistory::load_from_dir(&data_dir).unwrap_or_default()
         }).unwrap_or_default();
 
         Self {
@@ -356,6 +366,7 @@ impl App {
             transactions: Vec::new(),
             reports: Vec::new(),
             price_history,
+            stop_update_price_history: false,
 
             transaction_filters: Vec::default(),
 
@@ -426,7 +437,8 @@ impl App {
     }
 
     fn refresh_transactions(&mut self) {
-        self.transactions = load_transactions(&mut self.portfolio, &self.price_history).unwrap_or_default();
+        self.transactions = load_transactions(&mut self.portfolio).unwrap_or_default();
+        estimate_transaction_values(&mut self.transactions, &self.price_history);
         self.reports = calculate_tax_reports(&mut self.transactions, self.portfolio.cost_basis_tracking);
     }
 
@@ -434,13 +446,28 @@ impl App {
         self.ui_weak.unwrap()
     }
 
-    fn report_error(&self, message: &str) {
+    fn push_notification(&self, notification_type: UiNotificationType, message: &str) {
         let notifications_rc = self.ui().global::<Facade>().get_notifications();
         let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
         notifications.push(UiNotification {
-            notification_type: UiNotificationType::Error,
+            notification_type,
             message: message.into(),
         });
+        if notifications.row_count() > 10 {
+            notifications.remove(0);
+        }
+    }
+
+    fn report_info(&self, message: &str) {
+        self.push_notification(UiNotificationType::Info, message);
+    }
+
+    fn report_warning(&self, message: &str) {
+        self.push_notification(UiNotificationType::Warning, message);
+    }
+
+    fn report_error(&self, message: &str) {
+        self.push_notification(UiNotificationType::Error, message);
     }
 
     fn remove_notification(&self, index: usize) {
@@ -558,6 +585,7 @@ pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
             cost: rounded_to_cent(report.short_term_cost),
             gains: rounded_to_cent(report.short_term_proceeds - report.short_term_cost),
         })?;
+
         let year = if report.year == 0 { "all_time".to_owned() } else { report.year.to_string() };
         let path = output_path.join(format!("{}_report_summary.csv", year));
         save_summary_to_csv(report, &path)?;
@@ -568,7 +596,7 @@ pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) -> Result<Vec<Transaction>> {
+fn load_transactions(portfolio: &mut Portfolio) -> Result<Vec<Transaction>> {
     let (wallets, ignored_currencies) = (&mut portfolio.wallets, &portfolio.ignored_currencies);
     let mut transactions = Vec::new();
 
@@ -676,7 +704,6 @@ fn load_transactions(portfolio: &mut Portfolio, price_history: &PriceHistory) ->
     }
 
     match_send_receive(&mut transactions);
-    estimate_transaction_values(&mut transactions, price_history);
 
     Ok(transactions)
 }
@@ -955,6 +982,134 @@ fn estimate_transaction_values(transactions: &mut Vec<Transaction>, price_histor
 
     // Estimate the value for all transactions
     transactions.iter_mut().for_each(estimate_transaction_value);
+}
+
+async fn update_price_history(app: Rc<RefCell<App>>) {
+    // Determine which price points we need to know for our transactions and clone the
+    // available price history so that it can be extended in a thread.
+    let (requirements, mut price_history) = {
+        app.borrow_mut().stop_update_price_history = false;
+        let app = app.borrow();
+        app.ui().global::<Facade>().set_updating_price_history(true);
+
+        (collect_price_requirements(&app.transactions), app.price_history.clone())
+    };
+
+    // Determine ranges of missing price points that need to be requested
+    let cmc_interval = CmcInterval::Hourly;
+    let tolerance = cmc_interval.duration();
+    let padding = Duration::days(7);
+    let mut missing_ranges = requirements.missing_ranges(&price_history, tolerance, padding);
+    let mut save = false;
+    // price_history.debug_dump();
+    // dbg!(&missing_ranges);
+
+    let mut total_ranges = 0;
+    let mut processed_ranges = 0;
+
+    let max_span = cmc_interval.duration() * 400;
+    for (_, ranges) in missing_ranges.iter_mut() {
+        split_ranges(ranges, max_span);
+        total_ranges += ranges.len();
+    }
+
+    app.borrow().ui().global::<Facade>().set_updating_price_history_progress(0.0);
+
+    // Download missing price points
+    for (currency, ranges) in missing_ranges {
+        for range in ranges {
+            println!("Downloading price points for {:} from {:} to {:}", currency, range.start, range.end);
+            let currency_for_task = currency.clone();
+            let price_points = tokio::task::spawn(async move {
+                coinmarketcap::download_price_points(range.start, range.end, currency_for_task.as_str(), cmc_interval).await
+            }).await.unwrap();
+
+            match price_points {
+                Ok(price_points) => {
+                    let count = price_points.len();
+                    price_history.price_data(currency.to_owned()).add_points(price_points);
+                    let mut app = app.borrow_mut();
+                    app.price_history = price_history.clone();
+                    app.refresh_transactions();
+                    app.refresh_ui();
+                    app.report_info(&format!("Price history updated for {:} from {:} to {:} ({:} points)", currency, range.start, range.end, count));
+                    save = true;
+                }
+                Err(e) => {
+                    app.borrow().report_warning(&format!("Failed to download price points for {:}: {:}", currency, e));
+                }
+            }
+
+            processed_ranges += 1;
+            let progress = if total_ranges > 0 {
+                processed_ranges as f32 / total_ranges as f32
+            } else {
+                0.0
+            };
+            app.borrow().ui().global::<Facade>().set_updating_price_history_progress(progress);
+
+            if app.borrow().stop_update_price_history {
+                break;
+            }
+        }
+
+        if app.borrow().stop_update_price_history {
+            break;
+        }
+    }
+
+    // On success, update the app's price history and refresh the UI
+    if save {
+        let mut app = app.borrow_mut();
+        app.save_portfolio(None);
+
+        if let Some(dirs) = app.project_dirs.as_ref() {
+            let data_dir = dirs.data_local_dir();
+            if let Err(e) = app.price_history.save_to_dir(&data_dir) {
+                eprintln!("Error saving price history: {}", e);
+            }
+        }
+    }
+
+    app.borrow().ui().global::<Facade>().set_updating_price_history(false);
+}
+
+fn collect_price_requirements(transactions: &[Transaction]) -> PriceRequirements {
+    let mut requirements = PriceRequirements::new();
+
+    for tx in transactions.iter() {
+        // For transactions to or from fiat, we know the value exactly and don't
+        // need to estimate the value.
+        match tx.incoming_outgoing() {
+            (None, None) => {}
+            (None, Some(amount)) |
+            (Some(amount), None) => {
+                if !amount.is_fiat() {
+                    requirements.add(&amount.currency, tx.timestamp);
+                }
+            }
+            (Some(incoming), Some(outgoing)) => {
+                if !incoming.is_fiat() && !outgoing.is_fiat() {
+                    // In case neither side is fiat, we want to know the price of both
+                    // currencies, since it can give a better value estimate.
+                    requirements.add(&incoming.currency, tx.timestamp);
+                    requirements.add(&outgoing.currency, tx.timestamp);
+                }
+            }
+        }
+
+        // We may also need to know the price of the fee currency.
+        match &tx.fee {
+            Some(amount) => {
+                if !amount.is_fiat() {
+                    requirements.add(&amount.currency, tx.timestamp);
+                }
+            }
+            None => {}
+        };
+    }
+
+    requirements
 }
 
 fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasisTracking) -> Vec<TaxReport> {
@@ -1901,6 +2056,23 @@ async fn main() -> Result<()> {
                     }
                 }
             }).unwrap();
+        }
+    });
+
+    facade.on_update_price_history({
+        let app = app.clone();
+
+        move || {
+            let app = app.clone();
+            slint::spawn_local(update_price_history(app)).unwrap();
+        }
+    });
+
+    facade.on_stop_update_price_history({
+        let app = app.clone();
+
+        move || {
+            app.borrow_mut().stop_update_price_history = true;
         }
     });
 

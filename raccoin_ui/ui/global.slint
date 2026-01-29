@@ -30,6 +30,9 @@ export global Facade {
     out property <string> text-filter: "";
     out property <bool> warnings-filter: false;
 
+    in-out property <bool> updating-price-history: false;
+    in-out property <float> updating-price-history-progress: 0.0;
+
     // ACTIONS
 
     callback new-portfolio();
@@ -45,6 +48,9 @@ export global Facade {
     callback add-source-csv(int);
     callback add-source-address(int, string, string, string);
     callback remove-source(int,int);
+
+    callback update-price-history();
+    callback stop-update-price-history();
 
     callback ignore-currency(string);
 

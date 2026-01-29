@@ -195,8 +195,6 @@ struct BitstampTransactionsConverter {
 
 impl BitstampTransactionsConverter {
     fn new() -> Self {
-
-
         BitstampTransactionsConverter {
             transactions: Vec::new(),
             inter_account_transfers: Vec::new(),
