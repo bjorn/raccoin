@@ -31,6 +31,9 @@
 //! - **Ledger-only import**: If you import only the ledger CSV without the trades
 //!   CSV, you will miss all trading activity. Always import both files.
 
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 
 use anyhow::Result;
@@ -272,15 +275,60 @@ fn load_kraken_trades_csv(input_path: &Path) -> Result<Vec<Transaction>> {
     Ok(transactions)
 }
 
+// ============================================================================
+// CSV Detection (subset header matching for real exports with extra columns)
+// ============================================================================
+
+/// Minimum required headers for Kraken Trades CSV.
+/// Real exports may include extra columns like posttxid, poststatuscode, cprice, etc.
+const KRAKEN_TRADES_HEADERS: [&str; 15] = [
+    "txid", "ordertxid", "pair", "aclass", "subclass", "time", "type", "ordertype",
+    "price", "cost", "fee", "vol", "margin", "misc", "ledgers",
+];
+
+/// Minimum required headers for Kraken Ledger CSV.
+/// Real exports may include extra columns.
+const KRAKEN_LEDGER_HEADERS: [&str; 12] = [
+    "txid", "refid", "time", "type", "subtype", "aclass", "subclass",
+    "asset", "wallet", "amount", "fee", "balance",
+];
+
+/// Check if all required headers are present in the CSV headers.
+fn headers_include_all(headers: &csv::StringRecord, required: &[&str]) -> bool {
+    let set: HashSet<&str> = headers.iter().collect();
+    required.iter().all(|req| set.contains(req))
+}
+
+/// Detect Kraken Trades CSV by checking for required headers (allows extra columns).
+pub(crate) fn is_kraken_trades_csv(path: &Path) -> Result<bool> {
+    let file = File::open(path)?;
+    let buf_reader = BufReader::new(file);
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b',')
+        .from_reader(buf_reader);
+
+    let headers = rdr.headers()?;
+    Ok(headers_include_all(headers, &KRAKEN_TRADES_HEADERS))
+}
+
+/// Detect Kraken Ledger CSV by checking for required headers (allows extra columns).
+pub(crate) fn is_kraken_ledger_csv(path: &Path) -> Result<bool> {
+    let file = File::open(path)?;
+    let buf_reader = BufReader::new(file);
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b',')
+        .from_reader(buf_reader);
+
+    let headers = rdr.headers()?;
+    Ok(headers_include_all(headers, &KRAKEN_LEDGER_HEADERS))
+}
+
 #[distributed_slice(crate::TRANSACTION_SOURCES)]
 static KRAKEN_TRADES_CSV: TransactionSource = TransactionSource {
     id: "KrakenTradesCsv",
     label: "Kraken Trades (CSV)",
-    csv: &[CsvSpec::new(&[
-        "txid", "ordertxid", "pair", "aclass", "subclass", "time", "type", "ordertype",
-        "price", "cost", "fee", "vol", "margin", "misc", "ledgers",
-    ])],
-    detect: None,
+    csv: &[CsvSpec::new(&KRAKEN_TRADES_HEADERS)],
+    detect: Some(is_kraken_trades_csv),
     load_sync: Some(load_kraken_trades_csv),
     load_async: None,
 };
@@ -492,11 +540,8 @@ fn load_kraken_ledger_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static KRAKEN_LEDGER_CSV: TransactionSource = TransactionSource {
     id: "KrakenLedgerCsv",
     label: "Kraken Ledger (CSV)",
-    csv: &[CsvSpec::new(&[
-        "txid", "refid", "time", "type", "subtype", "aclass", "subclass",
-        "asset", "wallet", "amount", "fee", "balance",
-    ])],
-    detect: None,
+    csv: &[CsvSpec::new(&KRAKEN_LEDGER_HEADERS)],
+    detect: Some(is_kraken_ledger_csv),
     load_sync: Some(load_kraken_ledger_csv),
     load_async: None,
 };
@@ -1412,5 +1457,85 @@ mod tests {
         // Combining both should give us complete picture without duplicates
         let total = trades.len() + ledger.len();
         assert_eq!(total, 11, "Combined should have 11 transactions (5 trades + 6 ledger entries)");
+    }
+
+    // ------------------------------------------------------------------------
+    // Detection Tests (subset header matching)
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_detect_kraken_trades_csv_exact_headers() {
+        let csv_data = format!(
+            "{}\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\"\n",
+            TRADES_HEADER
+        );
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_data.as_bytes()).unwrap();
+
+        assert!(is_kraken_trades_csv(temp_file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_detect_kraken_trades_csv_with_extra_columns() {
+        // Real Kraken exports may have additional columns like posttxid, poststatuscode, etc.
+        let csv_data = format!(
+            "{},posttxid,poststatuscode,cprice,ccost,cfee,cvol,cmargin,net,trades\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"currency\",\"\",\"2024-01-15 10:30:45\",\"buy\",\"limit\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"\",\"\",\"POST1\",\"ok\",\"40000.0\",\"400.00\",\"0.10\",\"0.01\",\"0.0\",\"0.0\",\"1\"\n",
+            TRADES_HEADER
+        );
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_data.as_bytes()).unwrap();
+
+        assert!(is_kraken_trades_csv(temp_file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_detect_kraken_trades_csv_missing_required_header() {
+        // Missing several required headers
+        let csv_data = "txid,ordertxid,pair,time,type\n\"TX1\",\"ORD1\",\"XXBTZEUR\",\"2024-01-15 10:30:45\",\"buy\"\n";
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_data.as_bytes()).unwrap();
+
+        assert!(!is_kraken_trades_csv(temp_file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_detect_kraken_ledger_csv_exact_headers() {
+        let csv_data = format!(
+            "{}\n\"LED123\",\"REF456\",\"2024-01-10 08:00:00\",\"deposit\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.5\",\"0.0\",\"0.5\"\n",
+            LEDGER_HEADER
+        );
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_data.as_bytes()).unwrap();
+
+        assert!(is_kraken_ledger_csv(temp_file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_detect_kraken_ledger_csv_with_extra_columns() {
+        // Real Kraken ledger exports may have additional columns
+        let csv_data = format!(
+            "{},extra_col1,extra_col2\n\"LED123\",\"REF456\",\"2024-01-10 08:00:00\",\"deposit\",\"\",\"currency\",\"\",\"XXBT\",\"\",\"0.5\",\"0.0\",\"0.5\",\"extra1\",\"extra2\"\n",
+            LEDGER_HEADER
+        );
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_data.as_bytes()).unwrap();
+
+        assert!(is_kraken_ledger_csv(temp_file.path()).unwrap());
+    }
+
+    #[test]
+    fn test_detect_kraken_ledger_csv_missing_required_header() {
+        // Missing several required headers
+        let csv_data = "txid,refid,time,type,asset\n\"LED123\",\"REF456\",\"2024-01-10 08:00:00\",\"deposit\",\"XXBT\"\n";
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(csv_data.as_bytes()).unwrap();
+
+        assert!(!is_kraken_ledger_csv(temp_file.path()).unwrap());
     }
 }
