@@ -50,6 +50,9 @@ slint = { version = "<1.14", default-features = false, features = ["compat-1-2",
 [target.'cfg(target_family = "windows")'.build-dependencies]
 windows_exe_info = "0.5"
 
+[dev-dependencies]
+tempfile = "3"
+
 [package.metadata.packager]
 identifier = "org.raccoin.Raccoin"
 product-name = "Raccoin"

@@ -5249,6 +5249,7 @@ dependencies = [
  "stellar-base",
  "stellar-horizon",
  "strum",
+ "tempfile",
  "tokio",
  "windows_exe_info",
 ]
