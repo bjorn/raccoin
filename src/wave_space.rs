@@ -35,6 +35,34 @@ enum TypeCategory {
     Transaction,
 }
 
+// Transaction Type values (from wave.space):
+//
+// INTRA_LEDGER_SEND_MONEY
+// INTER_LEDGER_SEND_MONEY
+// SEPA_PAYOUT
+// CURRENCY_SWAP
+// SEPA_PAYIN_DEPOSIT
+// ON_CHAIN_DEPOSIT
+// LIGHTNING_DEPOSIT
+// ON_CHAIN_WITHDRAW
+// LIGHTNING_WITHDRAW
+// APPLICATION_FEE
+// NETWORK_FEE
+// BUY_TO_WALLET
+// SELL_TO_BANK
+// CARD_AUTHORIZATION
+// CARD_AUTHORIZATION_DECLINED
+// CARD_AUTHORIZATION_REVERSAL
+// CARD_AUTHORIZATION_RELEASE
+// CARD_AUTHORIZATION_SETTLEMENT_CONFIRMED
+// CARD_TRANSACTION_REFUND_PROCESSED
+// CARD_TO_CARD_CREDIT
+// FX_PADDING
+// REWARD
+//
+// However, without additional information, it is unclear if any of these need special handling
+// while loading transactions.
+
 #[derive(Debug, Deserialize)]
 struct WaveSpaceRecord {
     #[serde(rename = "Type Category")]
@@ -43,8 +71,8 @@ struct WaveSpaceRecord {
     executes_at: NaiveDateTime,
     #[serde(rename = "Transaction ID")]
     transaction_id: String,
-    // #[serde(rename = "Transaction Type")]
-    // transaction_type: String,
+    #[serde(rename = "Transaction Type")]
+    transaction_type: String,
     #[serde(rename = "From Currency")]
     from_currency: String,
     #[serde(rename = "From Amount")]
@@ -102,9 +130,15 @@ impl TryFrom<WaveSpaceRecord> for Transaction {
             }
         };
 
-        let memo = record.memo.trim();
-        if !memo.is_empty() {
-            tx.description = Some(memo.to_owned());
+        let mut description_parts = Vec::new();
+        if !record.transaction_type.is_empty() {
+            description_parts.push(record.transaction_type);
+        }
+        if !record.memo.is_empty() {
+            description_parts.push(record.memo);
+        }
+        if !description_parts.is_empty() {
+            tx.description = Some(description_parts.join(" | "));
         }
 
         Ok(tx)
@@ -159,7 +193,9 @@ fn records_to_transactions(records: Vec<WaveSpaceRecord>) -> Result<Vec<Transact
 }
 
 fn load_wave_space_csv(input_path: &Path) -> Result<Vec<Transaction>> {
-    let mut reader = csv::ReaderBuilder::new().from_path(input_path)?;
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::Fields)
+        .from_path(input_path)?;
     let mut records = Vec::new();
 
     for result in reader.deserialize() {
@@ -185,12 +221,21 @@ mod tests {
     use csv::StringRecord;
     use rust_decimal_macros::dec;
 
-    fn parse_csv_row(csv: &str) -> Transaction {
+    fn parse_csv_rows(csv: &str) -> Vec<Transaction> {
         let header = StringRecord::from(&WAVE_SPACE_HEADERS[..]);
-        let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
+        let mut reader = csv::ReaderBuilder::new()
+            .trim(csv::Trim::Fields)
+            .from_reader(csv.as_bytes());
         reader.set_headers(header);
-        let record: WaveSpaceRecord = reader.deserialize().next().unwrap().unwrap();
-        Transaction::try_from(record).unwrap()
+        let records: Vec<WaveSpaceRecord> = reader
+            .deserialize()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        records_to_transactions(records).unwrap()
+    }
+
+    fn parse_csv_row(csv: &str) -> Transaction {
+        parse_csv_rows(csv).into_iter().next().unwrap()
     }
 
     #[test]
@@ -246,12 +291,7 @@ mod tests {
             "FEE,2025-12-20 11:03:25,TX-ID,APPLICATION_FEE,BTC,0.00000586,BTC,0,fee memo\n",
             "TRANSACTION,2025-12-20 11:03:27,TX-ID,CARD_AUTHORIZATION,BTC,0.00058554,EUR,43.85,\n",
         );
-        let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
-        let records: Vec<WaveSpaceRecord> = reader
-            .deserialize()
-            .collect::<std::result::Result<_, _>>()
-            .unwrap();
-        let transactions = records_to_transactions(records).unwrap();
+        let transactions = parse_csv_rows(csv);
         assert_eq!(transactions.len(), 1);
         let tx = &transactions[0];
         let fee = tx.fee.as_ref().expect("fee should be attached");
