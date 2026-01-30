@@ -345,6 +345,17 @@ component MainContent inherits Rectangle {
     property <string> add-source-input: "";
     property <string> add-source-name: "";
 
+    function page-index(page: Page) -> int {
+        if (page == Page.portfolio) { 0 }
+        else if (page == Page.sources) { 1 }
+        else if (page == Page.transactions) { 2 }
+        else { 3 }
+    }
+
+    function page-offset(page: Page) -> length {
+        (page-index(page) - page-index(active-page)) * 50px
+    }
+
     VerticalLayout {
         NavigationBar {
             active-page <=> root.active-page;
@@ -352,15 +363,20 @@ component MainContent inherits Rectangle {
 
         Rectangle {
             Portfolio {
-                visible: active-page == Page.portfolio;
+                opacity: active-page == Page.portfolio ? 1 : 0;
+                visible: self.opacity > 0;
+                x: page-offset(Page.portfolio);
                 currency-filter-clicked(currency) => {
                     Facade.set-currency-filter(currency);
                     root.active-page = Page.transactions;
                 }
+                animate x, opacity { duration: 100ms; }
             }
 
             Wallets {
-                visible: active-page == Page.sources;
+                opacity: active-page == Page.sources ? 1 : 0;
+                visible: self.opacity > 0;
+                x: page-offset(Page.sources);
                 wallet-transactions-clicked(index) => {
                     Facade.set-wallet-filter(index);
                     root.active-page = Page.transactions;
@@ -374,14 +390,20 @@ component MainContent inherits Rectangle {
                     root.add-source-name = "";
                     add-source-modal.show();
                 }
+                animate x, opacity { duration: 100ms; }
             }
 
             transactions := Transactions {
-                visible: active-page == Page.transactions;
+                opacity: active-page == Page.transactions ? 1 : 0;
+                visible: self.opacity > 0;
+                x: page-offset(Page.transactions);
+                animate x, opacity { duration: 100ms; }
             }
 
             Reports {
-                visible: active-page == Page.reports;
+                opacity: active-page == Page.reports ? 1 : 0;
+                visible: self.opacity > 0;
+                x: page-offset(Page.reports);
                 currency-filter-clicked(currency) => {
                     Facade.set-currency-filter(currency);
                     root.active-page = Page.transactions;
@@ -390,6 +412,7 @@ component MainContent inherits Rectangle {
                     transactions.select-transaction(id);
                     root.active-page = Page.transactions;
                 }
+                animate x, opacity { duration: 100ms; }
             }
         }
     }
