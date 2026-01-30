@@ -287,7 +287,6 @@ mod tests {
     #[test]
     fn fee_is_attached_when_transaction_id_matches() {
         let csv = concat!(
-            "Type Category,Executes At,Transaction ID,Transaction Type,From Currency,From Amount,To Currency,To Amount,Memo\n",
             "FEE,2025-12-20 11:03:25,TX-ID,APPLICATION_FEE,BTC,0.00000586,BTC,0,fee memo\n",
             "TRANSACTION,2025-12-20 11:03:27,TX-ID,CARD_AUTHORIZATION,BTC,0.00058554,EUR,43.85,\n",
         );

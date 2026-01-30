@@ -21,6 +21,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - run: sudo apt update && sudo apt install libfontconfig-dev
     - run: cargo build --verbose --release
+    - run: cargo test --release
     - run: cargo install cargo-packager --locked
     - run: cargo packager --release
     - uses: actions/upload-artifact@v4
