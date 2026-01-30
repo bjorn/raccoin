@@ -16,7 +16,7 @@ const USD_CURRENCY: &str = "USD";
 const SATS_SCALE: u32 = 8;
 const USD_SCALE: u32 = 2;
 
-pub(crate) const BLINK_HEADERS: &[&str] = &[
+pub(crate) const BLINK_HEADERS: [&str; 24] = [
     "id",
     "walletId",
     "type",
@@ -47,7 +47,7 @@ pub(crate) const BLINK_HEADERS: &[&str] = &[
 static BLINK_CSV: TransactionSource = TransactionSource {
     id: "BlinkCsv",
     label: "Blink (CSV)",
-    csv: &[CsvSpec::new(BLINK_HEADERS)],
+    csv: &[CsvSpec::new(&BLINK_HEADERS)],
     detect: None,
     load_sync: Some(load_blink_csv),
     load_async: None,
@@ -478,7 +478,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     fn parse_csv_row(csv: &str) -> BlinkRecord {
-        let header = StringRecord::from(BLINK_HEADERS);
+        let header = StringRecord::from(&BLINK_HEADERS[..]);
         let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
         reader.set_headers(header);
         reader.deserialize().next().unwrap().unwrap()
@@ -556,6 +556,7 @@ mod tests {
     fn pending_confirmation_is_skipped() {
         let csv = "6,w1,invoice,1000,0,0,BTC,Wed Dec 10 2025 23:17:28 GMT+0000,true,j5,,,,,,,,,false,,,0,0,EUR";
         let record = parse_csv_row(csv);
-        assert!(record.into_transaction().unwrap().is_none());
+        let transactions = records_to_transactions(vec![record]).unwrap();
+        assert!(transactions.is_empty());
     }
 }

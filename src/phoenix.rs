@@ -19,6 +19,23 @@ const BTC_CURRENCY: &str = "BTC";
 /// 1 BTC = 100_000_000 sats = 100_000_000_000 msat => scale = 11
 const MSAT_SCALE: u32 = 11;
 
+const PHOENIX_HEADERS: [&str; 14] = [
+    "date",
+    "id",
+    "type",
+    "amount_msat",
+    "amount_fiat",
+    "fee_credit_msat",
+    "mining_fee_sat",
+    "mining_fee_fiat",
+    "service_fee_msat",
+    "service_fee_fiat",
+    "payment_hash",
+    "tx_id",
+    "destination",
+    "description",
+];
+
 #[derive(Debug, Deserialize, Copy, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum RecordType {
@@ -141,22 +158,7 @@ fn load_phoenix_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 static PHOENIX_CSV: TransactionSource = TransactionSource {
     id: "PhoenixCsv",
     label: "Phoenix (CSV)",
-    csv: &[CsvSpec::new(&[
-        "date",
-        "id",
-        "type",
-        "amount_msat",
-        "amount_fiat",
-        "fee_credit_msat",
-        "mining_fee_sat",
-        "mining_fee_fiat",
-        "service_fee_msat",
-        "service_fee_fiat",
-        "payment_hash",
-        "tx_id",
-        "destination",
-        "description",
-    ])],
+    csv: &[CsvSpec::new(&PHOENIX_HEADERS)],
     detect: None,
     load_sync: Some(load_phoenix_csv),
     load_async: None,
@@ -181,15 +183,14 @@ fn non_empty(value: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use crate::base::Operation;
+    use csv::StringRecord;
     use rust_decimal_macros::dec;
 
     /// Helper which builds a CSV with header and returns a parsed Transaction (via TryFrom)
     fn parse_csv_row(csv: &str) -> Transaction {
-        let csv_with_header = format!(
-            "date,id,type,amount_msat,amount_fiat,fee_credit_msat,mining_fee_sat,mining_fee_fiat,service_fee_msat,service_fee_fiat,payment_hash,tx_id,destination,description\n{}",
-            csv
-        );
-        let mut reader = csv::ReaderBuilder::new().from_reader(csv_with_header.as_bytes());
+        let header = StringRecord::from(&PHOENIX_HEADERS[..]);
+        let mut reader = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
+        reader.set_headers(header);
         let record: PhoenixRecord = reader.deserialize().next().unwrap().unwrap();
         Transaction::from(record)
     }
