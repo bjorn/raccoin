@@ -4,6 +4,7 @@ mod alby;
 mod alby_hub;
 mod base;
 mod binance;
+mod bison;
 mod blink;
 mod bitcoin_core;
 mod bitcoin_de;
@@ -71,6 +72,7 @@ pub(crate) struct CsvSpec {
     pub(crate) headers: &'static [&'static str],
     pub(crate) delimiters: &'static [u8],
     pub(crate) skip_lines: usize,
+    pub(crate) trim: csv::Trim,
 }
 
 impl CsvSpec {
@@ -79,6 +81,7 @@ impl CsvSpec {
             headers,
             delimiters: &[b','],
             skip_lines: 0,
+            trim: csv::Trim::None,
         }
     }
 }
@@ -112,27 +115,27 @@ impl TransactionSource {
     }
 }
 
-fn csv_file_has_headers(path: &Path, delimiter: u8, skip_lines: usize, headers: &[&str]) -> Result<bool> {
-    let file = File::open(path)?;
-    let mut buf_reader = BufReader::new(file);
-
-    use std::io::BufRead;
-
-    let mut line = String::new();
-    for _ in 0..skip_lines {
-        buf_reader.read_line(&mut line)?;
-    }
-
-    let mut rdr = csv::ReaderBuilder::new()
-        .delimiter(delimiter)
-        .from_reader(buf_reader);
-
-    Ok(rdr.headers().map_or(false, |s| s == headers))
-}
-
 pub(crate) fn csv_matches(path: &Path, csv: &CsvSpec) -> Result<bool> {
     for &delimiter in csv.delimiters {
-        if csv_file_has_headers(path, delimiter, csv.skip_lines, csv.headers).is_ok_and(|matched| matched) {
+        let file = File::open(path)?;
+        let mut buf_reader = BufReader::new(file);
+
+        use std::io::BufRead;
+
+        let mut line = String::new();
+        for _ in 0..csv.skip_lines {
+            buf_reader.read_line(&mut line)?;
+        }
+
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(delimiter)
+            .trim(csv.trim)
+            .from_reader(buf_reader);
+
+        if rdr
+            .headers()
+            .map_or(false, |s| s == csv.headers)
+        {
             return Ok(true);
         }
     }

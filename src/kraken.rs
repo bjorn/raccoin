@@ -8,6 +8,7 @@ use serde::de::IntoDeserializer;
 
 use crate::{
     base::{Amount, Transaction},
+    time::parse_date_time,
     CsvSpec, TransactionSource,
 };
 use linkme::distributed_slice;
@@ -567,7 +568,7 @@ where
 {
     let raw: &str = Deserialize::deserialize(d)?;
     NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S%.f")
-        .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S"))
+        .or_else(|_| parse_date_time(raw))
         .map_err(|e| {
             serde::de::Error::custom(format!(
                 "Failed to parse datetime '{}': {} (expected format: %Y-%m-%d %H:%M:%S[.f])",

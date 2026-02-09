@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer};
 
 use crate::{
     base::{Amount, Transaction},
-    time::deserialize_date_time,
+    time::{deserialize_date_time, parse_date_time},
     CsvSpec, TransactionSource,
 };
 use linkme::distributed_slice;
@@ -21,7 +21,7 @@ pub(crate) fn deserialize_poloniex_timestamp<'de, D: Deserializer<'de>>(
     let date_time: NaiveDateTime = DateTime::<FixedOffset>::parse_from_rfc3339(raw)
         .and_then(|dt| Ok(dt.naive_utc()))
         .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y/%m/%d %H:%M"))
-        .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S"))
+        .or_else(|_| parse_date_time(raw))
         .map_err(serde::de::Error::custom)?;
     Ok(date_time)
 }
