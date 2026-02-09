@@ -32,7 +32,7 @@ raccoin_ui = { version = "0.2", path = "raccoin_ui" }
 regex = "1.10.2"
 reqwest = { version = "0.12", features = ["json"] }
 rfd = { version = "0.15", default-features = false, features = [ "xdg-portal", "tokio" ] }
-rust_decimal = { version = "1.33", features = ["serde-arbitrary-precision"] }
+rust_decimal = { version = "1.33", features = ["serde-str"] }
 rust_decimal_macros = "1.33"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
