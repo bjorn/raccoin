@@ -222,6 +222,7 @@ static LIQUID_TRADES_CSV: TransactionSource = TransactionSource {
         ],
         delimiters: &[b','],
         skip_lines: 2,
+        trim: csv::Trim::None,
     }],
     detect: None,
     load_sync: Some(load_liquid_trades_csv),

@@ -225,6 +225,7 @@ fn non_empty(value: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use crate::base::Operation;
+    use crate::time::parse_date_time;
     use csv::StringRecord;
     use rust_decimal_macros::dec;
 
@@ -291,8 +292,7 @@ mod tests {
     fn creation_date_used_when_settled_missing() {
         let csv = "incoming,500,0,2025-01-15 10:30:00 UTC,0,,,,,,,,,BTC,0,false,false";
         let tx = parse_csv_row(csv).unwrap();
-        let expected_creation = NaiveDateTime::parse_from_str("2025-01-15 10:30:00", "%Y-%m-%d %H:%M:%S")
-            .unwrap();
+        let expected_creation = parse_date_time("2025-01-15 10:30:00").unwrap();
         assert_eq!(tx.timestamp, expected_creation);
     }
 

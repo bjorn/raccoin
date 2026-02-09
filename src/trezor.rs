@@ -370,6 +370,7 @@ static TREZOR_CSV: TransactionSource = TransactionSource {
         ],
         delimiters: &[b',', b';'],
         skip_lines: 0,
+        trim: csv::Trim::None,
     }],
     detect: None,
     load_sync: Some(load_trezor_csv),

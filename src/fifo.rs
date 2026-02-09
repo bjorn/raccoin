@@ -615,11 +615,12 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::time::parse_date_time;
     use chrono::NaiveDateTime;
     use rust_decimal::Decimal;
 
     fn dt(s: &str) -> NaiveDateTime {
-        NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap()
+        parse_date_time(s).unwrap()
     }
 
     fn gain(bought: &str, sold: &str) -> CapitalGain {

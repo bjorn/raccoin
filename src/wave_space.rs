@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     base::{Amount, Operation, Transaction},
+    time::deserialize_date_time,
     CsvSpec, TransactionSource,
 };
 use linkme::distributed_slice;
@@ -67,7 +68,7 @@ enum TypeCategory {
 struct WaveSpaceRecord {
     #[serde(rename = "Type Category")]
     type_category: TypeCategory,
-    #[serde(rename = "Executes At", deserialize_with = "deserialize_executes_at")]
+    #[serde(rename = "Executes At", deserialize_with = "deserialize_date_time")]
     executes_at: NaiveDateTime,
     #[serde(rename = "Transaction ID")]
     transaction_id: String,
@@ -83,14 +84,6 @@ struct WaveSpaceRecord {
     to_amount: Decimal,
     #[serde(rename = "Memo")]
     memo: String,
-}
-
-fn deserialize_executes_at<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s: String = Deserialize::deserialize(deserializer)?;
-    NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").map_err(serde::de::Error::custom)
 }
 
 fn is_fiat(currency: &str) -> bool {
