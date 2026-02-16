@@ -50,6 +50,30 @@ Raccoin can also synchronize wallets from certain blockchains directly. Supporte
 
 Transactions can be exported to JSON and can also be imported from that format again.
 
+## Build Instrictions
+
+### On NixOS
+
+Build one of the following ways and then run `./result/bin/raccoin`. 
+
+#### With Flakes
+
+Enable Flakes by adding `[ "flakes" ]` to `nix.settings.experimental-features`.
+
+Enter the directory with the repository.
+
+Then call `nix build`.
+
+The `flake.nix` will be executed to provide the environment parameters and the `default.nix` will be called.
+
+#### Without Flakes
+
+Enter the directory with the repository.
+
+Then call `nix-build shell.nix`.
+
+The `shell.nix` will be executed to provide the environment parameters and the `default.nix` will be called.
+
 ## Attribution
 
 This application was written in [Rust](https://www.rust-lang.org/) using the excellent [Slint UI framework](https://slint.dev/).
