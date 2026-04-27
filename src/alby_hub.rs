@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::{
     base::{Amount, Transaction},
@@ -37,8 +37,72 @@ struct AlbyHubRecord {
     created_at: DateTime<FixedOffset>,
     settled_at: Option<DateTime<FixedOffset>>,
     app_id: String,
-    // metadata: String,
+    #[serde(deserialize_with = "deserialize_metadata")]
+    metadata: Option<AlbyHubMetadata>,
     failure_reason: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct AlbyHubMetadata {
+    payer_data: Option<PayerData>,
+    recipient_data: Option<RecipientData>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct PayerData {
+    name: String,
+    email: String,
+}
+
+impl PayerData {
+    fn to_description_part(&self) -> Option<String> {
+        let name = non_empty(&self.name);
+        let email = non_empty(&self.email);
+        let body = match (name, email) {
+            (Some(n), Some(e)) => format!("{} <{}>", n, e),
+            (Some(n), None) => n.to_owned(),
+            (None, Some(e)) => e.to_owned(),
+            (None, None) => return None,
+        };
+        Some(format!("From: {}", body))
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct RecipientData {
+    identifier: String,
+}
+
+impl RecipientData {
+    fn to_description_part(&self) -> Option<String> {
+        let identifier = non_empty(&self.identifier)?;
+        Some(format!("To: {}", identifier))
+    }
+}
+
+fn parse_metadata(raw: &str) -> Option<AlbyHubMetadata> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match serde_json::from_str(trimmed) {
+        Ok(metadata) => Some(metadata),
+        Err(err) => {
+            println!("Skipping unparseable Alby Hub metadata: {}", err);
+            None
+        }
+    }
+}
+
+fn deserialize_metadata<'de, D>(deserializer: D) -> Result<Option<AlbyHubMetadata>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw: &str = Deserialize::deserialize(deserializer)?;
+    Ok(parse_metadata(raw))
 }
 
 impl AlbyHubRecord {
@@ -93,6 +157,10 @@ impl AlbyHubRecord {
             parts.push(desc.to_owned());
         }
 
+        if let Some(party) = self.party_label() {
+            parts.push(party);
+        }
+
         if let Some(app_id) = non_empty(&self.app_id) {
             parts.push(format!("App ID: {}", app_id));
         }
@@ -102,6 +170,17 @@ impl AlbyHubRecord {
         }
 
         None
+    }
+
+    fn party_label(&self) -> Option<String> {
+        let metadata = self.metadata.as_ref()?;
+        match self.type_ {
+            RecordType::Incoming => metadata.payer_data.as_ref().and_then(PayerData::to_description_part),
+            RecordType::Outgoing => metadata
+                .recipient_data
+                .as_ref()
+                .and_then(RecipientData::to_description_part),
+        }
     }
 }
 
@@ -166,24 +245,30 @@ mod tests {
     use crate::base::Operation;
     use chrono::DateTime;
 
-    #[test]
-    fn updated_timestamp_used_when_settled_missing() {
-        let updated = DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z").unwrap();
-        let expected = updated.naive_utc();
+    fn make_record(type_: RecordType) -> AlbyHubRecord {
         let created = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
-        let record = AlbyHubRecord {
-            type_: RecordType::Incoming,
+        AlbyHubRecord {
+            type_,
             state: "settled".to_owned(),
             description: String::new(),
             payment_hash: String::new(),
             amount: 0,
             fees_paid: 0,
-            updated_at: Some(updated),
+            updated_at: None,
             created_at: created,
             settled_at: None,
             app_id: String::new(),
+            metadata: None,
             failure_reason: String::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn updated_timestamp_used_when_settled_missing() {
+        let updated = DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z").unwrap();
+        let expected = updated.naive_utc();
+        let mut record = make_record(RecordType::Incoming);
+        record.updated_at = Some(updated);
 
         assert_eq!(record.timestamp().unwrap(), expected);
     }
@@ -192,20 +277,11 @@ mod tests {
     fn record_into_transaction_creates_receive() {
         let updated = DateTime::parse_from_rfc3339("2024-05-06T07:08:09Z").unwrap();
         let expected = updated.naive_utc();
-        let created = DateTime::parse_from_rfc3339("2024-05-05T06:00:00Z").unwrap();
-        let record = AlbyHubRecord {
-            type_: RecordType::Incoming,
-            state: "settled".to_owned(),
-            description: "Test payment".to_owned(),
-            payment_hash: String::new(),
-            amount: 2_000,
-            fees_paid: 0,
-            updated_at: Some(updated),
-            created_at: created,
-            settled_at: None,
-            app_id: "app-1".to_owned(),
-            failure_reason: String::new(),
-        };
+        let mut record = make_record(RecordType::Incoming);
+        record.description = "Test payment".to_owned();
+        record.amount = 2_000;
+        record.updated_at = Some(updated);
+        record.app_id = "app-1".to_owned();
 
         let tx = record
             .into_transaction()
@@ -225,5 +301,50 @@ mod tests {
             tx.description.as_deref(),
             Some("Test payment | App ID: app-1")
         );
+    }
+
+    #[test]
+    fn payer_data_added_to_description_for_incoming() {
+        let mut record = make_record(RecordType::Incoming);
+        record.description = "Coffee tip".to_owned();
+        record.app_id = "demo-app".to_owned();
+        record.metadata = parse_metadata(
+            r#"{"comment":"Coffee tip","payer_data":{"email":"alice@example.com","name":"Alice"}}"#,
+        );
+
+        assert_eq!(
+            record.compose_description().as_deref(),
+            Some("Coffee tip | From: Alice <alice@example.com> | App ID: demo-app"),
+        );
+    }
+
+    #[test]
+    fn recipient_data_added_to_description_for_outgoing() {
+        let mut record = make_record(RecordType::Outgoing);
+        record.description = "Tip jar".to_owned();
+        record.metadata = parse_metadata(
+            r#"{"comment":"Tip jar","recipient_data":{"identifier":"bob@example.com"}}"#,
+        );
+
+        assert_eq!(
+            record.compose_description().as_deref(),
+            Some("Tip jar | To: bob@example.com"),
+        );
+    }
+
+    #[test]
+    fn payer_data_ignored_for_outgoing() {
+        let mut record = make_record(RecordType::Outgoing);
+        record.description = "Outgoing".to_owned();
+        record.metadata = parse_metadata(r#"{"payer_data":{"name":"Wrong Direction"}}"#);
+
+        assert_eq!(record.compose_description().as_deref(), Some("Outgoing"));
+    }
+
+    #[test]
+    fn parse_metadata_returns_none_for_empty_or_invalid() {
+        assert!(parse_metadata("").is_none());
+        assert!(parse_metadata("   ").is_none());
+        assert!(parse_metadata("not json").is_none());
     }
 }
