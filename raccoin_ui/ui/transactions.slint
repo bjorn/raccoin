@@ -1,4 +1,4 @@
-import { Button, ListView, HorizontalBox, LineEdit } from "std-widgets.slint";
+import { Button, CheckBox, ListView, HorizontalBox, LineEdit } from "std-widgets.slint";
 import {
     Cell,
     CurrencyIcon,
@@ -158,11 +158,14 @@ component TransactionDisplay inherits Rectangle {
 
             tx-btn := SmallButton {
                 visible: tx.tx-hash != "";
+                enabled: Facade.open-transaction-links && tx.block-explorer-url != "";
                 text: "#";
-                tooltip: tx.tx-hash;
+                tooltip: tx.block-explorer-url == "" ? tx.tx-hash :
+                    Facade.open-transaction-links ? tx.block-explorer-url :
+                    "Transaction links disabled: " + tx.block-explorer-url;
                 tooltip-font-family: "DejaVu Sans Mono";
 
-                clicked => { Facade.open-transaction(tx.blockchain, tx.tx-hash) }
+                clicked => { Facade.open-url(tx.block-explorer-url) }
             }
 
             desc-btn := SmallButton {
@@ -207,6 +210,16 @@ export component Transactions inherits VerticalLayout {
             edited => {
                 Facade.set-text-filter(self.text);
             }
+        }
+        CheckBox {
+            text: "Open transaction links";
+            checked <=> Facade.open-transaction-links;
+            toggled => { Facade.set-open-transaction-links(self.checked); }
+        }
+        LineEdit {
+            placeholder-text: "Explorer URL template";
+            text <=> Facade.transaction-url-template;
+            edited => { Facade.set-transaction-url-template(self.text); }
         }
         Button {
             icon: @image-url("icons/alert-triangle.svg");

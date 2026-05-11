@@ -40,13 +40,15 @@ export component SmallButton inherits Rectangle {
     in property text <=> i-text.text;
     in property tooltip <=> i-tooltip.text;
     in property tooltip-font-family <=> i-tooltip.font-family;
+    in property <bool> enabled: true;
     out property <bool> has-hover: i-touch.has-hover;
 
     callback clicked;
 
     border-radius: self.height / 4;
-    background: i-touch.has-hover ? #5e5e5e : #2e2e2e;
-    border-color: i-touch.has-hover ? #6e6e6e : #3e3e3e;
+    opacity: root.enabled ? 1.0 : 0.45;
+    background: root.enabled && i-touch.has-hover ? #5e5e5e : #2e2e2e;
+    border-color: root.enabled && i-touch.has-hover ? #6e6e6e : #3e3e3e;
     border-width: 1px;
     preferred-width: i-text.preferred-width + 5px;
     min-width: self.height;
@@ -56,8 +58,12 @@ export component SmallButton inherits Rectangle {
         vertical-alignment: center;
     }
     i-touch := TouchArea {
-        clicked => { root.clicked() }
-        mouse-cursor: pointer;
+        clicked => {
+            if (root.enabled) {
+                root.clicked()
+            }
+        }
+        mouse-cursor: root.enabled ? pointer : default;
     }
 
     Rectangle {
