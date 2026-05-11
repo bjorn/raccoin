@@ -233,6 +233,7 @@ struct CurrencySummary {
     currency: String,
     balance_start: Decimal,
     balance_end: Decimal,
+    long_term_balance_end: Decimal,
     cost_start: Decimal,
     cost_end: Decimal,
     quantity_disposed: Decimal,
@@ -538,12 +539,31 @@ pub(crate) fn save_summary_to_csv(report: &TaxReport, output_path: &Path) -> Res
         total_gains: Decimal,
         #[serde(rename = "Opening Balance")]
         opening_balance: Decimal,
+        #[serde(rename = "Opening Balance (sats)")]
+        opening_balance_sats: String,
         #[serde(rename = "Quantity Traded")]
         quantity_traded: Decimal,
+        #[serde(rename = "Quantity Traded (sats)")]
+        quantity_traded_sats: String,
         #[serde(rename = "Quantity Income")]
         quantity_income: Decimal,
+        #[serde(rename = "Quantity Income (sats)")]
+        quantity_income_sats: String,
         #[serde(rename = "Closing Balance")]
         closing_balance: Decimal,
+        #[serde(rename = "Closing Balance (sats)")]
+        closing_balance_sats: String,
+        #[serde(rename = "Tax-Free Balance")]
+        tax_free_balance: Decimal,
+        #[serde(rename = "Tax-Free Balance (sats)")]
+        tax_free_balance_sats: String,
+    }
+
+    fn sats_string(currency: &str, quantity: Decimal) -> String {
+        Amount::new(quantity, currency.to_owned())
+            .sats()
+            .map(|sats| sats.normalize().to_string())
+            .unwrap_or_default()
     }
 
     for currency in &report.currencies {
@@ -556,9 +576,15 @@ pub(crate) fn save_summary_to_csv(report: &TaxReport, output_path: &Path) -> Res
             other_income: rounded_to_cent(currency.income),
             total_gains: rounded_to_cent(currency.total_profit_loss),
             opening_balance: currency.balance_start,
+            opening_balance_sats: sats_string(&currency.currency, currency.balance_start),
             quantity_traded: currency.quantity_disposed,
+            quantity_traded_sats: sats_string(&currency.currency, currency.quantity_disposed),
             quantity_income: currency.quantity_income,
+            quantity_income_sats: sats_string(&currency.currency, currency.quantity_income),
             closing_balance: currency.balance_end,
+            closing_balance_sats: sats_string(&currency.currency, currency.balance_end),
+            tax_free_balance: currency.long_term_balance_end,
+            tax_free_balance_sats: sats_string(&currency.currency, currency.long_term_balance_end),
         })?;
     }
 
@@ -599,6 +625,83 @@ pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
         fifo::save_gains_to_csv(&report.gains, &path)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dt(s: &str) -> chrono::NaiveDateTime {
+        crate::time::parse_date_time(s).unwrap()
+    }
+
+    fn temp_csv_path(name: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        env::temp_dir().join(format!("{}-{}-{}.csv", name, std::process::id(), unique))
+    }
+
+    #[test]
+    fn summary_csv_includes_sats_for_btc_quantities() {
+        let path = temp_csv_path("raccoin-summary-sats");
+        let report = TaxReport {
+            year: 2026,
+            short_term_cost: Decimal::ZERO,
+            short_term_proceeds: Decimal::ZERO,
+            short_term_capital_gains: Decimal::ZERO,
+            short_term_capital_losses: Decimal::ZERO,
+            long_term_capital_gains: Decimal::ZERO,
+            long_term_capital_losses: Decimal::ZERO,
+            currencies: vec![CurrencySummary {
+                currency: "BTC".to_owned(),
+                balance_start: dec!(1),
+                balance_end: dec!(0.75),
+                quantity_disposed: dec!(0.25),
+                ..Default::default()
+            }],
+            gains: Vec::new(),
+        };
+
+        save_summary_to_csv(&report, &path).unwrap();
+        let csv = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert!(csv.contains("Opening Balance (sats)"));
+        assert!(csv.contains("Quantity Traded (sats)"));
+        assert!(csv.contains("Tax-Free Balance (sats)"));
+        assert!(csv.contains("100000000"));
+        assert!(csv.contains("25000000"));
+        assert!(csv.contains("75000000"));
+    }
+
+    #[test]
+    fn tax_report_distinguishes_long_term_btc_balance() {
+        let mut transactions = vec![
+            Transaction::new(
+                dt("2024-01-01 00:00:00"),
+                Operation::Buy(Amount::new(dec!(1), "BTC".to_owned())),
+            ),
+            Transaction::new(
+                dt("2024-12-31 00:00:00"),
+                Operation::Buy(Amount::new(dec!(0.25), "BTC".to_owned())),
+            ),
+        ];
+        transactions[0].value = Some(Amount::from_fiat(dec!(100)));
+        transactions[1].value = Some(Amount::from_fiat(dec!(25)));
+
+        let reports = calculate_tax_reports(&mut transactions, CostBasisTracking::Universal);
+        let report = reports.iter().find(|report| report.year == 2024).unwrap();
+        let btc = report
+            .currencies
+            .iter()
+            .find(|currency| currency.currency == "BTC")
+            .unwrap();
+
+        assert_eq!(btc.balance_end, dec!(1.25));
+        assert_eq!(btc.long_term_balance_end, dec!(1));
+    }
 }
 
 fn load_transactions(portfolio: &mut Portfolio) -> Result<Vec<Transaction>> {
@@ -1156,6 +1259,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
             summary.fees = Decimal::ZERO;
             summary.proceeds = Decimal::ZERO;
             summary.income = Decimal::ZERO;
+            summary.long_term_balance_end = Decimal::ZERO;
 
             summary.balance_start > Decimal::ZERO
         });
@@ -1215,6 +1319,10 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
         });
 
         let holdings_snapshot = fifo.holdings();
+        let report_end = Utc
+            .with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0)
+            .unwrap()
+            .naive_utc();
 
         // Make sure there is an entry for each held currency, even if it didn't generate gains or losses
         holdings_snapshot.inner().iter().for_each(|(currency, lots)| {
@@ -1225,6 +1333,11 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
 
         currencies.iter_mut().for_each(|summary| {
             summary.balance_end = holdings_snapshot.currency_balance(&summary.currency);
+            summary.long_term_balance_end = holdings_snapshot.currency_balance_held_for_at_least(
+                &summary.currency,
+                fifo::HoldingPeriod::Years(1),
+                report_end,
+            );
             summary.cost_end = holdings_snapshot.currency_cost_base(&summary.currency);
             summary.capital_profit_loss = summary.proceeds - summary.cost - summary.fees;
             summary.total_profit_loss = summary.capital_profit_loss + summary.income;
@@ -1250,6 +1363,8 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
     }).collect();
 
     // add an "all time" report
+    let current_holdings = fifo.holdings();
+    let current_time = Utc::now().naive_utc();
     let mut all_time = TaxReport {
         year: 0,
         short_term_cost: Decimal::ZERO,
@@ -1271,6 +1386,11 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
         for currency_summary in &report.currencies {
             let summary = summary_for(&mut all_time.currencies, &currency_summary.currency);
             summary.balance_end = currency_summary.balance_end;
+            summary.long_term_balance_end = current_holdings.currency_balance_held_for_at_least(
+                &currency_summary.currency,
+                fifo::HoldingPeriod::Years(1),
+                current_time,
+            );
             summary.cost_end = currency_summary.cost_end;
             summary.quantity_disposed += currency_summary.quantity_disposed;
             summary.quantity_income += currency_summary.quantity_income;
@@ -1563,7 +1683,7 @@ fn ui_set_reports(app: &App) {
                 sold_date: sold.date().to_string().into(),
                 sold_time: sold.time().format("%H:%M:%S").to_string().into(),
                 sold_tx_id: gain.sold_tx_index as i32,
-                amount: gain.amount.to_string().into(),
+                amount: gain.amount.display_with_sats().into(),
                 // todo: something else than unwrap()?
                 cost: rounded_to_cent(gain.cost).try_into().unwrap(),
                 proceeds: rounded_to_cent(gain.proceeds).try_into().unwrap(),
@@ -1577,9 +1697,10 @@ fn ui_set_reports(app: &App) {
             UiCurrencySummary {
                 currency_cmc_id: cmc_id(&currency.currency),
                 currency: currency.currency.clone().into(),
-                balance_start: currency.balance_start.normalize().to_string().into(),
-                balance_end: currency.balance_end.normalize().to_string().into(),
-                quantity_disposed: currency.quantity_disposed.normalize().to_string().into(),
+                balance_start: Amount::new(currency.balance_start, currency.currency.clone()).display_with_sats().into(),
+                balance_end: Amount::new(currency.balance_end, currency.currency.clone()).display_with_sats().into(),
+                tax_free_balance: Amount::new(currency.long_term_balance_end, currency.currency.clone()).display_with_sats().into(),
+                quantity_disposed: Amount::new(currency.quantity_disposed, currency.currency.clone()).display_with_sats().into(),
                 cost: format!("{:.2}", rounded_to_cent(currency.cost)).into(),
                 fees: format!("{:.2}", rounded_to_cent(currency.fees)).into(),
                 proceeds: format!("{:.2}", rounded_to_cent(currency.proceeds)).into(),
