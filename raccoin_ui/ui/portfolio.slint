@@ -1,4 +1,4 @@
-import { GroupBox, VerticalBox, HorizontalBox, ListView, Button, CheckBox, Spinner } from "std-widgets.slint";
+import { GroupBox, VerticalBox, HorizontalBox, ListView, Button, CheckBox, LineEdit, Spinner } from "std-widgets.slint";
 import {
     Cell,
     CurrencyCell,
@@ -82,6 +82,23 @@ export component Portfolio inherits Rectangle {
                     checked: Facade.portfolio.merge-consecutive-trades;
                     toggled => {
                         Facade.set-merge-consecutive-trades(self.checked);
+                    }
+                }
+                HorizontalBox {
+                    padding: 0;
+                    Text {
+                        text: "Long-term holding period";
+                        vertical-alignment: center;
+                    }
+                    period-input := LineEdit {
+                        text: Facade.portfolio.long-term-holding-period;
+                        placeholder-text: "1 year";
+                        width: 100px;
+                        horizontal-stretch: 0;
+                    }
+                    Button {
+                        text: "Apply";
+                        clicked => { Facade.set-long-term-holding-period(period-input.text); }
                     }
                 }
 
