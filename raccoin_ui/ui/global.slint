@@ -32,6 +32,8 @@ export global Facade {
 
     in-out property <bool> updating-price-history: false;
     in-out property <float> updating-price-history-progress: 0.0;
+    in-out property <bool> open-transaction-links: false;
+    in-out property <string> transaction-url-template: "";
 
     // ACTIONS
 
@@ -54,8 +56,11 @@ export global Facade {
 
     callback ignore-currency(string);
 
-    // params: (blockchain, tx_hash)
-    callback open-transaction(string, string);
+    callback set-open-transaction-links(bool);
+    callback set-transaction-url-template(string);
+
+    // params: (url)
+    callback open-url(string);
 
     // params: (wallet_index, enabled)
     callback set-wallet-enabled(int, bool);

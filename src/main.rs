@@ -214,6 +214,10 @@ struct AppState {
     portfolio_file: Option<PathBuf>,
     last_source_directory: Option<PathBuf>,
     last_export_directory: Option<PathBuf>,
+    #[serde(default)]
+    open_transaction_links: bool,
+    #[serde(default)]
+    transaction_url_template: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -1308,30 +1312,97 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     facade.set_reports(app.ui_reports.clone().into());
     facade.set_portfolio(UiPortfolio::default());
     facade.set_notifications(ModelRc::new(VecModel::<UiNotification>::default()));
+    facade.set_open_transaction_links(app.state.open_transaction_links);
+    facade.set_transaction_url_template(app.state.transaction_url_template.clone().into());
 
-    facade.on_open_transaction(move |blockchain, tx_hash| {
-        let _ = match blockchain.as_str() {
-            "BCH" => open::that(format!("https://blockchair.com/bitcoin-cash/transaction/{}", tx_hash)),
-            "BTC" | "" => open::that(format!("https://blockchair.com/bitcoin/transaction/{}", tx_hash)),
-            // or "https://btc.com/tx/{}"
-            // or "https://live.blockcypher.com/btc/tx/{}"
-            "DASH" => open::that(format!("https://live.blockcypher.com/dash/tx/{}", tx_hash)),
-            "ETH" => open::that(format!("https://etherscan.io/tx/{}", tx_hash)),
-            "LTC" => open::that(format!("https://blockchair.com/litecoin/transaction/{}", tx_hash)),
-            "PPC" => open::that(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
-            "RDD" => open::that(format!("https://rddblockexplorer.com/tx/{}", tx_hash)),
-            "XLM" => open::that(format!("https://stellar.expert/explorer/public/tx/{}", tx_hash)),
-            "XMR" => open::that(format!("https://blockchair.com/monero/transaction/{}", tx_hash)),
-            "XRP" => open::that(format!("https://xrpscan.com/tx/{}", tx_hash)),
-            "ZEC" => open::that(format!("https://blockchair.com/zcash/transaction/{}", tx_hash)),
-            _ => {
-                println!("No explorer URL defined for blockchain: {}", blockchain);
-                Ok(())
-            }
-        };
+    facade.on_open_url(move |url| {
+        let _ = open::that(url.as_str());
     });
 
     Ok(ui)
+}
+
+fn default_transaction_url_template(blockchain: &str) -> Option<&'static str> {
+    match blockchain {
+        "BCH" => Some("https://blockchair.com/bitcoin-cash/transaction/{tx_hash}"),
+        "BTC" | "" => Some("https://blockchair.com/bitcoin/transaction/{tx_hash}"),
+        "DASH" => Some("https://live.blockcypher.com/dash/tx/{tx_hash}"),
+        "ETH" => Some("https://etherscan.io/tx/{tx_hash}"),
+        "LTC" => Some("https://blockchair.com/litecoin/transaction/{tx_hash}"),
+        "PPC" => Some("https://explorer.peercoin.net/tx/{tx_hash}"),
+        "RDD" => Some("https://rddblockexplorer.com/tx/{tx_hash}"),
+        "XLM" => Some("https://stellar.expert/explorer/public/tx/{tx_hash}"),
+        "XMR" => Some("https://blockchair.com/monero/transaction/{tx_hash}"),
+        "XRP" => Some("https://xrpscan.com/tx/{tx_hash}"),
+        "ZEC" => Some("https://blockchair.com/zcash/transaction/{tx_hash}"),
+        _ => None,
+    }
+}
+
+fn expand_transaction_url_template(template: &str, blockchain: &str, tx_hash: &str) -> String {
+    let normalized_blockchain = if blockchain.is_empty() { "BTC" } else { blockchain };
+    let expanded = template
+        .replace("{blockchain}", normalized_blockchain)
+        .replace("{tx_hash}", tx_hash)
+        .replace("{hash}", tx_hash);
+
+    if expanded == template {
+        format!("{template}{tx_hash}")
+    } else {
+        expanded
+    }
+}
+
+fn transaction_url(blockchain: &str, tx_hash: &str, custom_template: &str) -> Option<String> {
+    if tx_hash.is_empty() {
+        return None;
+    }
+
+    let template = if custom_template.trim().is_empty() {
+        default_transaction_url_template(blockchain)?
+    } else {
+        custom_template.trim()
+    };
+
+    Some(expand_transaction_url_template(template, blockchain, tx_hash))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transaction_url_uses_default_template() {
+        assert_eq!(
+            transaction_url("BTC", "abc123", "").as_deref(),
+            Some("https://blockchair.com/bitcoin/transaction/abc123"),
+        );
+    }
+
+    #[test]
+    fn transaction_url_replaces_custom_template_placeholders() {
+        assert_eq!(
+            transaction_url("BTC", "abc123", "http://127.0.0.1:3002/{blockchain}/tx/{tx_hash}").as_deref(),
+            Some("http://127.0.0.1:3002/BTC/tx/abc123"),
+        );
+    }
+
+    #[test]
+    fn transaction_url_appends_hash_to_custom_base_url() {
+        assert_eq!(
+            transaction_url("BTC", "abc123", "http://127.0.0.1:3002/tx/").as_deref(),
+            Some("http://127.0.0.1:3002/tx/abc123"),
+        );
+    }
+
+    #[test]
+    fn transaction_url_requires_known_chain_or_custom_template() {
+        assert!(transaction_url("DOGE", "abc123", "").is_none());
+        assert_eq!(
+            transaction_url("DOGE", "abc123", "http://127.0.0.1:3002/{hash}").as_deref(),
+            Some("http://127.0.0.1:3002/abc123"),
+        );
+    }
 }
 
 fn ui_set_wallets(app: &App) {
@@ -1514,6 +1585,13 @@ fn ui_set_transactions(app: &App) {
         }
 
         let timestamp = Local.from_utc_datetime(&transaction.timestamp).naive_local();
+        let block_explorer_url = tx_hash
+            .and_then(|hash| transaction_url(
+                blockchain.map(String::as_str).unwrap_or_default(),
+                hash,
+                &app.state.transaction_url_template,
+            ))
+            .unwrap_or_default();
 
         ui_transactions.push(UiTransaction {
             id: transaction.index as i32,
@@ -1533,6 +1611,7 @@ fn ui_set_transactions(app: &App) {
             description: description.unwrap_or_default().into(),
             tx_hash: tx_hash.map(|s| s.to_owned()).unwrap_or_default().into(),
             blockchain: blockchain.map(|s| s.to_owned()).unwrap_or_default().into(),
+            block_explorer_url: block_explorer_url.into(),
         });
     }
 
@@ -2215,6 +2294,37 @@ async fn main() -> Result<()> {
                     }
                 }
                 _ => {}
+            }
+        }
+    });
+
+    facade.on_set_open_transaction_links({
+        let app = app.clone();
+
+        move |enabled| {
+            let mut app = app.borrow_mut();
+            app.state.open_transaction_links = enabled;
+            if let Err(e) = app.save_state() {
+                println!("Error saving application state: {}", e);
+            }
+        }
+    });
+
+    facade.on_set_transaction_url_template({
+        let app = app.clone();
+
+        move |template| {
+            let mut app = app.borrow_mut();
+            let template = template.to_string();
+            if app.state.transaction_url_template == template {
+                return;
+            }
+
+            app.state.transaction_url_template = template;
+            ui_set_transactions(&app);
+
+            if let Err(e) = app.save_state() {
+                println!("Error saving application state: {}", e);
             }
         }
     });
