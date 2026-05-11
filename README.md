@@ -42,7 +42,7 @@ Raccoin can import CSV files exported from the following sources:
 
 Raccoin can also synchronize wallets from certain blockchains directly. Supported are:
 
-* [Bitcoin](https://bitcoin.org/) wallets (either plain addresses or x/y/zpub addresses)
+* [Bitcoin](https://bitcoin.org/) wallets (plain addresses, x/y/zpub addresses or output descriptors)
 * [Ethereum](https://ethereum.org/) wallets
 * [Stellar](https://stellar.org/) accounts
 
