@@ -24,6 +24,7 @@ export global Facade {
     in-out property <[UiTaxReport]> reports: TestData.reports;
     in-out property <UiPortfolio> portfolio: TestData.portfolio;
     in-out property <[UiNotification]> notifications;
+    in-out property <[string]> wallet-names: TestData.wallet-names;
 
     out property <int> wallet-filter: -1;
     out property <string> currency-filter: "";
@@ -48,6 +49,7 @@ export global Facade {
     callback add-source-csv(int);
     callback add-source-address(int, string, string, string);
     callback remove-source(int,int);
+    callback move-source(int, int, int, int);
 
     callback update-price-history();
     callback stop-update-price-history();

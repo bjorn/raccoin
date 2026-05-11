@@ -174,7 +174,9 @@ export component Wallets inherits ScrollView {
                             duration: 100ms;
                         }
 
-                        for source[source_index] in wallet.sources: HorizontalBox {
+                        for source[source_index] in wallet.sources: source-row := HorizontalBox {
+                            property <int> target-wallet-index: wallet_index;
+
                             padding: 0;
                             CheckBox {
                                 checked: source.enabled;
@@ -195,6 +197,40 @@ export component Wallets inherits ScrollView {
                                 opacity: 0.5;
                             }
                             Rectangle {}
+                            Button {
+                                icon: @image-url("icons/arrow-up.svg");
+                                enabled: source_index > 0;
+                                opacity: self.enabled ? 1.0 : 0.3;
+                                clicked => {
+                                    Facade.move-source(wallet_index, source_index, wallet_index, source_index - 1);
+                                }
+                            }
+                            Button {
+                                icon: @image-url("icons/arrow-down.svg");
+                                enabled: source_index < wallet.sources.length - 1;
+                                opacity: self.enabled ? 1.0 : 0.3;
+                                clicked => {
+                                    Facade.move-source(wallet_index, source_index, wallet_index, source_index + 1);
+                                }
+                            }
+                            target-wallet := ComboBox {
+                                model: Facade.wallet-names;
+                                horizontal-stretch: 0;
+                                current-index <=> source-row.target-wallet-index;
+                                enabled: Facade.wallets.length > 1;
+                            }
+                            Button {
+                                text: "Move";
+                                enabled: source-row.target-wallet-index != wallet_index && source-row.target-wallet-index >= 0;
+                                clicked => {
+                                    Facade.move-source(
+                                        wallet_index,
+                                        source_index,
+                                        source-row.target-wallet-index,
+                                        Facade.wallets[source-row.target-wallet-index].sources.length
+                                    );
+                                }
+                            }
                             ComboBox {
                                 model: Facade.source-types;
                                 horizontal-stretch: 0;
