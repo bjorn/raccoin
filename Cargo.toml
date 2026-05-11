@@ -13,9 +13,11 @@ include = ["src/**/*", "LICENSE", "README.md", "build.rs"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+aes-gcm = "0.10"
 alloy-chains = "0.2"
 alloy-primitives = "1.5"
 anyhow = "1.0.75"
+argon2 = "0.5"
 ciborium = "0.2"
 bitcoin = "0.32"
 chrono = { version = "0.4.31", features = ["serde"] }
@@ -25,6 +27,7 @@ directories = "6.0"
 esplora-client = { version = "0.12", default-features = false, features = ["async", "tokio"] }
 foundry-block-explorers = "0.22"
 futures = "0.3.28"
+getrandom = "0.2"
 linkme = "0.3"
 open = "5.0.0"
 pathdiff = "0.2.1"

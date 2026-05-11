@@ -16,6 +16,8 @@ import { Facade } from "global.slint";
 
 export component Portfolio inherits Rectangle {
     callback currency-filter-clicked(string);
+    callback load-encrypted-requested();
+    callback save-encrypted-requested();
 
     VerticalBox {
         padding: 0;
@@ -51,8 +53,16 @@ export component Portfolio inherits Rectangle {
                         clicked => { Facade.load-portfolio(); }
                     }
                     Button {
+                        text: "Load Encrypted";
+                        clicked => { root.load-encrypted-requested(); }
+                    }
+                    Button {
                         text: "Close";
                         clicked => { Facade.close-portfolio(); }
+                    }
+                    Button {
+                        text: Facade.portfolio.encrypted ? "Save Encrypted Copy" : "Encrypt Copy";
+                        clicked => { root.save-encrypted-requested(); }
                     }
                     Button {
                         text: Facade.updating-price-history ? "Updating..." : "Update Price History";
@@ -68,6 +78,11 @@ export component Portfolio inherits Rectangle {
                         progress: Facade.updating-price-history-progress;
                         visible: Facade.updating-price-history;
                     }
+                }
+                Text {
+                    text: Facade.portfolio.encrypted ? "Encrypted portfolio" : "Plain JSON portfolio";
+                    color: gray;
+                    font-size: 11px;
                 }
                 CheckBox {
                     text: "Per-wallet cost basis tracking";

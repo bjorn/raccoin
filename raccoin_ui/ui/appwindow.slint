@@ -336,6 +336,69 @@ component AddWalletSourceDialog inherits Rectangle {
     }
 }
 
+component PasswordDialog inherits Rectangle {
+    in property <bool> confirm-password;
+    in-out property <string> password: "";
+    in-out property <string> repeated-password: "";
+
+    callback close-requested();
+    callback submitted(string);
+
+    preferred-width: 360px;
+
+    VerticalBox {
+        Text {
+            text: confirm-password
+                ? "Choose a password for the encrypted portfolio."
+                : "Enter the portfolio password.";
+            color: #b0b0b0;
+            font-size: 12px;
+            horizontal-alignment: center;
+        }
+        password-input := LineEdit {
+            text <=> root.password;
+            input-type: InputType.password;
+            placeholder-text: "Password";
+            preferred-width: 320px;
+            accepted => {
+                if (root.password != "" && (!root.confirm-password || root.password == root.repeated-password)) {
+                    root.submitted(root.password);
+                }
+            }
+        }
+        if (confirm-password): repeat-input := LineEdit {
+            text <=> root.repeated-password;
+            input-type: InputType.password;
+            placeholder-text: "Repeat password";
+            preferred-width: 320px;
+            accepted => {
+                if (root.password != "" && root.password == root.repeated-password) {
+                    root.submitted(root.password);
+                }
+            }
+        }
+        if (confirm-password && repeated-password != "" && password != repeated-password): Text {
+            text: "Passwords do not match.";
+            color: red;
+            font-size: 12px;
+            horizontal-alignment: center;
+        }
+        HorizontalBox {
+            padding: 0;
+            Button {
+                text: "Cancel";
+                clicked => { root.close-requested(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "Continue";
+                enabled: root.password != "" && (!root.confirm-password || root.password == root.repeated-password);
+                clicked => { root.submitted(root.password); }
+            }
+        }
+    }
+}
+
 component MainContent inherits Rectangle {
     property <Page> active-page: Page.sources;
     property <int> add-source-wallet-index: -1;
@@ -344,6 +407,9 @@ component MainContent inherits Rectangle {
     property <string> add-source-kind-label: "";
     property <string> add-source-input: "";
     property <string> add-source-name: "";
+
+    callback load-encrypted-requested();
+    callback save-encrypted-requested();
 
     function page-index(page: Page) -> int {
         if (page == Page.portfolio) { 0 }
@@ -366,6 +432,12 @@ component MainContent inherits Rectangle {
                 opacity: active-page == Page.portfolio ? 1 : 0;
                 visible: self.opacity > 0;
                 x: page-offset(Page.portfolio);
+                load-encrypted-requested() => {
+                    root.load-encrypted-requested();
+                }
+                save-encrypted-requested() => {
+                    root.save-encrypted-requested();
+                }
                 currency-filter-clicked(currency) => {
                     Facade.set-currency-filter(currency);
                     root.active-page = Page.transactions;
@@ -441,6 +513,8 @@ component MainContent inherits Rectangle {
 }
 
 component WelcomePage inherits Rectangle {
+    callback load-encrypted-requested();
+
     VerticalBox {
         width: Math.min(self.preferred-width, root.width);
         height: Math.min(self.preferred-height, root.height);
@@ -467,6 +541,10 @@ component WelcomePage inherits Rectangle {
                 text: "Load Portfolio";
                 clicked => { Facade.load-portfolio(); }
             }
+            Button {
+                text: "Load Encrypted";
+                clicked => { root.load-encrypted-requested(); }
+            }
         }
     }
 }
@@ -480,10 +558,50 @@ export component AppWindow inherits Window {
     preferred-width: 1200px;
     preferred-height: 640px;
 
+    property <int> password-action: 0; // 1 = load encrypted, 2 = save encrypted
+    property <string> password-input: "";
+    property <string> password-repeat: "";
+
+    public function show-password-dialog(action: int) {
+        root.password-action = action;
+        root.password-input = "";
+        root.password-repeat = "";
+        password-modal.show();
+    }
+
     MainContent {
         visible: Facade.portfolio.file-name != "";
+        load-encrypted-requested() => { root.show-password-dialog(1); }
+        save-encrypted-requested() => { root.show-password-dialog(2); }
     }
-    if (Facade.portfolio.file-name == ""): WelcomePage {}
+    if (Facade.portfolio.file-name == ""): WelcomePage {
+        load-encrypted-requested() => { root.show-password-dialog(1); }
+    }
+
+    password-modal := ModalDialog {
+        width: root.width;
+        height: root.height;
+
+        title: root.password-action == 2 ? "Save Encrypted Portfolio" : "Load Encrypted Portfolio";
+
+        PasswordDialog {
+            confirm-password: root.password-action == 2;
+            password <=> root.password-input;
+            repeated-password <=> root.password-repeat;
+
+            close-requested() => { password-modal.close(); }
+            submitted(password) => {
+                if (root.password-action == 1) {
+                    Facade.load-encrypted-portfolio(password);
+                } else if (root.password-action == 2) {
+                    Facade.save-encrypted-portfolio(password);
+                } else if (root.password-action == 3) {
+                    Facade.load-pending-encrypted-portfolio(password);
+                }
+                password-modal.close();
+            }
+        }
+    }
 
     HorizontalBox {
         alignment: center;
