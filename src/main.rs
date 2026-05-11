@@ -31,21 +31,26 @@ mod trezor;
 mod wallet_of_satoshi;
 mod wave_space;
 
-use anyhow::{anyhow, Context, Result};
-use coinmarketcap::CmcInterval;
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
+use anyhow::{anyhow, bail, Context, Result};
+use argon2::Argon2;
 use base::{cmc_id, Amount, Operation, Transaction};
 use chrono::{Datelike, Duration, Local, TimeZone, Utc};
+use coinmarketcap::CmcInterval;
 use directories::ProjectDirs;
 use fifo::{CapitalGain, CostBasisTracking, FIFO};
+use linkme::distributed_slice;
+use price_history::{split_ranges, PriceHistory, PriceRequirements};
 use raccoin_ui::*;
-use price_history::{PriceHistory, PriceRequirements, split_ranges};
 use regex::{Regex, RegexBuilder};
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupByMut;
 use slint::{Model, ModelRc, SharedString, StandardListViewItem, VecModel};
-use linkme::distributed_slice;
 use std::{
     cell::RefCell,
     cmp::{Eq, Ordering},
@@ -64,6 +69,28 @@ use std::{
 
 fn rounded_to_cent(amount: Decimal) -> Decimal {
     amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
+}
+
+const ENCRYPTED_PORTFOLIO_MAGIC: &[u8] = b"RACCOIN-ENCRYPTED-PORTFOLIO\0";
+const ENCRYPTED_PORTFOLIO_VERSION: u8 = 1;
+const PORTFOLIO_KEY_LEN: usize = 32;
+const PORTFOLIO_SALT_LEN: usize = 16;
+const PORTFOLIO_NONCE_LEN: usize = 12;
+
+#[derive(Clone)]
+struct PortfolioEncryption {
+    salt: Vec<u8>,
+    key: [u8; PORTFOLIO_KEY_LEN],
+}
+
+#[derive(Serialize, Deserialize)]
+struct EncryptedPortfolioEnvelope {
+    version: u8,
+    kdf: String,
+    cipher: String,
+    salt: Vec<u8>,
+    nonce: Vec<u8>,
+    ciphertext: Vec<u8>,
 }
 
 pub(crate) type LoadFuture = Pin<Box<dyn Future<Output = Result<Vec<Transaction>>> + Send>>;
@@ -332,6 +359,8 @@ struct App {
     project_dirs: Option<ProjectDirs>,
     state: AppState,
     portfolio: Portfolio,
+    portfolio_encryption: Option<PortfolioEncryption>,
+    pending_encrypted_portfolio_file: Option<PathBuf>,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
     price_history: PriceHistory,
@@ -344,6 +373,169 @@ struct App {
     ui_transactions: Rc<VecModel<UiTransaction>>,
     ui_report_years: Rc<VecModel<StandardListViewItem>>,
     ui_reports: Rc<VecModel<UiTaxReport>>,
+}
+
+fn is_encrypted_portfolio(bytes: &[u8]) -> bool {
+    bytes.starts_with(ENCRYPTED_PORTFOLIO_MAGIC)
+}
+
+fn fill_random(bytes: &mut [u8]) -> Result<()> {
+    getrandom::getrandom(bytes).context("Failed to get secure random bytes")
+}
+
+fn derive_portfolio_key(password: &str, salt: &[u8]) -> Result<[u8; PORTFOLIO_KEY_LEN]> {
+    if password.is_empty() {
+        bail!("Password cannot be empty");
+    }
+
+    let mut key = [0; PORTFOLIO_KEY_LEN];
+    Argon2::default()
+        .hash_password_into(password.as_bytes(), salt, &mut key)
+        .map_err(|e| anyhow!("Failed to derive portfolio encryption key: {}", e))?;
+    Ok(key)
+}
+
+fn new_portfolio_encryption(password: &str) -> Result<PortfolioEncryption> {
+    let mut salt = vec![0; PORTFOLIO_SALT_LEN];
+    fill_random(&mut salt)?;
+    let key = derive_portfolio_key(password, &salt)?;
+    Ok(PortfolioEncryption { salt, key })
+}
+
+fn encrypt_portfolio_json(json: &[u8], encryption: &PortfolioEncryption) -> Result<Vec<u8>> {
+    let mut nonce = vec![0; PORTFOLIO_NONCE_LEN];
+    fill_random(&mut nonce)?;
+
+    let cipher = Aes256Gcm::new_from_slice(&encryption.key)
+        .map_err(|_| anyhow!("Invalid portfolio encryption key length"))?;
+    let ciphertext = cipher
+        .encrypt(Nonce::from_slice(&nonce), json)
+        .map_err(|_| anyhow!("Failed to encrypt portfolio"))?;
+
+    let envelope = EncryptedPortfolioEnvelope {
+        version: ENCRYPTED_PORTFOLIO_VERSION,
+        kdf: "argon2id-default".to_owned(),
+        cipher: "aes-256-gcm".to_owned(),
+        salt: encryption.salt.clone(),
+        nonce,
+        ciphertext,
+    };
+
+    let mut bytes = Vec::from(ENCRYPTED_PORTFOLIO_MAGIC);
+    ciborium::ser::into_writer(&envelope, &mut bytes)
+        .context("Failed to encode encrypted portfolio")?;
+    Ok(bytes)
+}
+
+fn decrypt_portfolio_json(bytes: &[u8], password: &str) -> Result<(Vec<u8>, PortfolioEncryption)> {
+    let envelope_bytes = bytes
+        .strip_prefix(ENCRYPTED_PORTFOLIO_MAGIC)
+        .context("Missing encrypted portfolio header")?;
+    let envelope: EncryptedPortfolioEnvelope = ciborium::de::from_reader(envelope_bytes)
+        .context("Failed to decode encrypted portfolio")?;
+
+    if envelope.version != ENCRYPTED_PORTFOLIO_VERSION {
+        bail!("Unsupported encrypted portfolio version {}", envelope.version);
+    }
+    if envelope.kdf != "argon2id-default" {
+        bail!("Unsupported portfolio key derivation {}", envelope.kdf);
+    }
+    if envelope.cipher != "aes-256-gcm" {
+        bail!("Unsupported portfolio cipher {}", envelope.cipher);
+    }
+    if envelope.salt.len() != PORTFOLIO_SALT_LEN {
+        bail!("Invalid encrypted portfolio salt length");
+    }
+    if envelope.nonce.len() != PORTFOLIO_NONCE_LEN {
+        bail!("Invalid encrypted portfolio nonce length");
+    }
+
+    let key = derive_portfolio_key(password, &envelope.salt)?;
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|_| anyhow!("Invalid portfolio encryption key length"))?;
+    let json = cipher
+        .decrypt(Nonce::from_slice(&envelope.nonce), envelope.ciphertext.as_ref())
+        .map_err(|_| anyhow!("Failed to decrypt portfolio. Check the password and try again."))?;
+
+    Ok((json, PortfolioEncryption { salt: envelope.salt, key }))
+}
+
+fn decode_portfolio(
+    bytes: &[u8],
+    password: Option<&str>,
+) -> Result<(Portfolio, Option<PortfolioEncryption>)> {
+    let (json, encryption) = if is_encrypted_portfolio(bytes) {
+        let password = password.context("This portfolio is encrypted. Use Load Encrypted Portfolio.")?;
+        let (json, encryption) = decrypt_portfolio_json(bytes, password)?;
+        (json, Some(encryption))
+    } else {
+        (bytes.to_vec(), None)
+    };
+
+    let portfolio = serde_json::from_slice(&json).context("Failed to parse portfolio")?;
+    Ok((portfolio, encryption))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn portfolio_with_wallet(name: &str) -> Portfolio {
+        Portfolio {
+            wallets: vec![Wallet::new(name.to_owned())],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn encrypted_portfolio_round_trips() {
+        let portfolio = portfolio_with_wallet("Cold storage");
+        let json = serde_json::to_vec_pretty(&portfolio).unwrap();
+        let encryption = new_portfolio_encryption("correct horse battery staple").unwrap();
+
+        let encrypted = encrypt_portfolio_json(&json, &encryption).unwrap();
+        assert!(is_encrypted_portfolio(&encrypted));
+        assert!(!String::from_utf8_lossy(&encrypted).contains("Cold storage"));
+
+        let (decoded, decoded_encryption) =
+            decode_portfolio(&encrypted, Some("correct horse battery staple")).unwrap();
+        assert_eq!(decoded.wallets[0].name, "Cold storage");
+        assert!(decoded_encryption.is_some());
+    }
+
+    #[test]
+    fn encrypted_portfolio_rejects_wrong_password() {
+        let portfolio = portfolio_with_wallet("Savings");
+        let json = serde_json::to_vec_pretty(&portfolio).unwrap();
+        let encryption = new_portfolio_encryption("right-password").unwrap();
+        let encrypted = encrypt_portfolio_json(&json, &encryption).unwrap();
+
+        assert!(decode_portfolio(&encrypted, Some("wrong-password")).is_err());
+    }
+
+    #[test]
+    fn encrypted_portfolio_requires_password() {
+        let portfolio = portfolio_with_wallet("Savings");
+        let json = serde_json::to_vec_pretty(&portfolio).unwrap();
+        let encryption = new_portfolio_encryption("right-password").unwrap();
+        let encrypted = encrypt_portfolio_json(&json, &encryption).unwrap();
+
+        let error = match decode_portfolio(&encrypted, None) {
+            Ok(_) => panic!("encrypted portfolio loaded without password"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("encrypted"));
+    }
+
+    #[test]
+    fn plain_portfolio_decodes_without_password() {
+        let portfolio = portfolio_with_wallet("Plain wallet");
+        let json = serde_json::to_vec_pretty(&portfolio).unwrap();
+
+        let (decoded, encryption) = decode_portfolio(&json, None).unwrap();
+        assert_eq!(decoded.wallets[0].name, "Plain wallet");
+        assert!(encryption.is_none());
+    }
 }
 
 impl App {
@@ -368,6 +560,8 @@ impl App {
             project_dirs,
             state,
             portfolio: Portfolio::default(),
+            portfolio_encryption: None,
+            pending_encrypted_portfolio_file: None,
             transactions: Vec::new(),
             reports: Vec::new(),
             price_history,
@@ -384,8 +578,12 @@ impl App {
     }
 
     fn load_portfolio(&mut self, file_path: &Path) -> Result<()> {
-        // todo: report portfolio loading error in UI
-        let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
+        self.load_portfolio_with_password(file_path, None)
+    }
+
+    fn load_portfolio_with_password(&mut self, file_path: &Path, password: Option<&str>) -> Result<()> {
+        let bytes = std::fs::read(file_path)?;
+        let (mut portfolio, encryption) = decode_portfolio(&bytes, password)?;
         let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
         portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
             let source_definition = transaction_source_by_id(&source.source_type);
@@ -397,46 +595,67 @@ impl App {
 
         self.state.portfolio_file = Some(file_path.into());
         self.portfolio = portfolio;
+        self.portfolio_encryption = encryption;
 
         self.refresh_transactions();
         Ok(())
     }
 
-    fn save_portfolio(&mut self, portfolio_file: Option<PathBuf>) {
-        fn internal_save(portfolio: &Portfolio, portfolio_file: &Path) -> Result<()> {
-            let json = serde_json::to_string_pretty(&portfolio)?;
-            std::fs::write(portfolio_file, json)?;
-            Ok(())
-        }
-
-        if let Some(path) = portfolio_file.as_ref().or(self.state.portfolio_file.as_ref()) {
-            let portfolio_path = path.parent().unwrap_or(Path::new(""));
-            self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
-                let source_definition = transaction_source_by_id(&source.source_type);
-                let is_virtual = source_definition.map(|definition| definition.load_sync.is_none()).unwrap_or(false);
-                if !is_virtual {
-                    if let Some(relative_path) = pathdiff::diff_paths(&source.full_path, portfolio_path) {
-                        source.path = relative_path.to_str().unwrap_or_default().to_owned();
-                    }
+    fn save_portfolio_to_path(
+        &mut self,
+        path: &Path,
+        encryption: Option<&PortfolioEncryption>,
+    ) -> Result<()> {
+        let portfolio_path = path.parent().unwrap_or(Path::new(""));
+        self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
+            let source_definition = transaction_source_by_id(&source.source_type);
+            let is_virtual = source_definition.map(|definition| definition.load_sync.is_none()).unwrap_or(false);
+            if !is_virtual {
+                if let Some(relative_path) = pathdiff::diff_paths(&source.full_path, portfolio_path) {
+                    source.path = relative_path.to_str().unwrap_or_default().to_owned();
                 }
-            }));
+            }
+        }));
 
-            match internal_save(&self.portfolio, path) {
+        let json = serde_json::to_vec_pretty(&self.portfolio)?;
+        let bytes = if let Some(encryption) = encryption {
+            encrypt_portfolio_json(&json, encryption)?
+        } else {
+            json
+        };
+        std::fs::write(path, bytes)?;
+        Ok(())
+    }
+
+    fn save_portfolio(&mut self, portfolio_file: Option<PathBuf>) {
+        let encryption = self.portfolio_encryption.clone();
+        let target_path = portfolio_file.clone().or_else(|| self.state.portfolio_file.clone());
+        if let Some(path) = target_path.as_ref() {
+            match self.save_portfolio_to_path(path, encryption.as_ref()) {
                 Ok(_) => {
                     println!("Saved portfolio to {}", path.display());
                     if portfolio_file.is_some() {
                         self.state.portfolio_file = portfolio_file;
                     }
                 }
-                Err(_) => {
-                    println!("Error saving portfolio to {}", path.display());
+                Err(e) => {
+                    println!("Error saving portfolio to {}: {}", path.display(), e);
                 }
             }
         }
     }
 
+    fn save_encrypted_portfolio(&mut self, path: PathBuf, password: &str) -> Result<()> {
+        let encryption = new_portfolio_encryption(password)?;
+        self.save_portfolio_to_path(&path, Some(&encryption))?;
+        self.portfolio_encryption = Some(encryption);
+        self.state.portfolio_file = Some(path);
+        Ok(())
+    }
+
     fn close_portfolio(&mut self) {
         self.portfolio = Portfolio::default();
+        self.portfolio_encryption = None;
         self.state.portfolio_file = None;
         self.refresh_transactions();
     }
@@ -1653,6 +1872,7 @@ fn ui_set_portfolio(app: &App) {
 
         facade.set_portfolio(UiPortfolio {
             file_name: app.state.portfolio_file.as_deref().map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
+            encrypted: app.portfolio_encryption.is_some(),
             balance: rounded_to_cent(balance).try_into().unwrap(),
             cost_base: rounded_to_cent(cost_base).try_into().unwrap(),
             unrealized_gains: rounded_to_cent(balance - cost_base).try_into().unwrap(),
@@ -1672,11 +1892,21 @@ async fn main() -> Result<()> {
 
     // Load portfolio from command-line or from previous application state
     if let Some(portfolio_file) = env::args_os().nth(1).map(OsString::into).or_else(|| app.state.portfolio_file.to_owned()) {
-        if let Err(e) = app.load_portfolio(&portfolio_file) {
-            println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
-            return Ok(());
+        let encrypted = std::fs::read(&portfolio_file)
+            .map(|bytes| is_encrypted_portfolio(&bytes))
+            .unwrap_or(false);
+
+        if encrypted {
+            println!("Portfolio {} is encrypted; waiting for password", portfolio_file.display());
+            app.pending_encrypted_portfolio_file = Some(portfolio_file);
+            app.state.portfolio_file = None;
+        } else {
+            if let Err(e) = app.load_portfolio(&portfolio_file) {
+                println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
+                return Ok(());
+            }
+            println!("Restored portfolio {}", portfolio_file.display());
         }
-        println!("Restored portfolio {}", portfolio_file.display());
     }
 
     let ui = initialize_ui(&mut app)?;
@@ -1767,6 +1997,7 @@ async fn main() -> Result<()> {
                 Some(path) => {
                     let mut app = app.borrow_mut();
                     app.portfolio = Portfolio::default();
+                    app.portfolio_encryption = None;
                     app.save_portfolio(Some(path));
                     app.refresh_transactions();
                     app.refresh_ui();
@@ -1788,8 +2019,78 @@ async fn main() -> Result<()> {
                 Some(path) => {
                     let mut app = app.borrow_mut();
                     if let Err(e) = app.load_portfolio(&path) {
-                        println!("Error loading portfolio from {}: {}", path.display(), e);
+                        app.report_error(&format!("Error loading portfolio: {}", e));
                     } else {
+                        app.refresh_ui();
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+
+    facade.on_load_encrypted_portfolio({
+        let app = app.clone();
+
+        move |password| {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Load Encrypted Portfolio")
+                .add_filter("Encrypted Portfolio", &["raccoin"])
+                .add_filter("Portfolio (JSON)", &["json"]);
+
+            match dialog.pick_file() {
+                Some(path) => {
+                    let mut app = app.borrow_mut();
+                    if let Err(e) = app.load_portfolio_with_password(&path, Some(password.as_str())) {
+                        app.report_error(&format!("Error loading encrypted portfolio: {}", e));
+                    } else {
+                        app.pending_encrypted_portfolio_file = None;
+                        app.refresh_ui();
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+
+    facade.on_load_pending_encrypted_portfolio({
+        let app = app.clone();
+
+        move |password| {
+            let path = app.borrow().pending_encrypted_portfolio_file.clone();
+            match path {
+                Some(path) => {
+                    let mut app = app.borrow_mut();
+                    if let Err(e) = app.load_portfolio_with_password(&path, Some(password.as_str())) {
+                        app.report_error(&format!("Error loading encrypted portfolio: {}", e));
+                    } else {
+                        app.pending_encrypted_portfolio_file = None;
+                        app.refresh_ui();
+                    }
+                }
+                None => {
+                    app.borrow().report_error("No encrypted portfolio is waiting to be loaded.");
+                }
+            }
+        }
+    });
+
+    facade.on_save_encrypted_portfolio({
+        let app = app.clone();
+
+        move |password| {
+            let dialog = rfd::FileDialog::new()
+                .set_title("Save Encrypted Portfolio")
+                .set_file_name("Portfolio.raccoin")
+                .add_filter("Encrypted Portfolio", &["raccoin"]);
+
+            match dialog.save_file() {
+                Some(path) => {
+                    let mut app = app.borrow_mut();
+                    if let Err(e) = app.save_encrypted_portfolio(path, password.as_str()) {
+                        app.report_error(&format!("Error saving encrypted portfolio: {}", e));
+                    } else {
+                        app.report_info("Encrypted portfolio saved.");
                         app.refresh_ui();
                     }
                 }
@@ -2260,6 +2561,10 @@ async fn main() -> Result<()> {
             ui_set_transactions(&app);
         }
     });
+
+    if app.borrow().pending_encrypted_portfolio_file.is_some() {
+        ui.invoke_show_password_dialog(3);
+    }
 
     ui.show()?;
 

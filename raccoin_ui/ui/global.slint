@@ -37,6 +37,9 @@ export global Facade {
 
     callback new-portfolio();
     callback load-portfolio();
+    callback load-encrypted-portfolio(string);
+    callback load-pending-encrypted-portfolio(string);
+    callback save-encrypted-portfolio(string);
     callback close-portfolio();
 
     callback set-merge-consecutive-trades(bool);
