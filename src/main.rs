@@ -1308,6 +1308,10 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     facade.set_reports(app.ui_reports.clone().into());
     facade.set_portfolio(UiPortfolio::default());
     facade.set_notifications(ModelRc::new(VecModel::<UiNotification>::default()));
+    facade.set_app_version(env!("CARGO_PKG_VERSION").into());
+    facade.set_app_description(env!("CARGO_PKG_DESCRIPTION").into());
+    facade.set_app_homepage(env!("CARGO_PKG_HOMEPAGE").into());
+    facade.set_app_license(env!("CARGO_PKG_LICENSE").into());
 
     facade.on_open_transaction(move |blockchain, tx_hash| {
         let _ = match blockchain.as_str() {
