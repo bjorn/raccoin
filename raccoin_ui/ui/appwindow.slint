@@ -454,7 +454,9 @@ component WelcomePage inherits Rectangle {
             preferred-height: 192px;
         }
         Text { text: "Raccoin"; horizontal-alignment: center; font-size: 50px; }
-        Text { text: "Crypto Portfolio and Tax Reporting Tool"; horizontal-alignment: center; color: darkgray; }
+        Text { text: Facade.app-description; horizontal-alignment: center; color: darkgray; }
+        Text { text: "Version " + Facade.app-version; horizontal-alignment: center; color: darkgray; }
+        Text { text: Facade.app-homepage + " | " + Facade.app-license; horizontal-alignment: center; color: #777; font-size: 12px; }
 
         Rectangle { height: 30px; }
 
