@@ -3,6 +3,7 @@ import {
     UiBalanceForWallet,
     UiCostBasisTracking,
     UiCurrencySummary,
+    UiOpenPortfolio,
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
@@ -183,6 +184,12 @@ export global TestData {
         merge_consecutive_trades: false,
         cost_basis_tracking: UiCostBasisTracking.per-wallet,
     };
+
+    out property <[UiOpenPortfolio]> open-portfolios : [{
+        label: "portfolio",
+        file-name: "portfolio.json",
+        active: true,
+    }];
 
     out property <[UiBalanceForWallet]> balances-for-wallet : [{
         currency-cmc-id: 1,

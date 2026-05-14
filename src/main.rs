@@ -66,6 +66,14 @@ fn rounded_to_cent(amount: Decimal) -> Decimal {
     amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
 }
 
+fn portfolio_tab_label(file: Option<&Path>) -> String {
+    file.and_then(Path::file_stem)
+        .or_else(|| file.and_then(Path::file_name))
+        .map(|name| name.to_string_lossy().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "Untitled Portfolio".to_owned())
+}
+
 pub(crate) type LoadFuture = Pin<Box<dyn Future<Output = Result<Vec<Transaction>>> + Send>>;
 
 pub(crate) struct CsvSpec {
@@ -158,7 +166,7 @@ fn detect_source_from_file(path: &Path) -> Option<&'static TransactionSource> {
         .find(|source| source.detect_from_file(path).ok().unwrap_or(false))
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct WalletSource {
     source_type: String,
     path: String,
@@ -178,7 +186,7 @@ struct WalletSource {
     transactions: Vec<Transaction>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Wallet {
     name: String,
     /// Whether this wallet is enabled.
@@ -216,7 +224,7 @@ struct AppState {
     last_export_directory: Option<PathBuf>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 struct Portfolio {
     #[serde(default)]
     wallets: Vec<Wallet>,
@@ -261,6 +269,7 @@ impl CurrencySummary {
     }
 }
 
+#[derive(Clone)]
 struct TaxReport {
     year: i32,
     short_term_cost: Decimal,
@@ -293,6 +302,14 @@ impl TaxReport {
     fn total_net_capital_gains(&self) -> Decimal {
         self.total_capital_gains() - self.total_capital_losses()
     }
+}
+
+#[derive(Clone)]
+struct PortfolioSession {
+    file: Option<PathBuf>,
+    portfolio: Portfolio,
+    transactions: Vec<Transaction>,
+    reports: Vec<TaxReport>,
 }
 
 enum TransactionFilter {
@@ -334,6 +351,8 @@ struct App {
     portfolio: Portfolio,
     transactions: Vec<Transaction>,
     reports: Vec<TaxReport>,
+    open_portfolios: Vec<PortfolioSession>,
+    active_portfolio: Option<usize>,
     price_history: PriceHistory,
     stop_update_price_history: bool,
 
@@ -370,6 +389,8 @@ impl App {
             portfolio: Portfolio::default(),
             transactions: Vec::new(),
             reports: Vec::new(),
+            open_portfolios: Vec::new(),
+            active_portfolio: None,
             price_history,
             stop_update_price_history: false,
 
@@ -383,8 +404,7 @@ impl App {
         }
     }
 
-    fn load_portfolio(&mut self, file_path: &Path) -> Result<()> {
-        // todo: report portfolio loading error in UI
+    fn load_portfolio_file(&self, file_path: &Path) -> Result<Portfolio> {
         let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
         let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
         portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
@@ -395,20 +415,95 @@ impl App {
             }
         }));
 
-        self.state.portfolio_file = Some(file_path.into());
-        self.portfolio = portfolio;
+        Ok(portfolio)
+    }
 
-        self.refresh_transactions();
+    fn create_portfolio_session(&self, file: Option<PathBuf>, mut portfolio: Portfolio) -> PortfolioSession {
+        let mut transactions = load_transactions(&mut portfolio).unwrap_or_default();
+        estimate_transaction_values(&mut transactions, &self.price_history);
+        let reports = calculate_tax_reports(&mut transactions, portfolio.cost_basis_tracking);
+
+        PortfolioSession {
+            file,
+            portfolio,
+            transactions,
+            reports,
+        }
+    }
+
+    fn current_portfolio_session(&self) -> PortfolioSession {
+        PortfolioSession {
+            file: self.state.portfolio_file.clone(),
+            portfolio: self.portfolio.clone(),
+            transactions: self.transactions.clone(),
+            reports: self.reports.clone(),
+        }
+    }
+
+    fn store_active_portfolio(&mut self) {
+        if let Some(index) = self.active_portfolio {
+            let current = self.current_portfolio_session();
+            if let Some(session) = self.open_portfolios.get_mut(index) {
+                *session = current;
+            }
+        }
+    }
+
+    fn apply_portfolio_session(&mut self, index: usize) {
+        if let Some(session) = self.open_portfolios.get(index).cloned() {
+            self.active_portfolio = Some(index);
+            self.state.portfolio_file = session.file;
+            self.portfolio = session.portfolio;
+            self.transactions = session.transactions;
+            self.reports = session.reports;
+        }
+    }
+
+    fn select_portfolio(&mut self, index: usize) {
+        if self.active_portfolio == Some(index) || index >= self.open_portfolios.len() {
+            return
+        }
+
+        self.store_active_portfolio();
+        self.apply_portfolio_session(index);
+    }
+
+    fn load_portfolio(&mut self, file_path: &Path) -> Result<()> {
+        if let Some(index) = self.open_portfolios.iter().position(|session| {
+            session.file.as_deref() == Some(file_path)
+        }) {
+            self.select_portfolio(index);
+            return Ok(())
+        }
+
+        // todo: report portfolio loading error in UI
+        let portfolio = self.load_portfolio_file(file_path)?;
+        let session = self.create_portfolio_session(Some(file_path.into()), portfolio);
+
+        self.store_active_portfolio();
+        self.open_portfolios.push(session);
+        self.apply_portfolio_session(self.open_portfolios.len() - 1);
+        Ok(())
+    }
+
+    fn new_portfolio(&mut self, file_path: PathBuf) -> Result<()> {
+        let portfolio = Portfolio::default();
+        Self::save_portfolio_to_file(&portfolio, &file_path)?;
+
+        let session = self.create_portfolio_session(Some(file_path), portfolio);
+        self.store_active_portfolio();
+        self.open_portfolios.push(session);
+        self.apply_portfolio_session(self.open_portfolios.len() - 1);
+        Ok(())
+    }
+
+    fn save_portfolio_to_file(portfolio: &Portfolio, portfolio_file: &Path) -> Result<()> {
+        let json = serde_json::to_string_pretty(&portfolio)?;
+        std::fs::write(portfolio_file, json)?;
         Ok(())
     }
 
     fn save_portfolio(&mut self, portfolio_file: Option<PathBuf>) {
-        fn internal_save(portfolio: &Portfolio, portfolio_file: &Path) -> Result<()> {
-            let json = serde_json::to_string_pretty(&portfolio)?;
-            std::fs::write(portfolio_file, json)?;
-            Ok(())
-        }
-
         if let Some(path) = portfolio_file.as_ref().or(self.state.portfolio_file.as_ref()) {
             let portfolio_path = path.parent().unwrap_or(Path::new(""));
             self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
@@ -421,12 +516,13 @@ impl App {
                 }
             }));
 
-            match internal_save(&self.portfolio, path) {
+            match Self::save_portfolio_to_file(&self.portfolio, path) {
                 Ok(_) => {
                     println!("Saved portfolio to {}", path.display());
                     if portfolio_file.is_some() {
                         self.state.portfolio_file = portfolio_file;
                     }
+                    self.store_active_portfolio();
                 }
                 Err(_) => {
                     println!("Error saving portfolio to {}", path.display());
@@ -436,15 +532,31 @@ impl App {
     }
 
     fn close_portfolio(&mut self) {
-        self.portfolio = Portfolio::default();
-        self.state.portfolio_file = None;
-        self.refresh_transactions();
+        if let Some(index) = self.active_portfolio {
+            self.open_portfolios.remove(index);
+
+            if self.open_portfolios.is_empty() {
+                self.active_portfolio = None;
+                self.portfolio = Portfolio::default();
+                self.transactions = Vec::new();
+                self.reports = Vec::new();
+                self.state.portfolio_file = None;
+            } else {
+                self.apply_portfolio_session(index.min(self.open_portfolios.len() - 1));
+            }
+        } else {
+            self.portfolio = Portfolio::default();
+            self.transactions = Vec::new();
+            self.reports = Vec::new();
+            self.state.portfolio_file = None;
+        }
     }
 
     fn refresh_transactions(&mut self) {
         self.transactions = load_transactions(&mut self.portfolio).unwrap_or_default();
         estimate_transaction_values(&mut self.transactions, &self.price_history);
         self.reports = calculate_tax_reports(&mut self.transactions, self.portfolio.cost_basis_tracking);
+        self.store_active_portfolio();
     }
 
     fn ui(&self) -> AppWindow {
@@ -482,6 +594,7 @@ impl App {
     }
 
     fn refresh_ui(&self) {
+        ui_set_portfolio_tabs(self);
         ui_set_wallets(self);
         ui_set_transactions(self);
         ui_set_reports(self);
@@ -1338,6 +1451,19 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     Ok(ui)
 }
 
+fn ui_set_portfolio_tabs(app: &App) {
+    let active_portfolio = app.active_portfolio.unwrap_or(usize::MAX);
+    let open_portfolios: Vec<UiOpenPortfolio> = app.open_portfolios.iter().enumerate().map(|(index, session)| {
+        UiOpenPortfolio {
+            label: portfolio_tab_label(session.file.as_deref()).into(),
+            file_name: session.file.as_deref().map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
+            active: index == active_portfolio,
+        }
+    }).collect();
+
+    app.ui().global::<Facade>().set_open_portfolios(Rc::new(VecModel::from(open_portfolios)).into());
+}
+
 fn ui_set_wallets(app: &App) {
     let ui_wallets: Vec<UiWallet> = app.portfolio.wallets.iter().map(|wallet| {
         let ui_sources: Vec<UiWalletSource> = wallet.sources.iter().map(|source| {
@@ -1616,12 +1742,12 @@ fn ui_set_reports(app: &App) {
 fn ui_set_portfolio(app: &App) {
     let ui = app.ui();
     let facade = ui.global::<Facade>();
-    if let Some(report) = app.reports.last() {
-        let now = Utc::now().naive_utc();
-        let mut balance = Decimal::ZERO;
-        let mut cost_base = Decimal::ZERO;
+    let now = Utc::now().naive_utc();
+    let mut balance = Decimal::ZERO;
+    let mut cost_base = Decimal::ZERO;
 
-        let mut ui_holdings: Vec<UiCurrencyHoldings> = report.currencies.iter().filter_map(|currency| {
+    let mut ui_holdings: Vec<UiCurrencyHoldings> = app.reports.last().map(|report| {
+        report.currencies.iter().filter_map(|currency| {
             if currency.balance_end.is_zero() {
                 return None
             }
@@ -1645,29 +1771,29 @@ fn ui_set_portfolio(app: &App) {
                 unrealized_gain: rounded_to_cent(unrealized_gain).try_into().unwrap(),
                 percentage_of_portfolio: 0.0,
             })
-        }).collect();
+        }).collect()
+    }).unwrap_or_default();
 
-        // set the percentage of portfolio for each currency
-        if balance > Decimal::ZERO {
-            ui_holdings.iter_mut().for_each(|currency| {
-                let balance: f32 = balance.try_into().unwrap();
-                currency.percentage_of_portfolio = (currency.value / balance) * 100.0;
-            });
-        }
-
-        facade.set_portfolio(UiPortfolio {
-            file_name: app.state.portfolio_file.as_deref().map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
-            balance: rounded_to_cent(balance).try_into().unwrap(),
-            cost_base: rounded_to_cent(cost_base).try_into().unwrap(),
-            unrealized_gains: rounded_to_cent(balance - cost_base).try_into().unwrap(),
-            holdings: Rc::new(VecModel::from(ui_holdings)).into(),
-            cost_basis_tracking: match app.portfolio.cost_basis_tracking {
-                CostBasisTracking::Universal => UiCostBasisTracking::Universal,
-                CostBasisTracking::PerWallet => UiCostBasisTracking::PerWallet,
-            },
-            merge_consecutive_trades: app.portfolio.merge_consecutive_trades,
+    // set the percentage of portfolio for each currency
+    if balance > Decimal::ZERO {
+        ui_holdings.iter_mut().for_each(|currency| {
+            let balance: f32 = balance.try_into().unwrap();
+            currency.percentage_of_portfolio = (currency.value / balance) * 100.0;
         });
     }
+
+    facade.set_portfolio(UiPortfolio {
+        file_name: app.state.portfolio_file.as_deref().map(Path::to_string_lossy).unwrap_or_default().to_string().into(),
+        balance: rounded_to_cent(balance).try_into().unwrap(),
+        cost_base: rounded_to_cent(cost_base).try_into().unwrap(),
+        unrealized_gains: rounded_to_cent(balance - cost_base).try_into().unwrap(),
+        holdings: Rc::new(VecModel::from(ui_holdings)).into(),
+        cost_basis_tracking: match app.portfolio.cost_basis_tracking {
+            CostBasisTracking::Universal => UiCostBasisTracking::Universal,
+            CostBasisTracking::PerWallet => UiCostBasisTracking::PerWallet,
+        },
+        merge_consecutive_trades: app.portfolio.merge_consecutive_trades,
+    });
 }
 
 #[tokio::main]
@@ -1775,15 +1901,12 @@ async fn main() -> Result<()> {
                 .set_file_name("Portfolio.json")
                 .add_filter("Portfolio (JSON)", &["json"]);
 
-            match dialog.save_file() {
-                Some(path) => {
-                    let mut app = app.borrow_mut();
-                    app.portfolio = Portfolio::default();
-                    app.save_portfolio(Some(path));
-                    app.refresh_transactions();
-                    app.refresh_ui();
+            if let Some(path) = dialog.save_file() {
+                let mut app = app.borrow_mut();
+                match app.new_portfolio(path) {
+                    Ok(_) => app.refresh_ui(),
+                    Err(e) => println!("Error creating portfolio: {}", e),
                 }
-                _ => {}
             }
         }
     });
@@ -1796,16 +1919,13 @@ async fn main() -> Result<()> {
                 .set_title("Load Portfolio")
                 .add_filter("Portfolio (JSON)", &["json"]);
 
-            match dialog.pick_file() {
-                Some(path) => {
-                    let mut app = app.borrow_mut();
-                    if let Err(e) = app.load_portfolio(&path) {
-                        println!("Error loading portfolio from {}: {}", path.display(), e);
-                    } else {
-                        app.refresh_ui();
-                    }
+            if let Some(path) = dialog.pick_file() {
+                let mut app = app.borrow_mut();
+                if let Err(e) = app.load_portfolio(&path) {
+                    println!("Error loading portfolio from {}: {}", path.display(), e);
+                } else {
+                    app.refresh_ui();
                 }
-                _ => {}
             }
         }
     });
@@ -1816,6 +1936,16 @@ async fn main() -> Result<()> {
         move || {
             let mut app = app.borrow_mut();
             app.close_portfolio();
+            app.refresh_ui();
+        }
+    });
+
+    facade.on_select_portfolio({
+        let app = app.clone();
+
+        move |index| {
+            let mut app = app.borrow_mut();
+            app.select_portfolio(index as usize);
             app.refresh_ui();
         }
     });
@@ -2283,4 +2413,71 @@ async fn main() -> Result<()> {
     app.borrow().save_state()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app_for_test() -> App {
+        App {
+            project_dirs: None,
+            state: AppState::default(),
+            portfolio: Portfolio::default(),
+            transactions: Vec::new(),
+            reports: Vec::new(),
+            open_portfolios: Vec::new(),
+            active_portfolio: None,
+            price_history: PriceHistory::default(),
+            stop_update_price_history: false,
+            transaction_filters: Vec::new(),
+            ui_weak: slint::Weak::default(),
+            ui_wallets: Rc::new(Default::default()),
+            ui_transactions: Rc::new(Default::default()),
+            ui_report_years: Rc::new(Default::default()),
+            ui_reports: Rc::new(Default::default()),
+        }
+    }
+
+    #[test]
+    fn portfolio_tab_label_uses_file_stem() {
+        assert_eq!(portfolio_tab_label(Some(Path::new("/tmp/Client A.json"))), "Client A");
+        assert_eq!(portfolio_tab_label(None), "Untitled Portfolio");
+    }
+
+    #[test]
+    fn select_portfolio_restores_active_file_and_contents() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "raccoin-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        let first = dir.join("First.json");
+        let second = dir.join("Second.json");
+        let mut app = app_for_test();
+
+        app.new_portfolio(first.clone())?;
+        app.portfolio.wallets.push(Wallet::new("First Wallet".to_owned()));
+        app.save_portfolio(None);
+
+        app.new_portfolio(second.clone())?;
+        app.portfolio.wallets.push(Wallet::new("Second Wallet".to_owned()));
+        app.save_portfolio(None);
+
+        assert_eq!(app.open_portfolios.len(), 2);
+        assert_eq!(app.state.portfolio_file.as_deref(), Some(second.as_path()));
+
+        app.select_portfolio(0);
+        assert_eq!(app.state.portfolio_file.as_deref(), Some(first.as_path()));
+        assert_eq!(app.portfolio.wallets[0].name, "First Wallet");
+
+        app.select_portfolio(1);
+        assert_eq!(app.state.portfolio_file.as_deref(), Some(second.as_path()));
+        assert_eq!(app.portfolio.wallets[0].name, "Second Wallet");
+
+        std::fs::remove_dir_all(dir)?;
+        Ok(())
+    }
 }
