@@ -27,7 +27,8 @@ component PageButton inherits Rectangle {
     border-width: 1px;
     background: root.active ? #456 : touch.has-hover ? #4564 : transparent;
     height: layout.preferred-height * 1.33;
-    width: layout.preferred-width + 20px;
+    width: Math.min(layout.preferred-width + 20px, 180px);
+    clip: true;
 
     layout := HorizontalLayout {
         spacing: 10px;
@@ -84,6 +85,19 @@ component NavigationBar inherits HorizontalBox {
         Badge {
             text: Facade.reports.length;
         }
+    }
+}
+
+component PortfolioTabs inherits HorizontalBox {
+    visible: Facade.open-portfolios.length > 1;
+    alignment: center;
+    padding-top: 4px;
+    padding-bottom: 0px;
+
+    for portfolio[index] in Facade.open-portfolios: PageButton {
+        text: portfolio.label;
+        active: portfolio.active;
+        pressed => { Facade.select-portfolio(index); }
     }
 }
 
@@ -357,6 +371,8 @@ component MainContent inherits Rectangle {
     }
 
     VerticalLayout {
+        PortfolioTabs {}
+
         NavigationBar {
             active-page <=> root.active-page;
         }
