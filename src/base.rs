@@ -120,6 +120,24 @@ impl Amount {
         }
     }
 
+    pub(crate) fn sats(&self) -> Option<Decimal> {
+        if self.currency == "BTC" && self.token_id.is_none() {
+            Some(
+                (self.quantity * Decimal::new(100_000_000, 0))
+                    .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero),
+            )
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn display_with_sats(&self) -> String {
+        match self.sats() {
+            Some(sats) => format!("{} / {} sats", self, sats.normalize()),
+            None => self.to_string(),
+        }
+    }
+
     pub(crate) fn is_fiat(&self) -> bool {
         self.currency == "EUR"
     }
@@ -194,6 +212,24 @@ impl fmt::Display for Amount {
             "EUR" => write!(f, "{:.2} €", self.quantity),
             _ => write!(f, "{} {}", self.quantity.normalize(), self.currency),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn btc_display_can_include_sats() {
+        let amount = Amount::from_satoshis(1234);
+        assert_eq!(amount.display_with_sats(), "0.00001234 BTC / 1234 sats");
+    }
+
+    #[test]
+    fn non_btc_display_does_not_include_sats() {
+        let amount = Amount::new(Decimal::new(15, 1), "ETH".to_owned());
+        assert_eq!(amount.display_with_sats(), "1.5 ETH");
+        assert_eq!(amount.sats(), None);
     }
 }
 
@@ -526,4 +562,3 @@ static JSON: TransactionSource = TransactionSource {
     load_sync: Some(load_transactions_from_json),
     load_async: None,
 };
-
