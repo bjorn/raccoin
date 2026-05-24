@@ -238,25 +238,30 @@ component AddWalletSourceDialog inherits Rectangle {
             text: "Bitcoin HD Wallet(s)";
             clicked => { root.select-kind("BitcoinXpubs", "Bitcoin HD Wallet(s)"); }
         }
+        Button {
+            row: 3; col: 1; colspan: 2;
+            text: "Bitcoin Descriptor(s)";
+            clicked => { root.select-kind("BitcoinDescriptors", "Bitcoin Descriptor(s)"); }
+        }
 
         Text {
-            row: 3; col: 0;
+            row: 4; col: 0;
             text: "Ethereum";
             vertical-alignment: TextVerticalAlignment.center;
         }
         Button {
-            row: 3; col: 1; colspan: 2;
+            row: 4; col: 1; colspan: 2;
             text: "Ethereum Address";
             clicked => { root.select-kind("EthereumAddress", "Ethereum Address"); }
         }
 
         Text {
-            row: 4; col: 0;
+            row: 5; col: 0;
             text: "Stellar";
             vertical-alignment: TextVerticalAlignment.center;
         }
         Button {
-            row: 4; col: 1; colspan: 2;
+            row: 5; col: 1; colspan: 2;
             text: "Stellar Account";
             clicked => { root.select-kind("StellarAccount", "Stellar Address"); }
         }
@@ -277,6 +282,8 @@ component AddWalletSourceDialog inherits Rectangle {
                     "Address(es), separated by spaces";
                 } else if (kind-id == "BitcoinXpubs") {
                     "Extended Public Key(s), separated by spaces";
+                } else if (kind-id == "BitcoinDescriptors") {
+                    "Output Descriptor(s), separated by spaces";
                 } else if (kind-id == "StellarAccount") {
                     "Stellar Account ID";
                 } else if (kind-id == "EthereumAddress") {
@@ -297,7 +304,7 @@ component AddWalletSourceDialog inherits Rectangle {
             font-size: 12px;
             color: #666;
             text: {
-                if (kind-id == "BitcoinAddresses" || kind-id == "BitcoinXpubs") {
+                if (kind-id == "BitcoinAddresses" || kind-id == "BitcoinXpubs" || kind-id == "BitcoinDescriptors") {
                     "Synced using https://blockstream.info/";
                 } else if (kind-id == "StellarAccount") {
                     "Synced using https://horizon.stellar.org/";
