@@ -4,6 +4,7 @@ import {
     UiCapitalGain,
     UiNotification,
     UiCostBasisTracking,
+    UiPortfolioTab,
     UiPortfolio,
     UiTaxReport,
     UiTransaction,
@@ -16,6 +17,7 @@ export global Facade {
     // MODELS
 
     in-out property <[UiWallet]> wallets: TestData.wallets;
+    in-out property <[UiPortfolioTab]> portfolio-tabs;
     in-out property <[UiWalletSource]> sources: TestData.sources;
     in-out property <[string]> source-types;
     in-out property <[UiTransaction]> transactions: TestData.transactions;
@@ -43,6 +45,7 @@ export global Facade {
     callback new-portfolio();
     callback load-portfolio();
     callback close-portfolio();
+    callback switch-portfolio(int);
 
     callback set-merge-consecutive-trades(bool);
     callback set-cost-basis-tracking(UiCostBasisTracking);
