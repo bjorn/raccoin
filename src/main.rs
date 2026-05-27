@@ -52,7 +52,7 @@ use std::{
     collections::HashMap,
     default::Default,
     env,
-    ffi::{OsStr, OsString},
+    ffi::OsStr,
     fs::File,
     future::Future,
     hash::Hash,
@@ -211,6 +211,10 @@ impl Wallet {
 
 #[derive(Serialize, Deserialize, Default)]
 struct AppState {
+    #[serde(default)]
+    portfolio_files: Vec<PathBuf>,
+    #[serde(default)]
+    active_portfolio_index: usize,
     portfolio_file: Option<PathBuf>,
     last_source_directory: Option<PathBuf>,
     last_export_directory: Option<PathBuf>,
@@ -340,6 +344,7 @@ struct App {
     transaction_filters: Vec<TransactionFilter>,
 
     ui_weak: slint::Weak<AppWindow>,
+    ui_portfolio_tabs: Rc<VecModel<UiPortfolioTab>>,
     ui_wallets: Rc<VecModel<UiWallet>>,
     ui_transactions: Rc<VecModel<UiTransaction>>,
     ui_report_years: Rc<VecModel<StandardListViewItem>>,
@@ -376,6 +381,7 @@ impl App {
             transaction_filters: Vec::default(),
 
             ui_weak: slint::Weak::default(),
+            ui_portfolio_tabs: Rc::new(Default::default()),
             ui_wallets: Rc::new(Default::default()),
             ui_transactions: Rc::new(Default::default()),
             ui_report_years: Rc::new(Default::default()),
@@ -383,9 +389,27 @@ impl App {
         }
     }
 
+    fn normalize_portfolio_path(file_path: &Path) -> PathBuf {
+        file_path.canonicalize().unwrap_or_else(|_| file_path.to_path_buf())
+    }
+
+    fn set_active_portfolio_file(&mut self, file_path: PathBuf) {
+        let file_path = Self::normalize_portfolio_path(&file_path);
+
+        if let Some(index) = self.state.portfolio_files.iter().position(|path| *path == file_path) {
+            self.state.active_portfolio_index = index;
+        } else {
+            self.state.portfolio_files.push(file_path.clone());
+            self.state.active_portfolio_index = self.state.portfolio_files.len() - 1;
+        }
+
+        self.state.portfolio_file = Some(file_path);
+    }
+
     fn load_portfolio(&mut self, file_path: &Path) -> Result<()> {
         // todo: report portfolio loading error in UI
-        let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
+        let file_path = Self::normalize_portfolio_path(file_path);
+        let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(&file_path)?)?;
         let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
         portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
             let source_definition = transaction_source_by_id(&source.source_type);
@@ -395,7 +419,7 @@ impl App {
             }
         }));
 
-        self.state.portfolio_file = Some(file_path.into());
+        self.set_active_portfolio_file(file_path);
         self.portfolio = portfolio;
 
         self.refresh_transactions();
@@ -409,7 +433,7 @@ impl App {
             Ok(())
         }
 
-        if let Some(path) = portfolio_file.as_ref().or(self.state.portfolio_file.as_ref()) {
+        if let Some(path) = portfolio_file.clone().or_else(|| self.state.portfolio_file.clone()) {
             let portfolio_path = path.parent().unwrap_or(Path::new(""));
             self.portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
                 let source_definition = transaction_source_by_id(&source.source_type);
@@ -421,11 +445,11 @@ impl App {
                 }
             }));
 
-            match internal_save(&self.portfolio, path) {
+            match internal_save(&self.portfolio, &path) {
                 Ok(_) => {
                     println!("Saved portfolio to {}", path.display());
                     if portfolio_file.is_some() {
-                        self.state.portfolio_file = portfolio_file;
+                        self.set_active_portfolio_file(path);
                     }
                 }
                 Err(_) => {
@@ -435,10 +459,45 @@ impl App {
         }
     }
 
+    fn switch_portfolio(&mut self, index: usize) -> Result<()> {
+        if index == self.state.active_portfolio_index {
+            return Ok(());
+        }
+
+        let file_path = self.state.portfolio_files.get(index)
+            .cloned()
+            .ok_or_else(|| anyhow!("Portfolio tab index {} is out of range", index))?;
+
+        self.save_portfolio(None);
+        self.load_portfolio(&file_path)
+    }
+
     fn close_portfolio(&mut self) {
-        self.portfolio = Portfolio::default();
+        if self.state.active_portfolio_index < self.state.portfolio_files.len() {
+            self.state.portfolio_files.remove(self.state.active_portfolio_index);
+        }
+
+        let next_index = self.state.active_portfolio_index
+            .min(self.state.portfolio_files.len().saturating_sub(1));
+        let next_file = self.state.portfolio_files.get(next_index).cloned();
+
         self.state.portfolio_file = None;
-        self.refresh_transactions();
+        self.state.active_portfolio_index = 0;
+        self.portfolio = Portfolio::default();
+        self.transactions.clear();
+        self.reports.clear();
+
+        if let Some(next_file) = next_file {
+            if let Err(e) = self.load_portfolio(&next_file) {
+                println!("Error loading portfolio from {}: {}", next_file.display(), e);
+                self.state.portfolio_files.clear();
+                self.state.portfolio_file = None;
+                self.state.active_portfolio_index = 0;
+                self.refresh_transactions();
+            }
+        } else {
+            self.refresh_transactions();
+        }
     }
 
     fn refresh_transactions(&mut self) {
@@ -482,6 +541,7 @@ impl App {
     }
 
     fn refresh_ui(&self) {
+        ui_set_portfolio_tabs(self);
         ui_set_wallets(self);
         ui_set_transactions(self);
         ui_set_reports(self);
@@ -1302,6 +1362,7 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     source_types.sort();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
+    facade.set_portfolio_tabs(app.ui_portfolio_tabs.clone().into());
     facade.set_wallets(app.ui_wallets.clone().into());
     facade.set_transactions(app.ui_transactions.clone().into());
     facade.set_report_years(app.ui_report_years.clone().into());
@@ -1336,6 +1397,24 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     });
 
     Ok(ui)
+}
+
+fn portfolio_tab_name(path: &Path) -> String {
+    path.file_stem()
+        .or_else(|| path.file_name())
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
+
+fn ui_set_portfolio_tabs(app: &App) {
+    let ui_tabs: Vec<UiPortfolioTab> = app.state.portfolio_files.iter().enumerate().map(|(index, file_path)| {
+        UiPortfolioTab {
+            name: portfolio_tab_name(file_path).into(),
+            active: index == app.state.active_portfolio_index && app.state.portfolio_file.is_some(),
+        }
+    }).collect();
+
+    app.ui_portfolio_tabs.set_vec(ui_tabs);
 }
 
 fn ui_set_wallets(app: &App) {
@@ -1682,8 +1761,18 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Load portfolio from command-line or from previous application state
-    if let Some(portfolio_file) = cli_arg.map(OsString::into).or_else(|| app.state.portfolio_file.to_owned()) {
+    // Load portfolio from command-line or restore the last active portfolio.
+    let portfolio_file = if let Some(cli_arg) = cli_arg {
+        Some(PathBuf::from(cli_arg))
+    } else if app.state.portfolio_files.is_empty() {
+        app.state.portfolio_file.to_owned()
+    } else {
+        let active_index = app.state.active_portfolio_index
+            .min(app.state.portfolio_files.len().saturating_sub(1));
+        app.state.portfolio_files.get(active_index).cloned()
+    };
+
+    if let Some(portfolio_file) = portfolio_file {
         if let Err(e) = app.load_portfolio(&portfolio_file) {
             println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
             return Ok(());
@@ -1806,6 +1895,23 @@ async fn main() -> Result<()> {
                     }
                 }
                 _ => {}
+            }
+        }
+    });
+
+    facade.on_switch_portfolio({
+        let app = app.clone();
+
+        move |index| {
+            if index < 0 {
+                return;
+            }
+
+            let mut app = app.borrow_mut();
+            if let Err(e) = app.switch_portfolio(index as usize) {
+                app.report_error(&format!("Error switching portfolio: {}", e));
+            } else {
+                app.refresh_ui();
             }
         }
     });
