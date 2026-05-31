@@ -6,7 +6,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use linkme::distributed_slice;
 use rust_decimal::Decimal;
@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    base::{Amount, Operation, Transaction},
     TransactionSource,
+    base::{Amount, Operation, Transaction},
 };
 
 pub(crate) const CONFIG_KIND: &str = "raccoin-generic-import";
@@ -122,7 +122,7 @@ impl GenericOperationKind {
             "stolen" => Some(Self::Stolen),
             "lost" => Some(Self::Lost),
             "burn" => Some(Self::Burn),
-            "income" | "reward" | "rewards" => Some(Self::Income),
+            "income" | "reward" | "rewards" | "distribution" => Some(Self::Income),
             "airdrop" => Some(Self::Airdrop),
             "staking" | "stake" => Some(Self::Staking),
             "cashback" | "cash-back" => Some(Self::Cashback),
@@ -466,6 +466,8 @@ fn record_to_transaction(
         &config.fields.sent_currency,
         "sent",
     )?;
+    let (incoming, outgoing) =
+        split_shared_signed_amount(record, &config.fields, incoming, outgoing)?;
 
     let operation_kind = operation_kind(record, config, incoming.is_some(), outgoing.is_some())?;
     let operation = operation_kind.into_operation(incoming, outgoing)?;
@@ -511,14 +513,23 @@ fn operation_kind(
         }
 
         return GenericOperationKind::from_builtin_label(&raw_type)
+            .or_else(|| operation_from_amount_direction(has_incoming, has_outgoing))
             .with_context(|| format!("Unmapped transaction type '{}'", raw_type));
     }
 
+    operation_from_amount_direction(has_incoming, has_outgoing)
+        .with_context(|| "Missing transaction type and amount fields")
+}
+
+fn operation_from_amount_direction(
+    has_incoming: bool,
+    has_outgoing: bool,
+) -> Option<GenericOperationKind> {
     match (has_incoming, has_outgoing) {
-        (true, true) => Ok(GenericOperationKind::Trade),
-        (true, false) => Ok(GenericOperationKind::Receive),
-        (false, true) => Ok(GenericOperationKind::Send),
-        (false, false) => bail!("Missing transaction type and amount fields"),
+        (true, true) => Some(GenericOperationKind::Trade),
+        (true, false) => Some(GenericOperationKind::Receive),
+        (false, true) => Some(GenericOperationKind::Send),
+        (false, false) => None,
     }
 }
 
@@ -564,6 +575,52 @@ fn read_amount(
 
     let currency = required_field(record, currency_field, &format!("{label} currency"))?;
     Ok(Some(Amount::new(quantity.abs(), currency)))
+}
+
+fn split_shared_signed_amount(
+    record: &GenericRecord,
+    fields: &GenericImportFields,
+    incoming: Option<Amount>,
+    outgoing: Option<Amount>,
+) -> Result<(Option<Amount>, Option<Amount>)> {
+    if !same_configured_field(&fields.received_amount, &fields.sent_amount)
+        || !same_configured_field(&fields.received_currency, &fields.sent_currency)
+    {
+        return Ok((incoming, outgoing));
+    }
+
+    let Some(quantity_raw) = optional_field(record, &fields.received_amount) else {
+        return Ok((incoming, outgoing));
+    };
+
+    let quantity = parse_decimal(&quantity_raw)
+        .with_context(|| format!("Could not parse signed amount '{}'", quantity_raw))?;
+
+    if quantity > Decimal::ZERO {
+        Ok((incoming, None))
+    } else if quantity < Decimal::ZERO {
+        Ok((None, outgoing))
+    } else {
+        Ok((None, None))
+    }
+}
+
+fn same_configured_field(left: &Option<String>, right: &Option<String>) -> bool {
+    let Some(left) = left
+        .as_deref()
+        .map(str::trim)
+        .filter(|field| !field.is_empty())
+    else {
+        return false;
+    };
+    let Some(right) = right
+        .as_deref()
+        .map(str::trim)
+        .filter(|field| !field.is_empty())
+    else {
+        return false;
+    };
+    left.eq_ignore_ascii_case(right)
 }
 
 fn parse_decimal(raw: &str) -> Result<Decimal> {
@@ -831,6 +888,62 @@ mod tests {
             }
             operation => panic!("Unexpected operation {operation:?}"),
         }
+    }
+
+    #[test]
+    fn imports_signed_change_statement_rows() {
+        let dir = temp_dir("generic-signed-change");
+        let csv_path = dir.join("binance-statement.csv");
+        let config_path = dir.join("binance-statement.raccoin-import.json");
+        std::fs::write(
+            &csv_path,
+            "User_ID,UTC_Time,Account,Operation,Coin,Change,Remark\n\
+             1,2024-03-04 05:06:07,Spot,Deposit,BTC,0.25,from wallet\n\
+             1,2024-03-05 05:06:07,Spot,Withdraw,ETH,-1.5,to wallet\n\
+             1,2024-03-06 05:06:07,Earn,Distribution,BNB,0.01,earn reward\n",
+        )
+        .unwrap();
+
+        let config = GenericImportConfig {
+            source_file: "binance-statement.csv".to_owned(),
+            fields: GenericImportFields {
+                timestamp: Some("UTC_Time".to_owned()),
+                transaction_type: Some("Operation".to_owned()),
+                received_amount: Some("Change".to_owned()),
+                received_currency: Some("Coin".to_owned()),
+                sent_amount: Some("Change".to_owned()),
+                sent_currency: Some("Coin".to_owned()),
+                description: Some("Remark".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        write_config(&config_path, &config);
+
+        let txs = load_generic_import_config(&config_path).unwrap();
+        assert_eq!(txs.len(), 3);
+        match &txs[0].operation {
+            Operation::Receive(amount) => {
+                assert_eq!(amount.quantity, dec!(0.25));
+                assert_eq!(amount.currency, "BTC");
+            }
+            operation => panic!("Unexpected operation {operation:?}"),
+        }
+        match &txs[1].operation {
+            Operation::Send(amount) => {
+                assert_eq!(amount.quantity, dec!(1.5));
+                assert_eq!(amount.currency, "ETH");
+            }
+            operation => panic!("Unexpected operation {operation:?}"),
+        }
+        match &txs[2].operation {
+            Operation::Income(amount) => {
+                assert_eq!(amount.quantity, dec!(0.01));
+                assert_eq!(amount.currency, "BNB");
+            }
+            operation => panic!("Unexpected operation {operation:?}"),
+        }
+        assert_eq!(txs[2].description.as_deref(), Some("earn reward"));
     }
 
     #[test]

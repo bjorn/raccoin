@@ -38,7 +38,9 @@ to your wallet, now add a source. The UI can add CSV and JSON files in
 If your file format is not built in, choose the CSV/JSON Assistant and map the
 timestamp, transaction type, amount, currency, fee and description fields. The
 assistant saves this mapping as a `.raccoin-import.json` file that can be reused
-or shared.
+or shared. For statement exports that use one signed change column, map that
+column to both the received and sent amount fields and map its asset column to
+both currency fields.
 
 ## See Balances and Transactions
 

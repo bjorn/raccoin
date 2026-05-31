@@ -1372,7 +1372,7 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     facade.set_generic_import_sell_values("sell,sale".into());
     facade.set_generic_import_receive_values("receive,received,deposit,transfer-in".into());
     facade.set_generic_import_send_values("send,sent,withdraw,withdrawal,transfer-out".into());
-    facade.set_generic_import_income_values("income,reward,rewards,mining,airdrop,staking,cashback".into());
+    facade.set_generic_import_income_values("income,reward,rewards,distribution,mining,airdrop,staking,cashback".into());
     facade.set_generic_import_expense_values("expense,payment,spend".into());
     facade.set_generic_import_fee_values("fee".into());
 
@@ -1991,16 +1991,16 @@ async fn main() -> Result<()> {
                         "Type", "Transaction Type", "Operation", "Action", "Kind", "Category"
                     ]));
                     facade.set_generic_import_received_amount_column(suggest_import_field(&fields, &[
-                        "Received Amount", "Receive Amount", "Amount Received", "Amount In", "In Amount", "Credit", "Base Amount"
+                        "Received Amount", "Receive Amount", "Amount Received", "Amount In", "In Amount", "Credit", "Change", "Base Amount"
                     ]));
                     facade.set_generic_import_received_currency_column(suggest_import_field(&fields, &[
                         "Received Currency", "Receive Currency", "Currency Received", "Currency In", "In Currency", "Asset", "Coin", "Base Currency"
                     ]));
                     facade.set_generic_import_sent_amount_column(suggest_import_field(&fields, &[
-                        "Sent Amount", "Send Amount", "Amount Sent", "Amount Out", "Out Amount", "Debit", "Quote Amount"
+                        "Sent Amount", "Send Amount", "Amount Sent", "Amount Out", "Out Amount", "Debit", "Change", "Quote Amount"
                     ]));
                     facade.set_generic_import_sent_currency_column(suggest_import_field(&fields, &[
-                        "Sent Currency", "Send Currency", "Currency Sent", "Currency Out", "Out Currency", "Quote Currency"
+                        "Sent Currency", "Send Currency", "Currency Sent", "Currency Out", "Out Currency", "Asset", "Coin", "Currency", "Quote Currency"
                     ]));
                     facade.set_generic_import_fee_amount_column(suggest_import_field(&fields, &[
                         "Fee Amount", "Fee", "Fees", "Network Fee"
@@ -2018,7 +2018,7 @@ async fn main() -> Result<()> {
                         "Tx ID", "Transaction ID", "Transaction Hash", "TxHash", "Hash", "ID"
                     ]));
                     facade.set_generic_import_description_column(suggest_import_field(&fields, &[
-                        "Description", "Note", "Notes", "Memo", "Comment"
+                        "Description", "Note", "Notes", "Memo", "Remark", "Comment"
                     ]));
                     facade.set_generic_import_blockchain_column(suggest_import_field(&fields, &[
                         "Blockchain", "Chain", "Network"
@@ -2027,7 +2027,7 @@ async fn main() -> Result<()> {
                     facade.set_generic_import_sell_values("sell,sale".into());
                     facade.set_generic_import_receive_values("receive,received,deposit,transfer-in".into());
                     facade.set_generic_import_send_values("send,sent,withdraw,withdrawal,transfer-out".into());
-                    facade.set_generic_import_income_values("income,reward,rewards,mining,airdrop,staking,cashback".into());
+                    facade.set_generic_import_income_values("income,reward,rewards,distribution,mining,airdrop,staking,cashback".into());
                     facade.set_generic_import_expense_values("expense,payment,spend".into());
                     facade.set_generic_import_fee_values("fee".into());
 

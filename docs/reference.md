@@ -49,6 +49,11 @@ value, transaction ID, note and blockchain.
 Transaction type values such as `buy`, `sell`, `deposit` and `withdrawal` can be
 mapped to Raccoin transaction types in the same dialog. Date/time parsing uses a
 configurable format, with several common formats tried as fallbacks.
+For account-statement exports with one signed balance-change column, such as
+Binance files containing `UTC_Time`, `Operation`, `Coin`, `Change` and `Remark`,
+map the same `Change` and `Coin` columns to both the received and sent fields.
+Positive changes become incoming transactions and negative changes become
+outgoing transactions.
 
 The assistant stores the mapping in a `.raccoin-import.json` file next to the
 source file. This mapping file can be added again through the normal CSV/JSON
