@@ -32,13 +32,13 @@ subset of the relavant transactions.
 ## Add a Source
 
 A wallet is just a name for a group of transaction sources. To add transactions
-to your wallet, now add a source. Currently, the UI only allows adding CSV files
-in [various formats](/reference). The format of the CSV file will be auto-detected.
+to your wallet, now add a source. The UI can add CSV and JSON files in
+[various formats](/reference). Built-in source formats are auto-detected.
 
-> If your specific CSV file format is not supported, please [open an
-> issue](https://github.com/bjorn/raccoin/issues) describing the contents of
-> that file and its origins! It is usually very easy to add support for
-> additional formats.
+If your file format is not built in, choose the CSV/JSON Assistant and map the
+timestamp, transaction type, amount, currency, fee and description fields. The
+assistant saves this mapping as a `.raccoin-import.json` file that can be reused
+or shared.
 
 ## See Balances and Transactions
 
