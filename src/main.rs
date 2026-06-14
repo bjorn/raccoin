@@ -66,6 +66,47 @@ fn rounded_to_cent(amount: Decimal) -> Decimal {
     amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
 }
 
+fn transaction_explorer_url(blockchain: &str, tx_hash: &str) -> Option<String> {
+    if tx_hash.is_empty() {
+        return None;
+    }
+
+    match blockchain {
+        "BCH" => Some(format!(
+            "https://blockchair.com/bitcoin-cash/transaction/{}",
+            tx_hash,
+        )),
+        "BTC" | "" => Some(format!(
+            "https://blockchair.com/bitcoin/transaction/{}",
+            tx_hash,
+        )),
+        // or "https://btc.com/tx/{}"
+        // or "https://live.blockcypher.com/btc/tx/{}"
+        "DASH" => Some(format!("https://live.blockcypher.com/dash/tx/{}", tx_hash)),
+        "ETH" => Some(format!("https://etherscan.io/tx/{}", tx_hash)),
+        "LTC" => Some(format!(
+            "https://blockchair.com/litecoin/transaction/{}",
+            tx_hash,
+        )),
+        "PPC" => Some(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
+        "RDD" => Some(format!("https://rddblockexplorer.com/tx/{}", tx_hash)),
+        "XLM" => Some(format!(
+            "https://stellar.expert/explorer/public/tx/{}",
+            tx_hash,
+        )),
+        "XMR" => Some(format!(
+            "https://blockchair.com/monero/transaction/{}",
+            tx_hash,
+        )),
+        "XRP" => Some(format!("https://xrpscan.com/tx/{}", tx_hash)),
+        "ZEC" => Some(format!(
+            "https://blockchair.com/zcash/transaction/{}",
+            tx_hash,
+        )),
+        _ => None,
+    }
+}
+
 pub(crate) type LoadFuture = Pin<Box<dyn Future<Output = Result<Vec<Transaction>>> + Send>>;
 
 pub(crate) struct CsvSpec {
@@ -1313,26 +1354,12 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     facade.set_app_homepage(env!("CARGO_PKG_HOMEPAGE").into());
     facade.set_app_license(env!("CARGO_PKG_LICENSE").into());
 
-    facade.on_open_transaction(move |blockchain, tx_hash| {
-        let _ = match blockchain.as_str() {
-            "BCH" => open::that(format!("https://blockchair.com/bitcoin-cash/transaction/{}", tx_hash)),
-            "BTC" | "" => open::that(format!("https://blockchair.com/bitcoin/transaction/{}", tx_hash)),
-            // or "https://btc.com/tx/{}"
-            // or "https://live.blockcypher.com/btc/tx/{}"
-            "DASH" => open::that(format!("https://live.blockcypher.com/dash/tx/{}", tx_hash)),
-            "ETH" => open::that(format!("https://etherscan.io/tx/{}", tx_hash)),
-            "LTC" => open::that(format!("https://blockchair.com/litecoin/transaction/{}", tx_hash)),
-            "PPC" => open::that(format!("https://explorer.peercoin.net/tx/{}", tx_hash)),
-            "RDD" => open::that(format!("https://rddblockexplorer.com/tx/{}", tx_hash)),
-            "XLM" => open::that(format!("https://stellar.expert/explorer/public/tx/{}", tx_hash)),
-            "XMR" => open::that(format!("https://blockchair.com/monero/transaction/{}", tx_hash)),
-            "XRP" => open::that(format!("https://xrpscan.com/tx/{}", tx_hash)),
-            "ZEC" => open::that(format!("https://blockchair.com/zcash/transaction/{}", tx_hash)),
-            _ => {
-                println!("No explorer URL defined for blockchain: {}", blockchain);
-                Ok(())
-            }
-        };
+    facade.on_open_url(move |url| {
+        if url.starts_with("https://") {
+            let _ = open::that(url.as_str());
+        } else {
+            println!("Refusing to open non-HTTPS URL: {}", url);
+        }
     });
 
     Ok(ui)
@@ -1370,7 +1397,7 @@ fn ui_set_wallets(app: &App) {
     app.ui_wallets.set_vec(ui_wallets);
 }
 
-fn ui_set_transactions(app: &App) {
+fn build_ui_transactions(app: &App) -> (Vec<UiTransaction>, i32) {
     let wallets = &app.portfolio.wallets;
     let transactions = &app.transactions;
     let filters = &app.transaction_filters;
@@ -1537,11 +1564,24 @@ fn ui_set_transactions(app: &App) {
             description: description.unwrap_or_default().into(),
             tx_hash: tx_hash.map(|s| s.to_owned()).unwrap_or_default().into(),
             blockchain: blockchain.map(|s| s.to_owned()).unwrap_or_default().into(),
+            explorer_url: tx_hash
+                .and_then(|tx_hash| {
+                    transaction_explorer_url(blockchain.map(String::as_str).unwrap_or_default(), tx_hash)
+                })
+                .unwrap_or_default()
+                .into(),
         });
     }
 
+    (ui_transactions, transaction_warning_count)
+}
+
+fn ui_set_transactions(app: &App) {
+    let (ui_transactions, transaction_warning_count) = build_ui_transactions(app);
     app.ui_transactions.set_vec(ui_transactions);
-    app.ui().global::<Facade>().set_transaction_warning_count(transaction_warning_count);
+    app.ui()
+        .global::<Facade>()
+        .set_transaction_warning_count(transaction_warning_count);
 }
 
 fn ui_set_reports(app: &App) {
@@ -1667,6 +1707,80 @@ fn ui_set_portfolio(app: &App) {
             },
             merge_consecutive_trades: app.portfolio.merge_consecutive_trades,
         });
+    }
+}
+
+#[cfg(test)]
+mod app_tests {
+    use super::*;
+
+    #[test]
+    fn transaction_explorer_url_resolves_supported_blockchains() {
+        assert_eq!(
+            transaction_explorer_url("BTC", "abc123").as_deref(),
+            Some("https://blockchair.com/bitcoin/transaction/abc123")
+        );
+        assert_eq!(
+            transaction_explorer_url("", "abc123").as_deref(),
+            Some("https://blockchair.com/bitcoin/transaction/abc123")
+        );
+        assert_eq!(
+            transaction_explorer_url("XLM", "abc123").as_deref(),
+            Some("https://stellar.expert/explorer/public/tx/abc123")
+        );
+    }
+
+    #[test]
+    fn transaction_explorer_url_hides_unsupported_or_missing_hashes() {
+        assert_eq!(transaction_explorer_url("DOGE", "abc123"), None);
+        assert_eq!(transaction_explorer_url("BTC", ""), None);
+    }
+
+    #[test]
+    fn ui_transactions_include_explicit_explorer_url() {
+        let mut transaction = Transaction::new(
+            Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5)
+                .unwrap()
+                .naive_utc(),
+            Operation::Buy(Amount::new(dec!(1), "BTC".to_owned())),
+        );
+        transaction.tx_hash = Some("abc123".to_owned());
+        transaction.blockchain = Some("BTC".to_owned());
+
+        let mut app = App::new();
+        app.transactions = vec![transaction];
+
+        let (ui_transactions, warning_count) = build_ui_transactions(&app);
+
+        assert_eq!(warning_count, 0);
+        let ui_transaction = &ui_transactions[0];
+        assert_eq!(ui_transaction.tx_hash.as_str(), "abc123");
+        assert_eq!(
+            ui_transaction.explorer_url.as_str(),
+            "https://blockchair.com/bitcoin/transaction/abc123"
+        );
+    }
+
+    #[test]
+    fn ui_transactions_omit_explorer_url_for_unsupported_blockchain() {
+        let mut transaction = Transaction::new(
+            Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5)
+                .unwrap()
+                .naive_utc(),
+            Operation::Buy(Amount::new(dec!(1), "DOGE".to_owned())),
+        );
+        transaction.tx_hash = Some("abc123".to_owned());
+        transaction.blockchain = Some("DOGE".to_owned());
+
+        let mut app = App::new();
+        app.transactions = vec![transaction];
+
+        let (ui_transactions, warning_count) = build_ui_transactions(&app);
+
+        assert_eq!(warning_count, 0);
+        let ui_transaction = &ui_transactions[0];
+        assert_eq!(ui_transaction.tx_hash.as_str(), "abc123");
+        assert_eq!(ui_transaction.explorer_url.as_str(), "");
     }
 }
 
