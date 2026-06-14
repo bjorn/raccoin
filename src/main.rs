@@ -1836,6 +1836,31 @@ mod app_tests {
     }
 
     #[test]
+    fn switch_portfolio_preserves_unsaved_session_state() {
+        let first_path = unique_portfolio_path("first-unsaved");
+        let second_path = unique_portfolio_path("second-unsaved");
+        write_portfolio(&first_path, "First");
+        write_portfolio(&second_path, "Second");
+
+        let mut app = App::new();
+        app.load_portfolio(&first_path).unwrap();
+        app.load_portfolio(&second_path).unwrap();
+        app.switch_portfolio(0);
+
+        app.portfolio.wallets[0].name = "Edited First".to_owned();
+        app.switch_portfolio(1);
+
+        assert_eq!(app.portfolio.wallets[0].name, "Second");
+
+        app.switch_portfolio(0);
+
+        assert_eq!(app.portfolio.wallets[0].name, "Edited First");
+
+        let _ = std::fs::remove_file(first_path);
+        let _ = std::fs::remove_file(second_path);
+    }
+
+    #[test]
     fn close_portfolio_removes_only_the_active_session() {
         let first_path = unique_portfolio_path("first-close");
         let second_path = unique_portfolio_path("second-close");
