@@ -26,7 +26,7 @@ export component Badge inherits VerticalLayout {
         txt := Text {
             text: 123;
             color: white;
-            font-size: 10px;
+            font-size: 0.833rem;
         }
 
         touch := TouchArea {
@@ -217,7 +217,7 @@ export component HeaderCell inherits ElidingText {
     preferred-width: 0;
     min-width: 0;
     opacity: 0.8;
-    font-size: 10px;
+    font-size: 0.833rem;
 }
 
 export component DateTimeCell inherits HorizontalLayout {
@@ -235,7 +235,7 @@ export component DateTimeCell inherits HorizontalLayout {
     }
     time-text := ElidingText {
         opacity: 0.5;
-        font-size: 10px;
+        font-size: 0.833rem;
         min-width: self.preferred-width;
         text: "12:34:56";
     }

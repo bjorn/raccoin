@@ -33,7 +33,7 @@ component PageButton inherits Rectangle {
         spacing: 10px;
         alignment: center;
         txt := Text {
-            font-size: 14px;
+            font-size: 1.167rem;
             vertical-alignment: center;
         }
 
@@ -161,7 +161,7 @@ component ModalDialog inherits PopupWindow {
                 VerticalBox {
                     title-text := Text {
                         horizontal-alignment: center;
-                        font-size: 18px;
+                        font-size: 1.5rem;
                     }
 
                     @children
@@ -294,7 +294,7 @@ component AddWalletSourceDialog inherits Rectangle {
         }
 
         Text {
-            font-size: 12px;
+            font-size: 1rem;
             color: #666;
             text: {
                 if (kind-id == "BitcoinAddresses" || kind-id == "BitcoinXpubs") {
@@ -453,7 +453,7 @@ component WelcomePage inherits Rectangle {
             preferred-width: 192px;
             preferred-height: 192px;
         }
-        Text { text: "Raccoin"; horizontal-alignment: center; font-size: 50px; }
+        Text { text: "Raccoin"; horizontal-alignment: center; font-size: 4.167rem; }
         Text { text: "Crypto Portfolio and Tax Reporting Tool"; horizontal-alignment: center; color: darkgray; }
 
         Rectangle { height: 30px; }
