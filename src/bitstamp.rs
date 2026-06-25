@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 
@@ -18,6 +18,10 @@ enum BitstampTransactionType {
     Deposit,
     #[serde(rename = "Inter Account Transfer")]
     InterAccountTransfer,
+    // A previously credited deposit that Bitstamp reversed. The amount is
+    // negative, since the funds leave the account again.
+    #[serde(rename = "Deposit reverted")]
+    DepositReverted,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +38,20 @@ fn deserialize_date_time<'de, D: Deserializer<'de>>(
     NaiveDateTime::parse_from_str(raw, "%b. %d, %Y, %I:%M %p")
         .map_err(|e| serde::de::Error::custom(format!(
             "Failed to parse datetime '{}': {} (expected format: %b. %d, %Y, %I:%M %p)", raw, e
+        )))
+}
+
+// deserialize function for reading the RFC 3339 / ISO 8601 datetime used by
+// the "RFC 4180 (neu)" format, e.g. "2017-01-27T15:28:14Z". The timestamps are
+// in UTC, so we drop the offset and store the naive UTC datetime.
+fn deserialize_date_time_rfc3339<'de, D: Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<NaiveDateTime, D::Error> {
+    let raw: &str = Deserialize::deserialize(d)?;
+    DateTime::parse_from_rfc3339(raw)
+        .map(|dt| dt.naive_utc())
+        .map_err(|e| serde::de::Error::custom(format!(
+            "Failed to parse datetime '{}': {} (expected RFC 3339, e.g. 2017-01-27T15:28:14Z)", raw, e
         )))
 }
 
@@ -81,7 +99,7 @@ struct BitstampTransaction {
     pub type_: BitstampTransactionType,
     #[serde(rename = "Subtype")]
     pub sub_type: Option<SubType>,
-    #[serde(rename = "Datetime")]
+    #[serde(rename = "Datetime", deserialize_with = "deserialize_date_time_rfc3339")]
     pub datetime: NaiveDateTime,
     #[serde(rename = "Amount")]
     pub amount: Decimal,
@@ -166,6 +184,16 @@ impl TryFrom<BitstampTransaction> for Transaction {
                     Transaction::send(item.datetime, amount.abs())
                 };
                 Err(ConversionError::InterAccountTransfer(tx))
+            }
+            BitstampTransactionType::DepositReverted => {
+                // The reverted deposit leaves the account again, so the funds
+                // move out just like a withdrawal.
+                let amount = amount.abs();
+                Ok(if amount.is_fiat() {
+                    Transaction::fiat_withdrawal(item.datetime, amount)
+                } else {
+                    Transaction::send(item.datetime, amount)
+                })
             }
         }?;
 
@@ -289,8 +317,12 @@ fn load_bitstamp_old_csv(input_path: &Path) -> Result<Vec<Transaction>> {
 }
 
 fn load_bitstamp_csv(input_path: &Path) -> Result<Vec<Transaction>> {
+    let rdr = csv::ReaderBuilder::new().from_path(input_path)?;
+    read_bitstamp_csv(rdr)
+}
+
+fn read_bitstamp_csv<R: std::io::Read>(mut rdr: csv::Reader<R>) -> Result<Vec<Transaction>> {
     let mut converter = BitstampTransactionsConverter::new();
-    let mut rdr = csv::ReaderBuilder::new().from_path(input_path)?;
 
     for result in rdr.deserialize() {
         let record: BitstampTransaction = result?;
@@ -336,3 +368,81 @@ static BITSTAMP_CSV_NEW: TransactionSource = TransactionSource {
     load_sync: Some(load_bitstamp_csv),
     load_async: None,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::time::parse_date_time;
+    use rust_decimal_macros::dec;
+
+    fn load(csv: &str) -> Vec<Transaction> {
+        let rdr = csv::ReaderBuilder::new().from_reader(csv.as_bytes());
+        read_bitstamp_csv(rdr).unwrap()
+    }
+
+    // Synthetic "RFC 4180 (new)" export, covering the RFC 3339 datetimes (with
+    // the trailing "Z") and a reverted deposit.
+    const NEW_FORMAT_CSV: &str = "\
+ID,Account,Type,Subtype,Datetime,Amount,Amount currency,Value,Value currency,Rate,Rate currency,Fee,Fee currency,Order ID
+10000001,Main Account,Deposit,,2020-03-15T09:00:00Z,1500.00,EUR,,,,,,,
+10000002,Main Account,Market,Buy,2020-03-15T09:05:00Z,0.10000000,BTC,1500.00,EUR,15000.00,EUR,,,100000001
+10000003,Main Account,Market,Sell,2021-07-01T12:00:00Z,0.10000000,BTC,2500.00,EUR,25000.00,EUR,7.50,EUR,100000002
+10000004,Main Account,Withdrawal,,2021-08-01T08:00:00Z,0.05000000,BTC,,,,,0.00010000,BTC,
+10000005,Main Account,Deposit reverted,,2022-02-10T14:30:00Z,-0.00200000,XLM,,,,,,,
+";
+
+    #[test]
+    fn parses_rfc3339_datetime() {
+        let txs = load(NEW_FORMAT_CSV);
+        // The trailing "Z" used to break parsing with a "trailing input" error.
+        assert_eq!(
+            txs[0].timestamp,
+            parse_date_time("2020-03-15 09:00:00").unwrap()
+        );
+        assert!(matches!(
+            &txs[0].operation,
+            Operation::FiatDeposit(amount) if amount.quantity == dec!(1500.00) && amount.currency == "EUR"
+        ));
+    }
+
+    #[test]
+    fn parses_market_buy_and_sell() {
+        let txs = load(NEW_FORMAT_CSV);
+
+        match &txs[1].operation {
+            Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.quantity, dec!(0.10000000));
+                assert_eq!(incoming.currency, "BTC");
+                assert_eq!(outgoing.quantity, dec!(1500.00));
+                assert_eq!(outgoing.currency, "EUR");
+            }
+            op => panic!("expected a Trade for the Buy, got {:?}", op),
+        }
+
+        match &txs[2].operation {
+            Operation::Trade { incoming, outgoing } => {
+                assert_eq!(incoming.currency, "EUR");
+                assert_eq!(outgoing.currency, "BTC");
+            }
+            op => panic!("expected a Trade for the Sell, got {:?}", op),
+        }
+        assert_eq!(txs[2].fee.as_ref().unwrap().quantity, dec!(7.50));
+    }
+
+    #[test]
+    fn reverted_deposit_becomes_a_send() {
+        let txs = load(NEW_FORMAT_CSV);
+        let reverted = txs.last().unwrap();
+        // The funds leave the account again, so the negative amount maps to a
+        // Send of its absolute value (matched against the Receive in another
+        // wallet, when present).
+        assert!(matches!(
+            &reverted.operation,
+            Operation::Send(amount) if amount.quantity == dec!(0.00200000) && amount.currency == "XLM"
+        ));
+        assert_eq!(
+            reverted.timestamp,
+            parse_date_time("2022-02-10 14:30:00").unwrap()
+        );
+    }
+}
