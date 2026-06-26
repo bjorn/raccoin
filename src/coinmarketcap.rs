@@ -46,6 +46,10 @@ struct CmcQuote {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Quote {
+    // CoinMarketCap returns prices as JSON numbers, but rust_decimal's "serde-str"
+    // feature (used for portfolio storage) makes the default Decimal deserializer
+    // expect a string, so read this field from a number explicitly.
+    #[serde(with = "rust_decimal::serde::float")]
     open: Decimal,
     // high: Decimal,
     // low: Decimal,
@@ -159,4 +163,29 @@ pub(crate) async fn download_price_history(currency: &str) -> Result<()> {
     crate::price_history::save_price_history_data(&prices, path.as_ref())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    // CoinMarketCap returns `open` as a JSON number. With rust_decimal's "serde-str"
+    // feature the default Decimal deserializer expects a string, so this used to fail
+    // with "error decoding response body" for any response that had real quote data.
+    #[test]
+    fn parses_numeric_open_from_cmc_response() {
+        let json = r#"{"data":{"id":1,"name":"Bitcoin","symbol":"BTC","timeEnd":"123","quotes":[
+            {"timeOpen":"2026-06-07T09:00:00.000Z","timeClose":"2026-06-07T09:59:59.999Z",
+             "timeHigh":"2026-06-07T09:17:00.000Z","timeLow":"2026-06-07T09:48:00.000Z",
+             "quote":{"open":54520.0294476878,"high":1,"low":1,"close":1,"volume":1,
+                      "marketCap":1,"timestamp":"2026-06-07T09:59:59.999Z"}}]}}"#;
+
+        let response: CmcHistoricalDataResponse =
+            serde_json::from_str(json).expect("numeric open should deserialize");
+
+        assert_eq!(response.data.quotes.len(), 1);
+        let open = response.data.quotes[0].quote.open;
+        assert!(open > dec!(54520) && open < dec!(54521));
+    }
 }
