@@ -1856,6 +1856,63 @@ async fn main() -> Result<()> {
         }
     });
 
+    // A DragArea only starts a drag when its data is non-empty, and a data-transfer
+    // can only be constructed from the host language, so build the payload here. The
+    // dragged wallet index is tracked separately via the `dragged-index` property in
+    // wallets.slint, so the payload just needs to be non-empty.
+    facade.on_wallet_drag_data(|index| {
+        slint::private_unstable_api::re_exports::DataTransfer::from(SharedString::from(
+            index.to_string(),
+        ))
+    });
+
+    facade.on_move_wallet({
+        let app = app.clone();
+
+        move |from, gap| {
+            let mut app = app.borrow_mut();
+            let len = app.portfolio.wallets.len();
+            let from = from as usize;
+            let gap = gap as usize;
+            // `gap` is the insertion index in 0..=len. Dropping into the gap directly
+            // above or below the dragged wallet leaves the order unchanged.
+            if from >= len || gap > len || gap == from || gap == from + 1 {
+                return;
+            }
+
+            // After removing `from`, a gap below it shifts down by one.
+            let to = if gap > from { gap - 1 } else { gap };
+            let wallet = app.portfolio.wallets.remove(from);
+            app.portfolio.wallets.insert(to, wallet);
+
+            // Reordering shifts wallet indices, so remap any active wallet filter to
+            // keep the transactions view pointing at the same wallet.
+            let remap = |index: usize| -> usize {
+                if index == from {
+                    to
+                } else {
+                    let without_from = if index > from { index - 1 } else { index };
+                    if without_from >= to { without_from + 1 } else { without_from }
+                }
+            };
+
+            let ui = app.ui();
+            let facade = ui.global::<Facade>();
+            if facade.get_wallet_filter() >= 0 {
+                facade.set_wallet_filter(remap(facade.get_wallet_filter() as usize) as i32);
+            }
+            for filter in app.transaction_filters.iter_mut() {
+                if let TransactionFilter::WalletIndex(index) = filter {
+                    *index = remap(*index);
+                }
+            }
+
+            app.refresh_transactions();
+            app.refresh_ui();
+            app.save_portfolio(None);
+        }
+    });
+
     facade.on_add_source_csv({
         let app = app.clone();
 

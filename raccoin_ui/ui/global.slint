@@ -25,7 +25,7 @@ export global Facade {
     in-out property <UiPortfolio> portfolio: TestData.portfolio;
     in-out property <[UiNotification]> notifications;
 
-    out property <int> wallet-filter: -1;
+    in-out property <int> wallet-filter: -1;
     out property <string> currency-filter: "";
     out property <string> text-filter: "";
     out property <bool> warnings-filter: false;
@@ -44,6 +44,11 @@ export global Facade {
 
     callback add-wallet(string);
     callback remove-wallet(int);
+    // params: (from_index, to_index)
+    callback move-wallet(int, int);
+    // Builds the (non-empty) drag payload for a wallet. A DragArea refuses to start a
+    // drag when its data is empty, so this must return a non-empty data-transfer.
+    pure callback wallet-drag-data(int) -> data-transfer;
 
     callback add-source-csv(int);
     callback add-source-address(int, string, string, string);
