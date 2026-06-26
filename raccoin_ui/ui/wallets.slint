@@ -88,19 +88,175 @@ component HoldingsButton inherits TouchArea {
     }
 }
 
+// Presentation of a single wallet row, including the grip handle that starts a drag.
+// Reordering itself (the drop target and insertion indicator) is handled by the list.
+component WalletItem inherits Rectangle {
+    in property <UiWallet> wallet;
+    in property <int> wallet-index;
+
+    callback transactions-clicked(int);
+    callback add-source-requested(int);
+    // Fired when the grip handle begins / ends a drag, so the list can track it.
+    callback drag-started();
+    callback drag-ended();
+
+    property <bool> is-expanded: wallet.expanded;
+
+    border-width: 1px;
+    border-radius: 5px;
+    border-color: #3e3e3e;
+    background: #212121;
+
+    states [
+        hovered when header-touch.has-hover: {
+            background: #4564;
+        }
+        expanded when root.is-expanded: {
+            background: #2e2e2e;
+        }
+    ]
+
+    VerticalLayout {
+        HorizontalLayout {
+            spacing: 0px;
+
+            drag-handle := DragArea {
+                width: 28px;
+                allow-move: true;
+                data: Facade.wallet-drag-data(root.wallet-index);
+
+                changed dragging => {
+                    if (self.dragging) {
+                        root.drag-started();
+                    }
+                }
+                drag-finished(action) => {
+                    root.drag-ended();
+                }
+
+                Image {
+                    source: @image-url("icons/grip-vertical.svg");
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    opacity: drag-handle.dragging ? 1.0 : 0.4;
+                }
+            }
+
+            header-touch := TouchArea {
+                horizontal-stretch: 1;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.is-expanded = !root.is-expanded;
+                        Facade.set-wallet-expanded(root.wallet-index, root.is-expanded);
+                    }
+                }
+
+                HorizontalBox {
+                    CheckBox {
+                        checked: root.wallet.enabled;
+                        text: root.wallet.name;
+                        toggled => { Facade.set-wallet-enabled(root.wallet-index, self.checked); }
+                    }
+                    Badge {
+                        text: "\{root.wallet.transaction-count} transactions";
+                        interactive: true;
+                        clicked => { root.transactions-clicked(root.wallet-index); }
+                    }
+                    Rectangle {}
+                    HoldingsButton {
+                        balances: Facade.balances-for-wallet(root.wallet-index);
+                    }
+                    Button {
+                        icon: @image-url("icons/trash-2.svg");
+                        text: "Remove Wallet";
+                        clicked => { Facade.remove-wallet(root.wallet-index); }
+                    }
+                }
+            }
+        }
+
+        sources-frame := Rectangle {
+            height: sources-layout.height;
+            clip: true;
+            background: #1e1e1e;
+
+            border-radius: 5px;
+            border-width: 1px;
+            border-color: #3e3e3e;
+
+            sources-layout := VerticalBox {
+                states [
+                    expanded when root.is-expanded: {
+                        height: sources-layout.preferred-height;
+                    }
+                    collapsed when !root.is-expanded: {
+                        height: 0px;
+                    }
+                ]
+
+                animate height { duration: 100ms; }
+
+                for source[source_index] in root.wallet.sources: HorizontalBox {
+                    padding: 0;
+                    CheckBox {
+                        checked: source.enabled;
+                        text: source.name;
+                        opacity: root.wallet.enabled ? 1.0 : 0.5;
+                        toggled => { Facade.set-source-enabled(root.wallet-index, source_index, self.checked); }
+                    }
+                    ElidingText {
+                        text: source.path;
+                    }
+                    Rectangle { width: 1px; }
+                    Badge {
+                        text: "\{source.transaction-count} transactions";
+                        opacity: 0.5;
+                    }
+                    Rectangle {}
+                    ComboBox {
+                        model: Facade.source-types;
+                        horizontal-stretch: 0;
+                        current-value: source.source_type;
+                        enabled: false;
+                    }
+                    Button {
+                        icon: @image-url("icons/refresh-cw.svg");
+                        enabled: source.can-sync;
+                        opacity: self.enabled ? 1.0 : 0.3;
+                        clicked => { Facade.sync-source(root.wallet-index, source_index); }
+                    }
+                    Button {
+                        icon: @image-url("icons/trash-2.svg");
+                        clicked => { Facade.remove-source(root.wallet-index, source_index); }
+                    }
+                }
+                HorizontalBox {
+                    alignment: end;
+                    padding-left: 0;
+                    padding-right: 0;
+                    padding-bottom: 0;
+
+                    Button {
+                        text: "Add Source";
+                        clicked => { root.add-source-requested(root.wallet-index); }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component Wallets inherits ScrollView {
     in property <[UiWallet]> wallets: Facade.wallets;
 
     callback wallet-transactions-clicked(int);
     callback add-source-requested(int);
 
-    // Index of the wallet currently being dragged for reordering, or -1 when none.
+    // Drag state shared across all wallet rows.
     private property <int> dragged-index: -1;
-    // The gap where the dragged wallet would be inserted (0..wallets.length), or -1
-    // when there is no valid drop target. Drives the insertion indicator line.
     private property <int> drop-target-index: -1;
-    // Per-tick scroll amount while a drag hovers near a viewport edge (signed:
-    // negative scrolls up, positive scrolls down), or 0px when away from the edges.
     private property <length> auto-scroll-speed: 0px;
 
     VerticalBox {
@@ -120,193 +276,45 @@ export component Wallets inherits ScrollView {
             }
         }
 
-        for wallet[wallet-index] in wallets: wallet-item := Rectangle {
-            property <bool> is-expanded: wallet.expanded;
+        for wallet[wallet-index] in wallets: drop-area := DropArea {
+            can-drop(event) => {
+                // Scroll the list when the pointer nears the top/bottom edge of the viewport.
+                root.auto-scroll-speed =
+                    (self.absolute-position.y + event.position.y) < (root.absolute-position.y + 40px) ? -12px
+                    : (self.absolute-position.y + event.position.y) > (root.absolute-position.y + root.visible-height - 40px) ? 12px
+                    : 0px;
 
-            border-width: 1px;
-            border-radius: 5px;
-            border-color: #3e3e3e;
-            background: #212121;
-
-            states [
-                hovered when header-touch.has-hover: {
-                    background: #4564;
+                // Insert above this wallet when hovering its top half, below otherwise.
+                root.drop-target-index = event.position.y < self.height / 2
+                    ? wallet-index
+                    : wallet-index + 1;
+                // Always accept so the drag keeps clear feedback while moving; a drop into
+                // a gap adjacent to the dragged wallet is a no-op in dropped().
+                return DragAction.move;
+            }
+            dropped(event) => {
+                // Skip the no-op gaps directly above and below the dragged wallet.
+                if (root.drop-target-index != root.dragged-index
+                    && root.drop-target-index != root.dragged-index + 1) {
+                    Facade.move-wallet(root.dragged-index, root.drop-target-index);
                 }
-                expanded when self.is-expanded: {
-                    background: #2e2e2e;
-                }
-            ]
+                root.dragged-index = -1;
+                root.drop-target-index = -1;
+                root.auto-scroll-speed = 0px;
+                return DragAction.move;
+            }
 
-            drop-area := DropArea {
-                can-drop(event) => {
-                    // Scroll the list when the pointer nears the top/bottom edge of the viewport.
-                    root.auto-scroll-speed =
-                        (self.absolute-position.y + event.position.y) < (root.absolute-position.y + 40px) ? -12px
-                        : (self.absolute-position.y + event.position.y) > (root.absolute-position.y + root.visible-height - 40px) ? 12px
-                        : 0px;
-
-                    // Insert above this wallet when hovering its top half, below otherwise.
-                    root.drop-target-index = event.position.y < self.height / 2
-                        ? wallet-index
-                        : wallet-index + 1;
-                    // Always accept so the drag keeps clear feedback while moving; a drop
-                    // into a gap adjacent to the dragged wallet is a no-op in dropped().
-                    return DragAction.move;
-                }
-                dropped(event) => {
-                    // Skip the no-op gaps directly above and below the dragged wallet.
-                    if (root.drop-target-index != root.dragged-index
-                        && root.drop-target-index != root.dragged-index + 1) {
-                        Facade.move-wallet(root.dragged-index, root.drop-target-index);
-                    }
+            WalletItem {
+                wallet: wallet;
+                wallet-index: wallet-index;
+                drag-started => { root.dragged-index = wallet-index; }
+                drag-ended => {
                     root.dragged-index = -1;
                     root.drop-target-index = -1;
                     root.auto-scroll-speed = 0px;
-                    return DragAction.move;
                 }
-
-                VerticalLayout {
-                    HorizontalLayout {
-                        spacing: 0px;
-
-                        drag-handle := DragArea {
-                            width: 28px;
-                            allow-move: true;
-                            data: Facade.wallet-drag-data(wallet-index);
-
-                            changed dragging => {
-                                if (self.dragging) {
-                                    root.dragged-index = wallet-index;
-                                }
-                            }
-                            drag-finished(action) => {
-                                root.dragged-index = -1;
-                                root.drop-target-index = -1;
-                                root.auto-scroll-speed = 0px;
-                            }
-
-                            Image {
-                                source: @image-url("icons/grip-vertical.svg");
-                                width: 18px;
-                                height: 18px;
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                                opacity: drag-handle.dragging ? 1.0 : 0.4;
-                            }
-                        }
-
-                        header-touch := TouchArea {
-                            horizontal-stretch: 1;
-                            pointer-event(event) => {
-                                if (event.kind == PointerEventKind.down) {
-                                    is-expanded = !is-expanded;
-                                    Facade.set-wallet-expanded(wallet_index, is-expanded);
-                                }
-                            }
-
-                            HorizontalBox {
-                                CheckBox {
-                                    checked: wallet.enabled;
-                                    text: wallet.name;
-
-                                    toggled => {
-                                        wallet.enabled = self.checked;
-                                        Facade.set-wallet-enabled(wallet_index, self.checked);
-                                    }
-                                }
-                                Badge {
-                                    text: "\{wallet.transaction-count} transactions";
-                                    interactive: true;
-                                    clicked => { root.wallet-transactions-clicked(wallet_index); }
-                                }
-                                Rectangle {}
-                                HoldingsButton {
-                                    balances: Facade.balances-for-wallet(wallet-index);
-                                }
-                                Button {
-                                    icon: @image-url("icons/trash-2.svg");
-                                    text: "Remove Wallet";
-                                    clicked => { Facade.remove-wallet(wallet-index); }
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        height: sources-layout.height;
-                        clip: true;
-                        background: #1e1e1e;
-
-                        border-radius: 5px;
-                        border-width: 1px;
-                        border-color: #3e3e3e;
-
-                        sources-layout := VerticalBox {
-                            states [
-                                expanded when wallet-item.is-expanded: {
-                                    height: sources-layout.preferred-height;
-                                }
-                                collapsed when !wallet-item.is-expanded: {
-                                    height: 0px;
-                                }
-                            ]
-
-                            animate height {
-                                duration: 100ms;
-                            }
-
-                            for source[source_index] in wallet.sources: HorizontalBox {
-                                padding: 0;
-                                CheckBox {
-                                    checked: source.enabled;
-                                    text: source.name;
-                                    opacity: wallet.enabled ? 1.0 : 0.5;
-
-                                    toggled => {
-                                        source.enabled = self.checked;
-                                        Facade.set-source-enabled(wallet_index, source_index, self.checked);
-                                    }
-                                }
-                                ElidingText {
-                                    text: source.path;
-                                }
-                                Rectangle { width: 1px; }
-                                Badge {
-                                    text: "\{source.transaction-count} transactions";
-                                    opacity: 0.5;
-                                }
-                                Rectangle {}
-                                ComboBox {
-                                    model: Facade.source-types;
-                                    horizontal-stretch: 0;
-                                    current-value: source.source_type;
-                                    enabled: false;
-                                }
-                                Button {
-                                    icon: @image-url("icons/refresh-cw.svg");
-                                    enabled: source.can-sync;
-                                    opacity: self.enabled ? 1.0 : 0.3;
-                                    clicked => { Facade.sync-source(wallet_index, source_index); }
-                                }
-                                Button {
-                                    icon: @image-url("icons/trash-2.svg");
-                                    clicked => { Facade.remove-source(wallet_index, source_index); }
-                                }
-                            }
-                            HorizontalBox {
-                                alignment: end;
-                                padding-left: 0;
-                                padding-right: 0;
-                                padding-bottom: 0;
-
-                                Button {
-                                    text: "Add Source";
-                                    clicked => { root.add-source-requested(wallet-index); }
-                                }
-                            }
-                        }
-                    }
-                }
+                transactions-clicked(index) => { root.wallet-transactions-clicked(index); }
+                add-source-requested(index) => { root.add-source-requested(index); }
             }
 
             // Insertion indicator: a line centered in the 8px gap above this wallet.
