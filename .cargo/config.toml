@@ -1,2 +1,7 @@
 [alias]
 dev = "run --config env.SLINT_LIVE_PREVIEW=\"1\" --features slint/live-preview"
+
+[env]
+# DragArea and DropArea (used for drag-and-drop wallet reordering) are
+# experimental in Slint 1.17 and the compiler only enables them when this is set.
+SLINT_ENABLE_EXPERIMENTAL_FEATURES = "1"
