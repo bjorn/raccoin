@@ -341,6 +341,7 @@ struct App {
 
     ui_weak: slint::Weak<AppWindow>,
     ui_wallets: Rc<VecModel<UiWallet>>,
+    ui_wallet_names: Rc<VecModel<SharedString>>,
     ui_transactions: Rc<VecModel<UiTransaction>>,
     ui_report_years: Rc<VecModel<StandardListViewItem>>,
     ui_reports: Rc<VecModel<UiTaxReport>>,
@@ -377,6 +378,7 @@ impl App {
 
             ui_weak: slint::Weak::default(),
             ui_wallets: Rc::new(Default::default()),
+            ui_wallet_names: Rc::new(Default::default()),
             ui_transactions: Rc::new(Default::default()),
             ui_report_years: Rc::new(Default::default()),
             ui_reports: Rc::new(Default::default()),
@@ -563,6 +565,97 @@ pub(crate) fn save_summary_to_csv(report: &TaxReport, output_path: &Path) -> Res
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(path: &str) -> WalletSource {
+        WalletSource {
+            source_type: "Json".to_owned(),
+            path: path.to_owned(),
+            name: String::new(),
+            enabled: true,
+            full_path: PathBuf::new(),
+            transaction_count: 0,
+            transactions: Vec::new(),
+        }
+    }
+
+    fn wallet(name: &str, sources: &[&str]) -> Wallet {
+        Wallet {
+            name: name.to_owned(),
+            enabled: true,
+            expanded: true,
+            sources: sources.iter().map(|path| source(path)).collect(),
+            balances: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn move_source_reorders_within_wallet() {
+        let mut portfolio = Portfolio {
+            wallets: vec![wallet("Wallet", &["a.json", "b.json", "c.json"])],
+            ..Default::default()
+        };
+
+        assert!(move_source(&mut portfolio, 0, 0, 0, 1));
+        let paths: Vec<_> = portfolio.wallets[0]
+            .sources
+            .iter()
+            .map(|source| source.path.as_str())
+            .collect();
+        assert_eq!(paths, vec!["b.json", "a.json", "c.json"]);
+
+        assert!(move_source(&mut portfolio, 0, 2, 0, 0));
+        let paths: Vec<_> = portfolio.wallets[0]
+            .sources
+            .iter()
+            .map(|source| source.path.as_str())
+            .collect();
+        assert_eq!(paths, vec!["c.json", "b.json", "a.json"]);
+    }
+
+    #[test]
+    fn move_source_moves_between_wallets() {
+        let mut portfolio = Portfolio {
+            wallets: vec![
+                wallet("One", &["a.json", "b.json"]),
+                wallet("Two", &["c.json"]),
+            ],
+            ..Default::default()
+        };
+
+        assert!(move_source(&mut portfolio, 0, 1, 1, 0));
+
+        let first_paths: Vec<_> = portfolio.wallets[0]
+            .sources
+            .iter()
+            .map(|source| source.path.as_str())
+            .collect();
+        let second_paths: Vec<_> = portfolio.wallets[1]
+            .sources
+            .iter()
+            .map(|source| source.path.as_str())
+            .collect();
+
+        assert_eq!(first_paths, vec!["a.json"]);
+        assert_eq!(second_paths, vec!["b.json", "c.json"]);
+    }
+
+    #[test]
+    fn move_source_rejects_invalid_indexes() {
+        let mut portfolio = Portfolio {
+            wallets: vec![wallet("One", &["a.json"]), wallet("Two", &[])],
+            ..Default::default()
+        };
+
+        assert!(!move_source(&mut portfolio, 2, 0, 1, 0));
+        assert!(!move_source(&mut portfolio, 0, 5, 1, 0));
+        assert!(!move_source(&mut portfolio, 0, 0, 2, 0));
+        assert!(!move_source(&mut portfolio, 0, 0, 0, 0));
+    }
 }
 
 /// Exports the tax reports for each year
@@ -1303,6 +1396,7 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
     facade.set_wallets(app.ui_wallets.clone().into());
+    facade.set_wallet_names(app.ui_wallet_names.clone().into());
     facade.set_transactions(app.ui_transactions.clone().into());
     facade.set_report_years(app.ui_report_years.clone().into());
     facade.set_reports(app.ui_reports.clone().into());
@@ -1338,6 +1432,33 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     Ok(ui)
 }
 
+fn move_source(
+    portfolio: &mut Portfolio,
+    from_wallet_index: usize,
+    source_index: usize,
+    to_wallet_index: usize,
+    to_source_index: usize,
+) -> bool {
+    if from_wallet_index >= portfolio.wallets.len() || to_wallet_index >= portfolio.wallets.len() {
+        return false;
+    }
+
+    if source_index >= portfolio.wallets[from_wallet_index].sources.len() {
+        return false;
+    }
+
+    if from_wallet_index == to_wallet_index && source_index == to_source_index {
+        return false;
+    }
+
+    let source = portfolio.wallets[from_wallet_index].sources.remove(source_index);
+    let destination_len = portfolio.wallets[to_wallet_index].sources.len();
+    portfolio.wallets[to_wallet_index]
+        .sources
+        .insert(to_source_index.min(destination_len), source);
+    true
+}
+
 fn ui_set_wallets(app: &App) {
     let ui_wallets: Vec<UiWallet> = app.portfolio.wallets.iter().map(|wallet| {
         let ui_sources: Vec<UiWalletSource> = wallet.sources.iter().map(|source| {
@@ -1366,8 +1487,12 @@ fn ui_set_wallets(app: &App) {
             sources: Rc::new(VecModel::from(ui_sources)).into(),
         }
     }).collect();
+    let ui_wallet_names: Vec<SharedString> = app.portfolio.wallets.iter().map(|wallet| {
+        wallet.name.clone().into()
+    }).collect();
 
     app.ui_wallets.set_vec(ui_wallets);
+    app.ui_wallet_names.set_vec(ui_wallet_names);
 }
 
 fn ui_set_transactions(app: &App) {
@@ -1953,6 +2078,26 @@ async fn main() -> Result<()> {
             let mut app = app.borrow_mut();
             if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
                 wallet.sources.remove(source_index as usize);
+                app.refresh_transactions();
+                app.refresh_ui();
+                app.save_portfolio(None);
+            }
+        }
+    });
+
+    facade.on_move_source({
+        let app = app.clone();
+
+        move |from_wallet_index, source_index, to_wallet_index, to_source_index| {
+            let mut app = app.borrow_mut();
+
+            if move_source(
+                &mut app.portfolio,
+                from_wallet_index as usize,
+                source_index as usize,
+                to_wallet_index as usize,
+                to_source_index as usize,
+            ) {
                 app.refresh_transactions();
                 app.refresh_ui();
                 app.save_portfolio(None);
