@@ -1,0 +1,5 @@
+{ pkgs ? import <nixpkgs> {} }:
+
+(pkgs.callPackage ./default.nix { }).overrideAttrs (old: {
+  nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.rustc pkgs.cargo ];
+})
