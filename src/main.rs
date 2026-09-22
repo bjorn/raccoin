@@ -19,6 +19,7 @@ mod esplora;
 mod etherscan;
 mod fifo;
 mod ftx;
+mod generic_import;
 mod horizon;
 mod kraken;
 mod liquid;
@@ -49,7 +50,7 @@ use linkme::distributed_slice;
 use std::{
     cell::RefCell,
     cmp::{Eq, Ordering},
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     default::Default,
     env,
     ffi::{OsStr, OsString},
@@ -1289,6 +1290,70 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
     reports
 }
 
+fn shared_string_model(items: Vec<String>) -> ModelRc<SharedString> {
+    let items: Vec<SharedString> = items.into_iter().map(SharedString::from).collect();
+    Rc::new(VecModel::from(items)).into()
+}
+
+fn normalize_import_field_name(name: &str) -> String {
+    name
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn suggest_import_field(fields: &[String], candidates: &[&str]) -> SharedString {
+    let normalized_candidates: Vec<String> = candidates
+        .iter()
+        .map(|candidate| normalize_import_field_name(candidate))
+        .collect();
+
+    for field in fields {
+        let normalized_field = normalize_import_field_name(field);
+        if normalized_candidates.iter().any(|candidate| *candidate == normalized_field) {
+            return field.as_str().into();
+        }
+    }
+
+    for field in fields {
+        let normalized_field = normalize_import_field_name(field);
+        if normalized_candidates
+            .iter()
+            .any(|candidate| normalized_field.contains(candidate) || candidate.contains(&normalized_field))
+        {
+            return field.as_str().into();
+        }
+    }
+
+    "".into()
+}
+
+fn trim_to_option(value: SharedString) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_owned())
+    }
+}
+
+fn import_config_source_file(config_path: &Path, source_path: &Path) -> String {
+    let config_dir = config_path.parent().unwrap_or(Path::new(""));
+    pathdiff::diff_paths(source_path, config_dir)
+        .unwrap_or_else(|| source_path.to_owned())
+        .to_string_lossy()
+        .to_string()
+}
+
+fn import_format_id(format: generic_import::GenericImportFormat) -> &'static str {
+    match format {
+        generic_import::GenericImportFormat::Csv => "csv",
+        generic_import::GenericImportFormat::Json => "json",
+    }
+}
+
 fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     let ui = AppWindow::new()?;
     app.ui_weak = ui.as_weak();
@@ -1301,6 +1366,15 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
         .collect();
     source_types.sort();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
+    facade.set_generic_import_fields(shared_string_model(vec![String::new()]));
+    facade.set_generic_import_date_format("%Y-%m-%d %H:%M:%S".into());
+    facade.set_generic_import_buy_values("buy,purchase".into());
+    facade.set_generic_import_sell_values("sell,sale".into());
+    facade.set_generic_import_receive_values("receive,received,deposit,transfer-in".into());
+    facade.set_generic_import_send_values("send,sent,withdraw,withdrawal,transfer-out".into());
+    facade.set_generic_import_income_values("income,reward,rewards,distribution,mining,airdrop,staking,cashback".into());
+    facade.set_generic_import_expense_values("expense,payment,spend".into());
+    facade.set_generic_import_fee_values("fee".into());
 
     facade.set_wallets(app.ui_wallets.clone().into());
     facade.set_transactions(app.ui_transactions.clone().into());
@@ -1868,6 +1942,238 @@ async fn main() -> Result<()> {
         }
     });
 
+    facade.on_start_generic_import({
+        let app = app.clone();
+
+        move |_wallet_index| {
+            let mut app = app.borrow_mut();
+            let ui = app.ui();
+            let facade = ui.global::<Facade>();
+
+            facade.set_generic_import_source_path("".into());
+
+            let mut dialog = rfd::FileDialog::new()
+                .set_title("Add Generic Transaction Source")
+                .add_filter("CSV/JSON", &["csv", "json"])
+                .add_filter("CSV", &["csv"])
+                .add_filter("JSON", &["json"]);
+
+            if let Some(last_source_directory) = &app.state.last_source_directory {
+                println!("Using last source directory: {}", last_source_directory.display());
+                dialog = dialog.set_directory(last_source_directory);
+            }
+
+            let Some(file_name) = dialog.pick_file() else {
+                return;
+            };
+
+            match generic_import::preview_import_file(&file_name) {
+                Ok(preview) => {
+                    let fields = preview.fields;
+                    let source_name = file_name
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .unwrap_or("Generic import")
+                        .to_owned();
+
+                    let mut field_options = vec![String::new()];
+                    field_options.extend(fields.iter().cloned());
+                    facade.set_generic_import_fields(shared_string_model(field_options));
+                    facade.set_generic_import_source_path(file_name.to_string_lossy().to_string().into());
+                    facade.set_generic_import_format(import_format_id(preview.format).into());
+                    facade.set_generic_import_delimiter(preview.delimiter.into());
+                    facade.set_generic_import_name(source_name.into());
+                    facade.set_generic_import_date_format("%Y-%m-%d %H:%M:%S".into());
+                    facade.set_generic_import_timestamp_column(suggest_import_field(&fields, &[
+                        "Timestamp (UTC)", "Timestamp", "Date Time", "Datetime", "Date", "Time", "Created At", "Created"
+                    ]));
+                    facade.set_generic_import_type_column(suggest_import_field(&fields, &[
+                        "Type", "Transaction Type", "Operation", "Action", "Kind", "Category"
+                    ]));
+                    facade.set_generic_import_received_amount_column(suggest_import_field(&fields, &[
+                        "Received Amount", "Receive Amount", "Amount Received", "Amount In", "In Amount", "Credit", "Change", "Base Amount"
+                    ]));
+                    facade.set_generic_import_received_currency_column(suggest_import_field(&fields, &[
+                        "Received Currency", "Receive Currency", "Currency Received", "Currency In", "In Currency", "Asset", "Coin", "Base Currency"
+                    ]));
+                    facade.set_generic_import_sent_amount_column(suggest_import_field(&fields, &[
+                        "Sent Amount", "Send Amount", "Amount Sent", "Amount Out", "Out Amount", "Debit", "Change", "Quote Amount"
+                    ]));
+                    facade.set_generic_import_sent_currency_column(suggest_import_field(&fields, &[
+                        "Sent Currency", "Send Currency", "Currency Sent", "Currency Out", "Out Currency", "Asset", "Coin", "Currency", "Quote Currency"
+                    ]));
+                    facade.set_generic_import_fee_amount_column(suggest_import_field(&fields, &[
+                        "Fee Amount", "Fee", "Fees", "Network Fee"
+                    ]));
+                    facade.set_generic_import_fee_currency_column(suggest_import_field(&fields, &[
+                        "Fee Currency", "Fee Asset", "Fee Coin"
+                    ]));
+                    facade.set_generic_import_value_amount_column(suggest_import_field(&fields, &[
+                        "Fiat Amount", "Value Amount", "Reference Value", "Reference Price", "EUR Value"
+                    ]));
+                    facade.set_generic_import_value_currency_column(suggest_import_field(&fields, &[
+                        "Fiat Currency", "Value Currency", "Reference Currency"
+                    ]));
+                    facade.set_generic_import_tx_hash_column(suggest_import_field(&fields, &[
+                        "Tx ID", "Transaction ID", "Transaction Hash", "TxHash", "Hash", "ID"
+                    ]));
+                    facade.set_generic_import_description_column(suggest_import_field(&fields, &[
+                        "Description", "Note", "Notes", "Memo", "Remark", "Comment"
+                    ]));
+                    facade.set_generic_import_blockchain_column(suggest_import_field(&fields, &[
+                        "Blockchain", "Chain", "Network"
+                    ]));
+                    facade.set_generic_import_buy_values("buy,purchase".into());
+                    facade.set_generic_import_sell_values("sell,sale".into());
+                    facade.set_generic_import_receive_values("receive,received,deposit,transfer-in".into());
+                    facade.set_generic_import_send_values("send,sent,withdraw,withdrawal,transfer-out".into());
+                    facade.set_generic_import_income_values("income,reward,rewards,distribution,mining,airdrop,staking,cashback".into());
+                    facade.set_generic_import_expense_values("expense,payment,spend".into());
+                    facade.set_generic_import_fee_values("fee".into());
+
+                    app.state.last_source_directory = file_name.parent().map(Path::to_owned);
+                }
+                Err(error) => {
+                    app.report_error(&format!("Could not inspect import source: {error:#}"));
+                }
+            }
+        }
+    });
+
+    facade.on_save_generic_import({
+        let app = app.clone();
+
+        move |wallet_index| {
+            let mut app = app.borrow_mut();
+            let ui = app.ui();
+            let facade = ui.global::<Facade>();
+
+            let source_path = PathBuf::from(facade.get_generic_import_source_path().to_string());
+            if source_path.as_os_str().is_empty() {
+                app.report_error("Choose a CSV or JSON file before adding an import mapping.");
+                return;
+            }
+
+            let config_path = source_path.with_extension("raccoin-import.json");
+            let format = match facade.get_generic_import_format().to_string().as_str() {
+                "json" => generic_import::GenericImportFormat::Json,
+                _ => generic_import::GenericImportFormat::Csv,
+            };
+
+            let mut type_mappings = BTreeMap::new();
+            generic_import::add_type_mappings(
+                &mut type_mappings,
+                facade.get_generic_import_buy_values().as_str(),
+                generic_import::GenericOperationKind::Buy,
+            );
+            generic_import::add_type_mappings(
+                &mut type_mappings,
+                facade.get_generic_import_sell_values().as_str(),
+                generic_import::GenericOperationKind::Sell,
+            );
+            generic_import::add_type_mappings(
+                &mut type_mappings,
+                facade.get_generic_import_receive_values().as_str(),
+                generic_import::GenericOperationKind::Receive,
+            );
+            generic_import::add_type_mappings(
+                &mut type_mappings,
+                facade.get_generic_import_send_values().as_str(),
+                generic_import::GenericOperationKind::Send,
+            );
+            generic_import::add_type_mappings(
+                &mut type_mappings,
+                facade.get_generic_import_income_values().as_str(),
+                generic_import::GenericOperationKind::Income,
+            );
+            generic_import::add_type_mappings(
+                &mut type_mappings,
+                facade.get_generic_import_expense_values().as_str(),
+                generic_import::GenericOperationKind::Expense,
+            );
+            generic_import::add_type_mappings(
+                &mut type_mappings,
+                facade.get_generic_import_fee_values().as_str(),
+                generic_import::GenericOperationKind::Fee,
+            );
+
+            let mut datetime_formats = Vec::new();
+            if let Some(format) = trim_to_option(facade.get_generic_import_date_format()) {
+                datetime_formats.push(format);
+            }
+            for format in generic_import::default_datetime_formats() {
+                if !datetime_formats.contains(&format) {
+                    datetime_formats.push(format);
+                }
+            }
+
+            let config = generic_import::GenericImportConfig {
+                source_file: import_config_source_file(&config_path, &source_path),
+                format,
+                delimiter: facade.get_generic_import_delimiter().to_string(),
+                datetime_formats,
+                fields: generic_import::GenericImportFields {
+                    timestamp: trim_to_option(facade.get_generic_import_timestamp_column()),
+                    transaction_type: trim_to_option(facade.get_generic_import_type_column()),
+                    received_amount: trim_to_option(facade.get_generic_import_received_amount_column()),
+                    received_currency: trim_to_option(facade.get_generic_import_received_currency_column()),
+                    sent_amount: trim_to_option(facade.get_generic_import_sent_amount_column()),
+                    sent_currency: trim_to_option(facade.get_generic_import_sent_currency_column()),
+                    fee_amount: trim_to_option(facade.get_generic_import_fee_amount_column()),
+                    fee_currency: trim_to_option(facade.get_generic_import_fee_currency_column()),
+                    value_amount: trim_to_option(facade.get_generic_import_value_amount_column()),
+                    value_currency: trim_to_option(facade.get_generic_import_value_currency_column()),
+                    tx_hash: trim_to_option(facade.get_generic_import_tx_hash_column()),
+                    description: trim_to_option(facade.get_generic_import_description_column()),
+                    blockchain: trim_to_option(facade.get_generic_import_blockchain_column()),
+                },
+                type_mappings,
+                ..Default::default()
+            };
+
+            if config.fields.timestamp.is_none() {
+                app.report_error("A timestamp field is required for a generic import mapping.");
+                return;
+            }
+
+            let write_result = serde_json::to_string_pretty(&config)
+                .context("Could not serialize import mapping")
+                .and_then(|json| std::fs::write(&config_path, json).context("Could not write import mapping"));
+
+            if let Err(error) = write_result {
+                app.report_error(&format!("Could not save import mapping: {error:#}"));
+                return;
+            }
+
+            let source_name = trim_to_option(facade.get_generic_import_name()).unwrap_or_else(|| {
+                source_path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("Generic import")
+                    .to_owned()
+            });
+
+            if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
+                wallet.sources.push(WalletSource {
+                    source_type: "GenericImport".to_owned(),
+                    path: config_path.to_string_lossy().to_string(),
+                    name: source_name,
+                    enabled: true,
+                    full_path: config_path.clone(),
+                    transaction_count: 0,
+                    transactions: Vec::new(),
+                });
+
+                app.refresh_transactions();
+                app.refresh_ui();
+                app.save_portfolio(None);
+                app.report_info(&format!("Added generic import mapping {}", config_path.display()));
+            } else {
+                app.report_error("Could not find wallet for generic import mapping.");
+            }
+        }
+    });
+
     facade.on_add_source_csv({
         let app = app.clone();
 
@@ -1875,7 +2181,9 @@ async fn main() -> Result<()> {
             let mut app = app.borrow_mut();
             let mut dialog = rfd::FileDialog::new()
                 .set_title("Add Transaction Source")
-                .add_filter("CSV", &["csv"]);
+                .add_filter("CSV/JSON", &["csv", "json"])
+                .add_filter("CSV", &["csv"])
+                .add_filter("JSON", &["json"]);
 
             if let Some(last_source_directory) = &app.state.last_source_directory {
                 println!("Using last source directory: {}", last_source_directory.display());

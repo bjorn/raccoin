@@ -38,6 +38,13 @@ Raccoin can import CSV files exported from the following sources:
 * [Wallet of Satoshi](https://walletofsatoshi.com/) (mobile wallet)
 * [wave.space](https://www.wave.space/) (Bitcoin crypto card)
 
+Raccoin can also create a reusable CSV/JSON mapping for other sources using the
+CSV/JSON Assistant in the Add Source dialog. The assistant saves the mapping as
+a `.raccoin-import.json` file, which can be added again or shared along with the
+source file. Statement exports with a single signed balance-change column can
+map that column to both the received and sent amount fields, letting positive
+values import as incoming transactions and negative values as outgoing ones.
+
 ### Blockchains
 
 Raccoin can also synchronize wallets from certain blockchains directly. Supported are:
