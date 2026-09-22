@@ -182,6 +182,7 @@ export component Reports inherits Rectangle {
                         }
                         HeaderCell { text: "Starting Balance"; horizontal-alignment: right; }
                         HeaderCell { text: "Ending Balance"; horizontal-alignment: right; }
+                        HeaderCell { text: "Tax-Free Balance"; horizontal-alignment: right; }
                         HeaderCell { text: "Quantity Disposed"; horizontal-alignment: right; }
                         HeaderCell { text: "Cost"; horizontal-alignment: right; }
                         HeaderCell { text: "Fees"; horizontal-alignment: right; }
@@ -211,6 +212,7 @@ export component Reports inherits Rectangle {
                                 }
                                 MonoTextCell { text: currency.balance_start; }
                                 MonoTextCell { text: currency.balance_end; }
+                                MonoTextCell { text: currency.tax_free_balance; }
                                 MonoTextCell { text: currency.quantity_disposed; }
                                 MonoTextCell { text: currency.cost; }
                                 MonoTextCell { text: currency.fees; }
