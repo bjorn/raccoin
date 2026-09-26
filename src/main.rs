@@ -52,7 +52,6 @@ use std::{
     collections::HashMap,
     default::Default,
     env,
-    ffi::OsString,
     fs::File,
     future::Future,
     hash::Hash,
@@ -328,6 +327,15 @@ impl TransactionFilter {
     }
 }
 
+/// Groups the handles that are only available when the Slint UI is running.
+struct UiHandles {
+    app_window: slint::Weak<AppWindow>,
+    wallets: Rc<VecModel<UiWallet>>,
+    transactions: Rc<VecModel<UiTransaction>>,
+    report_years: Rc<VecModel<StandardListViewItem>>,
+    reports: Rc<VecModel<UiTaxReport>>,
+}
+
 struct App {
     project_dirs: Option<ProjectDirs>,
     state: AppState,
@@ -339,11 +347,8 @@ struct App {
 
     transaction_filters: Vec<TransactionFilter>,
 
-    ui_weak: slint::Weak<AppWindow>,
-    ui_wallets: Rc<VecModel<UiWallet>>,
-    ui_transactions: Rc<VecModel<UiTransaction>>,
-    ui_report_years: Rc<VecModel<StandardListViewItem>>,
-    ui_reports: Rc<VecModel<UiTaxReport>>,
+    /// The Slint UI handles, or `None` when running headless.
+    ui: Option<UiHandles>,
 }
 
 impl App {
@@ -375,17 +380,16 @@ impl App {
 
             transaction_filters: Vec::default(),
 
-            ui_weak: slint::Weak::default(),
-            ui_wallets: Rc::new(Default::default()),
-            ui_transactions: Rc::new(Default::default()),
-            ui_report_years: Rc::new(Default::default()),
-            ui_reports: Rc::new(Default::default()),
+            ui: None,
         }
     }
 
     fn load_portfolio(&mut self, file_path: &Path) -> Result<()> {
         // todo: report portfolio loading error in UI
         let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
+        // Make the path absolute, so that the portfolio file remains valid
+        // when stored as the last used portfolio in the application state
+        let file_path = &file_path.canonicalize().unwrap_or_else(|_| file_path.to_owned());
         let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
         portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
             let source_definition = transaction_source_by_id(&source.source_type);
@@ -447,19 +451,32 @@ impl App {
         self.reports = calculate_tax_reports(&mut self.transactions, self.portfolio.cost_basis_tracking);
     }
 
-    fn ui(&self) -> AppWindow {
-        self.ui_weak.unwrap()
+    fn ui(&self) -> &UiHandles {
+        self.ui.as_ref().unwrap()
+    }
+
+    fn window(&self) -> AppWindow {
+        self.ui().app_window.unwrap()
     }
 
     fn push_notification(&self, notification_type: UiNotificationType, message: &str) {
-        let notifications_rc = self.ui().global::<Facade>().get_notifications();
-        let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
-        notifications.push(UiNotification {
-            notification_type,
-            message: message.into(),
-        });
-        if notifications.row_count() > 10 {
-            notifications.remove(0);
+        match &self.ui {
+            Some(ui) => {
+                let notifications_rc = ui.app_window.unwrap().global::<Facade>().get_notifications();
+                let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
+                notifications.push(UiNotification {
+                    notification_type,
+                    message: message.into(),
+                });
+                if notifications.row_count() > 10 {
+                    notifications.remove(0);
+                }
+            }
+            // When running headless, print the notification instead
+            None => match notification_type {
+                UiNotificationType::Info => println!("{}", message),
+                _ => eprintln!("{}", message),
+            },
         }
     }
 
@@ -476,12 +493,19 @@ impl App {
     }
 
     fn remove_notification(&self, index: usize) {
-        let notifications_rc = self.ui().global::<Facade>().get_notifications();
-        let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
-        notifications.remove(index);
+        if let Some(ui) = &self.ui {
+            let notifications_rc = ui.app_window.unwrap().global::<Facade>().get_notifications();
+            let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
+            notifications.remove(index);
+        }
     }
 
     fn refresh_ui(&self) {
+        if self.ui.is_none() {
+            // Nothing to update when running headless
+            return;
+        }
+
         ui_set_wallets(self);
         ui_set_transactions(self);
         ui_set_reports(self);
@@ -995,7 +1019,7 @@ async fn update_price_history(app: Rc<RefCell<App>>) {
     let (requirements, mut price_history) = {
         app.borrow_mut().stop_update_price_history = false;
         let app = app.borrow();
-        app.ui().global::<Facade>().set_updating_price_history(true);
+        app.window().global::<Facade>().set_updating_price_history(true);
 
         (collect_price_requirements(&app.transactions), app.price_history.clone())
     };
@@ -1018,7 +1042,7 @@ async fn update_price_history(app: Rc<RefCell<App>>) {
         total_ranges += ranges.len();
     }
 
-    app.borrow().ui().global::<Facade>().set_updating_price_history_progress(0.0);
+    app.borrow().window().global::<Facade>().set_updating_price_history_progress(0.0);
 
     // Download missing price points
     for (currency, ranges) in missing_ranges {
@@ -1051,7 +1075,7 @@ async fn update_price_history(app: Rc<RefCell<App>>) {
             } else {
                 0.0
             };
-            app.borrow().ui().global::<Facade>().set_updating_price_history_progress(progress);
+            app.borrow().window().global::<Facade>().set_updating_price_history_progress(progress);
 
             if app.borrow().stop_update_price_history {
                 break;
@@ -1076,7 +1100,7 @@ async fn update_price_history(app: Rc<RefCell<App>>) {
         }
     }
 
-    app.borrow().ui().global::<Facade>().set_updating_price_history(false);
+    app.borrow().window().global::<Facade>().set_updating_price_history(false);
 }
 
 fn collect_price_requirements(transactions: &[Transaction]) -> PriceRequirements {
@@ -1290,10 +1314,16 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
 }
 
 fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
-    let ui = AppWindow::new()?;
-    app.ui_weak = ui.as_weak();
+    let app_window = AppWindow::new()?;
+    let ui_handles = UiHandles {
+        app_window: app_window.as_weak(),
+        wallets: Rc::new(Default::default()),
+        transactions: Rc::new(Default::default()),
+        report_years: Rc::new(Default::default()),
+        reports: Rc::new(Default::default()),
+    };
 
-    let facade = ui.global::<Facade>();
+    let facade = app_window.global::<Facade>();
 
     let mut source_types: Vec<SharedString> = TRANSACTION_SOURCES
         .iter()
@@ -1302,10 +1332,10 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     source_types.sort();
     facade.set_source_types(Rc::new(VecModel::from(source_types)).into());
 
-    facade.set_wallets(app.ui_wallets.clone().into());
-    facade.set_transactions(app.ui_transactions.clone().into());
-    facade.set_report_years(app.ui_report_years.clone().into());
-    facade.set_reports(app.ui_reports.clone().into());
+    facade.set_wallets(ui_handles.wallets.clone().into());
+    facade.set_transactions(ui_handles.transactions.clone().into());
+    facade.set_report_years(ui_handles.report_years.clone().into());
+    facade.set_reports(ui_handles.reports.clone().into());
     facade.set_portfolio(UiPortfolio::default());
     facade.set_notifications(ModelRc::new(VecModel::<UiNotification>::default()));
 
@@ -1331,7 +1361,9 @@ fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
         };
     });
 
-    Ok(ui)
+    app.ui = Some(ui_handles);
+
+    Ok(app_window)
 }
 
 fn ui_set_wallets(app: &App) {
@@ -1363,7 +1395,7 @@ fn ui_set_wallets(app: &App) {
         }
     }).collect();
 
-    app.ui_wallets.set_vec(ui_wallets);
+    app.ui().wallets.set_vec(ui_wallets);
 }
 
 fn ui_set_transactions(app: &App) {
@@ -1536,8 +1568,8 @@ fn ui_set_transactions(app: &App) {
         });
     }
 
-    app.ui_transactions.set_vec(ui_transactions);
-    app.ui().global::<Facade>().set_transaction_warning_count(transaction_warning_count);
+    app.ui().transactions.set_vec(ui_transactions);
+    app.window().global::<Facade>().set_transaction_warning_count(transaction_warning_count);
 }
 
 fn ui_set_reports(app: &App) {
@@ -1548,7 +1580,7 @@ fn ui_set_reports(app: &App) {
             StandardListViewItem::from(report.year.to_string().as_str())
         }
     }).collect();
-    app.ui_report_years.set_vec(report_years);
+    app.ui().report_years.set_vec(report_years);
 
     let ui_reports: Vec<UiTaxReport> = app.reports.iter().map(|report| {
         let ui_gains: Vec<UiCapitalGain> = report.gains.iter().map(|gain| {
@@ -1606,11 +1638,11 @@ fn ui_set_reports(app: &App) {
         }
     }).collect();
 
-    app.ui_reports.set_vec(ui_reports);
+    app.ui().reports.set_vec(ui_reports);
 }
 
 fn ui_set_portfolio(app: &App) {
-    let ui = app.ui();
+    let ui = app.window();
     let facade = ui.global::<Facade>();
     if let Some(report) = app.reports.last() {
         let now = Utc::now().naive_utc();
@@ -1666,12 +1698,84 @@ fn ui_set_portfolio(app: &App) {
     }
 }
 
+const USAGE: &str = "\
+Usage: raccoin [OPTIONS] [PORTFOLIO]
+
+Loads the given PORTFOLIO or, when omitted, the previously opened one.
+
+Options:
+      --export-all <DIR>  Export all reports to DIR and exit without showing the UI
+  -h, --help              Print help
+";
+
+#[derive(Default)]
+struct Args {
+    /// Path to the portfolio file to load.
+    portfolio: Option<PathBuf>,
+    /// When set, export all reports to this directory and exit without showing the UI.
+    export_all: Option<PathBuf>,
+}
+
+fn parse_args() -> Result<Args> {
+    let mut parsed = Args::default();
+    let mut args = env::args_os().skip(1);
+
+    while let Some(arg) = args.next() {
+        if arg == "-h" || arg == "--help" {
+            print!("{}", USAGE);
+            std::process::exit(0);
+        } else if arg == "--export-all" {
+            let dir = args.next().context("missing directory argument for --export-all")?;
+            parsed.export_all = Some(dir.into());
+        } else if let Some(dir) = arg.to_str().and_then(|arg| arg.strip_prefix("--export-all=")) {
+            parsed.export_all = Some(dir.into());
+        } else if arg.to_str().is_some_and(|arg| arg.starts_with('-')) {
+            return Err(anyhow!("unrecognized option {}", arg.to_string_lossy()));
+        } else if parsed.portfolio.is_none() {
+            parsed.portfolio = Some(arg.into());
+        } else {
+            return Err(anyhow!("unexpected argument {}", arg.to_string_lossy()));
+        }
+    }
+
+    Ok(parsed)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = match parse_args() {
+        Ok(args) => args,
+        Err(e) => {
+            eprintln!("Error: {:#}\n\n{}", e, USAGE);
+            std::process::exit(2);
+        }
+    };
+
     let mut app = App::new();
 
-    // Load portfolio from command-line or from previous application state
-    if let Some(portfolio_file) = env::args_os().nth(1).map(OsString::into).or_else(|| app.state.portfolio_file.to_owned()) {
+    // The portfolio to load, from command-line or from previous application state
+    let portfolio_file = args.portfolio.or_else(|| app.state.portfolio_file.to_owned());
+
+    // When --export-all is given, load the portfolio, perform the export and
+    // exit without ever initializing the UI
+    if let Some(export_dir) = args.export_all {
+        let portfolio_file = portfolio_file
+            .context("no portfolio file given and no previously used portfolio found")?;
+        app.load_portfolio(&portfolio_file)
+            .with_context(|| format!("failed to load portfolio from {}", portfolio_file.display()))?;
+        println!("Loaded portfolio {}", portfolio_file.display());
+
+        std::fs::create_dir_all(&export_dir)
+            .with_context(|| format!("failed to create directory {}", export_dir.display()))?;
+        export_all_to(&app, &export_dir)
+            .with_context(|| format!("failed to export reports to {}", export_dir.display()))?;
+        println!("Exported reports to {}", export_dir.display());
+
+        app.state.last_export_directory = Some(export_dir);
+        return app.save_state();
+    }
+
+    if let Some(portfolio_file) = portfolio_file {
         if let Err(e) = app.load_portfolio(&portfolio_file) {
             println!("Error loading portfolio from {}: {}", portfolio_file.display(), e);
             return Ok(());
@@ -1693,7 +1797,7 @@ async fn main() -> Result<()> {
             // find one by its id. This copying could be avoided if the VecModel
             // provided an as_slice method.
             use slint::Model;
-            let ui_index = app.borrow().ui_transactions.iter().position(|tx| {
+            let ui_index = app.borrow().ui().transactions.iter().position(|tx| {
                 tx.id == tx_index
             }).map(|i| i as i32).unwrap_or(-1);
             ui_index
@@ -1896,7 +2000,7 @@ async fn main() -> Result<()> {
                 }
             };
 
-            let ui = app.ui();
+            let ui = app.window();
             let facade = ui.global::<Facade>();
             if facade.get_wallet_filter() >= 0 {
                 facade.set_wallet_filter(remap(facade.get_wallet_filter() as usize) as i32);
@@ -2290,7 +2394,7 @@ async fn main() -> Result<()> {
 
         move || {
             let mut app = app.borrow_mut();
-            let ui = app.ui();
+            let ui = app.window();
             let facade = ui.global::<Facade>();
 
             app.transaction_filters.clear();
