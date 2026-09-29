@@ -41,17 +41,20 @@ fn deserialize_date_time<'de, D: Deserializer<'de>>(
         )))
 }
 
-// deserialize function for reading the RFC 3339 / ISO 8601 datetime used by
-// the "RFC 4180 (neu)" format, e.g. "2017-01-27T15:28:14Z". The timestamps are
-// in UTC, so we drop the offset and store the naive UTC datetime.
+// deserialize function for reading the datetimes used by the "RFC 4180 (neu)"
+// format. Current exports use RFC 3339 with a trailing "Z" (e.g.
+// "2017-01-27T15:28:14Z"), while earlier exports wrote the same UTC time
+// without an offset (e.g. "2017-01-27T15:28:14"), so accept both and store
+// the naive UTC datetime.
 fn deserialize_date_time_rfc3339<'de, D: Deserializer<'de>>(
     d: D,
 ) -> std::result::Result<NaiveDateTime, D::Error> {
     let raw: &str = Deserialize::deserialize(d)?;
     DateTime::parse_from_rfc3339(raw)
         .map(|dt| dt.naive_utc())
+        .or_else(|_| raw.parse::<NaiveDateTime>())
         .map_err(|e| serde::de::Error::custom(format!(
-            "Failed to parse datetime '{}': {} (expected RFC 3339, e.g. 2017-01-27T15:28:14Z)", raw, e
+            "Failed to parse datetime '{}': {} (expected RFC 3339 or ISO 8601 datetime)", raw, e
         )))
 }
 
@@ -403,6 +406,18 @@ ID,Account,Type,Subtype,Datetime,Amount,Amount currency,Value,Value currency,Rat
             &txs[0].operation,
             Operation::FiatDeposit(amount) if amount.quantity == dec!(1500.00) && amount.currency == "EUR"
         ));
+    }
+
+    #[test]
+    fn parses_naive_datetime_from_earlier_exports() {
+        // Earlier "RFC 4180 (neu)" exports wrote datetimes without the offset;
+        // those should still import.
+        let csv = NEW_FORMAT_CSV.replacen("2020-03-15T09:00:00Z", "2020-03-15T09:00:00", 1);
+        let txs = load(&csv);
+        assert_eq!(
+            txs[0].timestamp,
+            parse_date_time("2020-03-15 09:00:00").unwrap()
+        );
     }
 
     #[test]
