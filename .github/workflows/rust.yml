@@ -48,6 +48,9 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
+    # Needed to attach the dmg and app zip to the GitHub Release on tags.
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
@@ -59,6 +62,8 @@ jobs:
       run: cargo build --verbose --release --target x86_64-apple-darwin
     - name: Build ARM64 binary
       run: cargo build --verbose --release --target aarch64-apple-darwin
+    - name: Test
+      run: cargo test --release
     - name: Create universal binary
       run: |
         mkdir -p target/release
@@ -69,13 +74,82 @@ jobs:
     - name: Create .icns file
       run: iconutil -c icns raccoin_ui/ui/icons/Raccoin.iconset
     - run: cargo install cargo-packager --locked
-    - run: cargo packager --release
+    # On v* tags, cargo-packager signs the bundle inside-out with the
+    # Developer ID certificate from the APPLE_CERTIFICATE secrets and
+    # notarizes and staples it using the App Store Connect API key. It
+    # signs the dmg but does not notarize it, so that is done separately
+    # below. On other runs (including fork PRs, which get no secrets) the
+    # signing config is stripped and the bundle is packaged unsigned.
+    - name: Package
+      env:
+        IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+      run: |
+        if [ "$IS_TAG" = true ]; then
+          for var in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD \
+                     APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8; do
+            if [ -z "${!var}" ]; then
+              echo "::error::secret $var is not set"
+              exit 1
+            fi
+          done
+          export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$APPLE_API_KEY_PATH"
+          printf 'APPLE_API_KEY_PATH=%s\nAPPLE_API_KEY=%s\nAPPLE_API_ISSUER=%s\n' \
+            "$APPLE_API_KEY_PATH" "$APPLE_API_KEY" "$APPLE_API_ISSUER" >> "$GITHUB_ENV"
+        else
+          sed -i '' '/^\[package.metadata.packager.macos\]/,$d' Cargo.toml
+          unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD \
+                APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8
+        fi
+        cargo packager --release
     - run: ditto -c -k --sequesterRsrc --keepParent target/release/Raccoin.app Raccoin.app.zip
     - uses: actions/upload-artifact@v4
       with:
         name: Raccoin.app
         path: Raccoin.app.zip
+    - name: Rename dmg for universal binary
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        for dmg in target/release/*.dmg; do
+          mv "$dmg" "${dmg%_*.dmg}_universal.dmg"
+        done
+    - name: Notarize and staple dmg
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        auth=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY"
+              --issuer "$APPLE_API_ISSUER")
+        for dmg in target/release/*.dmg; do
+          out=$(xcrun notarytool submit "$dmg" "${auth[@]}" --wait --output-format json)
+          echo "$out"
+          if [ "$(jq -r .status <<<"$out")" != Accepted ]; then
+            xcrun notarytool log "$(jq -r .id <<<"$out")" "${auth[@]}"
+            exit 1
+          fi
+          xcrun stapler staple "$dmg"
+        done
+    - name: Verify Gatekeeper acceptance
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        spctl --assess --type execute --verbose=2 target/release/Raccoin.app
+        for dmg in target/release/*.dmg; do
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
+        done
     - uses: actions/upload-artifact@v4
       with:
         name: Raccoin.dmg
         path: target/release/Raccoin_*.dmg
+    - name: Publish GitHub release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          target/release/*.dmg
+          Raccoin.app.zip
+        generate_release_notes: true
+        prerelease: ${{ contains(github.ref_name, '-') }}

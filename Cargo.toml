@@ -64,3 +64,9 @@ description = "Crypto Portfolio and Tax Reporting Tool"
 icons = ["raccoin_ui/ui/icons/Raccoin.icns", "raccoin_ui/ui/icons/raccoin.ico", "raccoin_ui/ui/icons/app-icon-64.png"]
 homepage = "https://raccoin.org/"
 license_file = "LICENSE"
+
+[package.metadata.packager.macos]
+# SHA-1 fingerprint of the Developer ID Application certificate, used
+# instead of the name because multiple certificates share the identity
+# string and codesign refuses ambiguous matches.
+signing-identity = "8372505B44B74B5E7AEC2A41B692A6C2B417B702"
