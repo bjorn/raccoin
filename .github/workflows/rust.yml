@@ -17,18 +17,18 @@ jobs:
   build-ubuntu:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - uses: Swatinem/rust-cache@v2
     - run: sudo apt update && sudo apt install libfontconfig-dev
     - run: cargo build --verbose --release
     - run: cargo test --release
     - run: cargo install cargo-packager --locked
     - run: cargo packager --release
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: Raccoin.AppImage
         path: target/release/raccoin_*.AppImage
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: Raccoin.deb
         path: target/release/raccoin_*.deb
@@ -36,12 +36,12 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - uses: Swatinem/rust-cache@v2
     - run: cargo build --verbose --release
     - run: cargo install cargo-packager --locked
     - run: cargo packager --release
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: Raccoin-setup.exe
         path: target/release/raccoin_*-setup.exe
@@ -52,7 +52,7 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - uses: Swatinem/rust-cache@v2
     - name: Install targets
       run: |
@@ -108,7 +108,7 @@ jobs:
         fi
         cargo packager --release
     - run: ditto -c -k --sequesterRsrc --keepParent target/release/Raccoin.app Raccoin.app.zip
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: Raccoin.app
         path: Raccoin.app.zip
@@ -140,7 +140,7 @@ jobs:
           xcrun stapler validate "$dmg"
           spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
         done
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: Raccoin.dmg
         path: target/release/Raccoin_*.dmg
