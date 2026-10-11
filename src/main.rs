@@ -36,7 +36,7 @@ use coinmarketcap::CmcInterval;
 use base::{cmc_id, Amount, Operation, Transaction};
 use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 use directories::ProjectDirs;
-use fifo::{CapitalGain, CostBasisTracking, FIFO};
+use fifo::{CapitalGain, CostBasisTracking, HoldingPeriod, FIFO};
 use raccoin_ui::*;
 use price_history::{PriceHistory, PriceRequirements, split_ranges};
 use regex::{Regex, RegexBuilder};
@@ -226,6 +226,8 @@ struct Portfolio {
     merge_consecutive_trades: bool,
     #[serde(default)]
     cost_basis_tracking: CostBasisTracking,
+    #[serde(default)]
+    long_term_holding_period: HoldingPeriod,
 }
 
 #[derive(Default, Clone)]
@@ -444,7 +446,11 @@ impl App {
     fn refresh_transactions(&mut self) {
         self.transactions = load_transactions(&mut self.portfolio).unwrap_or_default();
         estimate_transaction_values(&mut self.transactions, &self.price_history);
-        self.reports = calculate_tax_reports(&mut self.transactions, self.portfolio.cost_basis_tracking);
+        self.reports = calculate_tax_reports(
+            &mut self.transactions,
+            self.portfolio.cost_basis_tracking,
+            self.portfolio.long_term_holding_period,
+        );
     }
 
     fn ui(&self) -> AppWindow {
@@ -596,7 +602,11 @@ pub(crate) fn export_all_to(app: &App, output_path: &Path) -> Result<()> {
         save_summary_to_csv(report, &path)?;
 
         let path = output_path.join(format!("{}_capital_gains_report.csv", year));
-        fifo::save_gains_to_csv(&report.gains, &path)?;
+        fifo::save_gains_to_csv(
+            &report.gains,
+            &path,
+            app.portfolio.long_term_holding_period,
+        )?;
     }
     Ok(())
 }
@@ -1117,7 +1127,11 @@ fn collect_price_requirements(transactions: &[Transaction]) -> PriceRequirements
     requirements
 }
 
-fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasisTracking) -> Vec<TaxReport> {
+fn calculate_tax_reports(
+    transactions: &mut Vec<Transaction>,
+    tracking: CostBasisTracking,
+    long_term_holding_period: HoldingPeriod,
+) -> Vec<TaxReport> {
     let mut currencies = Vec::<CurrencySummary>::new();
 
     fn summary_for<'a>(currencies: &'a mut Vec<CurrencySummary>, currency: &str) -> &'a mut CurrencySummary {
@@ -1172,22 +1186,23 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
 
         for gain in &gains {
             let gain_or_loss = gain.profit();
+            let is_long_term = gain.is_held_for_at_least(long_term_holding_period);
 
             if gain_or_loss.is_sign_positive() {
-                if gain.long_term() {
+                if is_long_term {
                     long_term_capital_gains += gain_or_loss;
                 } else {
                     short_term_capital_gains += gain_or_loss;
                 }
             } else {
-                if gain.long_term() {
+                if is_long_term {
                     long_term_capital_losses -= gain_or_loss;
                 } else {
                     short_term_capital_losses -= gain_or_loss;
                 }
             }
 
-            if !gain.long_term() {
+            if !is_long_term {
                 short_term_cost += gain.cost;
                 short_term_proceeds += gain.proceeds;
             }
@@ -1572,7 +1587,7 @@ fn ui_set_reports(app: &App) {
                 cost: rounded_to_cent(gain.cost).try_into().unwrap(),
                 proceeds: rounded_to_cent(gain.proceeds).try_into().unwrap(),
                 gain_or_loss: rounded_to_cent(gain.profit()).try_into().unwrap(),
-                long_term: gain.long_term(),
+                long_term: gain.is_held_for_at_least(app.portfolio.long_term_holding_period),
             }
         }).collect();
         let ui_gains = Rc::new(VecModel::from(ui_gains));
@@ -1666,6 +1681,7 @@ fn ui_set_portfolio(app: &App) {
                 CostBasisTracking::PerWallet => UiCostBasisTracking::PerWallet,
             },
             merge_consecutive_trades: app.portfolio.merge_consecutive_trades,
+            long_term_holding_period: app.portfolio.long_term_holding_period.to_string().into(),
         });
     }
 }
@@ -1841,6 +1857,28 @@ async fn main() -> Result<()> {
             app.refresh_transactions();
             app.refresh_ui();
             app.save_portfolio(None);
+        }
+    });
+    facade.on_set_long_term_holding_period({
+        let app = app.clone();
+        move |holding_period| {
+            let mut app = app.borrow_mut();
+            match holding_period.as_str().parse::<HoldingPeriod>() {
+                Ok(holding_period) => {
+                    if app.portfolio.long_term_holding_period == holding_period {
+                        return;
+                    }
+
+                    app.portfolio.long_term_holding_period = holding_period;
+                    app.refresh_transactions();
+                    app.refresh_ui();
+                    app.save_portfolio(None);
+                }
+                Err(e) => {
+                    println!("Invalid long-term holding period '{}': {}", holding_period, e);
+                    ui_set_portfolio(&app);
+                }
+            }
         }
     });
 
@@ -2137,7 +2175,11 @@ async fn main() -> Result<()> {
             match save_csv_file("Export Capital Gains (CSV)", &file_name) {
                 Some(path) => {
                     // todo: provide this feedback in the UI
-                    match fifo::save_gains_to_csv(&report.gains, &path) {
+                    match fifo::save_gains_to_csv(
+                        &report.gains,
+                        &path,
+                        app.portfolio.long_term_holding_period,
+                    ) {
                         Ok(_) => {
                             println!("Saved gains to {}", path.display());
                         }

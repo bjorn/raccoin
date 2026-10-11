@@ -1,16 +1,62 @@
-use std::{collections::{VecDeque, HashMap}, path::Path};
+use std::{collections::{VecDeque, HashMap}, fmt, path::Path, str::FromStr};
 
 use anyhow::Result;
 use chrono::{NaiveDateTime, TimeZone, Local, Duration, Months};
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)]
-pub enum HoldingPeriod {
+pub(crate) enum HoldingPeriod {
     Days(u32),
     Months(u32),
     Years(u32),
+}
+
+impl Default for HoldingPeriod {
+    fn default() -> Self {
+        Self::Years(1)
+    }
+}
+
+impl fmt::Display for HoldingPeriod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn write_unit(f: &mut fmt::Formatter<'_>, amount: u32, singular: &str, plural: &str) -> fmt::Result {
+            write!(f, "{} {}", amount, if amount == 1 { singular } else { plural })
+        }
+
+        match *self {
+            HoldingPeriod::Days(days) => write_unit(f, days, "day", "days"),
+            HoldingPeriod::Months(months) => write_unit(f, months, "month", "months"),
+            HoldingPeriod::Years(years) => write_unit(f, years, "year", "years"),
+        }
+    }
+}
+
+impl FromStr for HoldingPeriod {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let value = value.trim().to_ascii_lowercase().replace(' ', "");
+        let digit_count = value.chars().take_while(|c| c.is_ascii_digit()).count();
+        if digit_count == 0 {
+            return Err("expected a duration such as '1 year' or '183 days'".to_owned());
+        }
+
+        let amount: u32 = value[..digit_count]
+            .parse()
+            .map_err(|_| "duration amount is too large".to_owned())?;
+        if amount == 0 {
+            return Err("duration amount must be greater than zero".to_owned());
+        }
+
+        match &value[digit_count..] {
+            "" | "d" | "day" | "days" => Ok(Self::Days(amount)),
+            "m" | "month" | "months" => Ok(Self::Months(amount)),
+            "y" | "year" | "years" => Ok(Self::Years(amount)),
+            _ => Err("duration unit must be days, months, or years".to_owned()),
+        }
+    }
 }
 
 impl HoldingPeriod {
@@ -573,7 +619,11 @@ impl FIFO {
     }
 }
 
-pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) -> Result<()> {
+pub(crate) fn save_gains_to_csv(
+    gains: &Vec<CapitalGain>,
+    output_path: &Path,
+    long_term_holding_period: HoldingPeriod,
+) -> Result<()> {
     let mut wtr = csv::Writer::from_path(output_path)?;
 
     #[derive(Serialize)]
@@ -605,7 +655,7 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) ->
             cost: gain.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             proceeds: gain.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             gain_or_loss: (gain.proceeds - gain.cost).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
-            long_term: gain.long_term(),
+            long_term: gain.is_held_for_at_least(long_term_holding_period),
         })?;
     }
 
@@ -658,6 +708,20 @@ mod tests {
         // 183 days from 2021-01-01 00:00:00 is 2021-07-03 00:00:00
         assert!(!gain("2021-01-01 00:00:00", "2021-07-02 23:59:59").is_held_for_at_least(HoldingPeriod::Days(183)));
         assert!(gain("2021-01-01 00:00:00", "2021-07-03 00:00:00").is_held_for_at_least(HoldingPeriod::Days(183)));
+    }
+
+    #[test]
+    fn parses_holding_period_settings() {
+        assert_eq!("183 days".parse::<HoldingPeriod>(), Ok(HoldingPeriod::Days(183)));
+        assert_eq!("12m".parse::<HoldingPeriod>(), Ok(HoldingPeriod::Months(12)));
+        assert_eq!("1 year".parse::<HoldingPeriod>(), Ok(HoldingPeriod::Years(1)));
+    }
+
+    #[test]
+    fn displays_holding_period_settings() {
+        assert_eq!(HoldingPeriod::Days(183).to_string(), "183 days");
+        assert_eq!(HoldingPeriod::Months(1).to_string(), "1 month");
+        assert_eq!(HoldingPeriod::Years(1).to_string(), "1 year");
     }
 
     #[test]
