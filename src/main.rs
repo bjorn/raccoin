@@ -329,7 +329,7 @@ impl TransactionFilter {
 
 /// Groups the handles that are only available when the Slint UI is running.
 struct UiHandles {
-    app_window: slint::Weak<AppWindow>,
+    app_window: AppWindow,
     wallets: Rc<VecModel<UiWallet>>,
     transactions: Rc<VecModel<UiTransaction>>,
     report_years: Rc<VecModel<StandardListViewItem>>,
@@ -456,13 +456,17 @@ impl App {
     }
 
     fn window(&self) -> AppWindow {
-        self.ui().app_window.unwrap()
+        self.ui().app_window.clone_strong()
+    }
+
+    fn facade(&self) -> Facade<'_> {
+        self.ui().app_window.global()
     }
 
     fn push_notification(&self, notification_type: UiNotificationType, message: &str) {
         match &self.ui {
             Some(ui) => {
-                let notifications_rc = ui.app_window.unwrap().global::<Facade>().get_notifications();
+                let notifications_rc = ui.app_window.global::<Facade>().get_notifications();
                 let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
                 notifications.push(UiNotification {
                     notification_type,
@@ -494,7 +498,7 @@ impl App {
 
     fn remove_notification(&self, index: usize) {
         if let Some(ui) = &self.ui {
-            let notifications_rc = ui.app_window.unwrap().global::<Facade>().get_notifications();
+            let notifications_rc = ui.app_window.global::<Facade>().get_notifications();
             let notifications = slint::Model::as_any(&notifications_rc).downcast_ref::<VecModel<UiNotification>>().unwrap();
             notifications.remove(index);
         }
@@ -1019,7 +1023,7 @@ async fn update_price_history(app: Rc<RefCell<App>>) {
     let (requirements, mut price_history) = {
         app.borrow_mut().stop_update_price_history = false;
         let app = app.borrow();
-        app.window().global::<Facade>().set_updating_price_history(true);
+        app.facade().set_updating_price_history(true);
 
         (collect_price_requirements(&app.transactions), app.price_history.clone())
     };
@@ -1042,7 +1046,7 @@ async fn update_price_history(app: Rc<RefCell<App>>) {
         total_ranges += ranges.len();
     }
 
-    app.borrow().window().global::<Facade>().set_updating_price_history_progress(0.0);
+    app.borrow().facade().set_updating_price_history_progress(0.0);
 
     // Download missing price points
     for (currency, ranges) in missing_ranges {
@@ -1075,7 +1079,7 @@ async fn update_price_history(app: Rc<RefCell<App>>) {
             } else {
                 0.0
             };
-            app.borrow().window().global::<Facade>().set_updating_price_history_progress(progress);
+            app.borrow().facade().set_updating_price_history_progress(progress);
 
             if app.borrow().stop_update_price_history {
                 break;
@@ -1100,7 +1104,7 @@ async fn update_price_history(app: Rc<RefCell<App>>) {
         }
     }
 
-    app.borrow().window().global::<Facade>().set_updating_price_history(false);
+    app.borrow().facade().set_updating_price_history(false);
 }
 
 fn collect_price_requirements(transactions: &[Transaction]) -> PriceRequirements {
@@ -1316,7 +1320,7 @@ fn calculate_tax_reports(transactions: &mut Vec<Transaction>, tracking: CostBasi
 fn initialize_ui(app: &mut App) -> Result<AppWindow, slint::PlatformError> {
     let app_window = AppWindow::new()?;
     let ui_handles = UiHandles {
-        app_window: app_window.as_weak(),
+        app_window: app_window.clone_strong(),
         wallets: Rc::new(Default::default()),
         transactions: Rc::new(Default::default()),
         report_years: Rc::new(Default::default()),
@@ -1573,7 +1577,7 @@ fn ui_set_transactions(app: &App) {
     }
 
     app.ui().transactions.set_vec(ui_transactions);
-    app.window().global::<Facade>().set_transaction_warning_count(transaction_warning_count);
+    app.facade().set_transaction_warning_count(transaction_warning_count);
 }
 
 fn ui_set_reports(app: &App) {
@@ -1646,8 +1650,7 @@ fn ui_set_reports(app: &App) {
 }
 
 fn ui_set_portfolio(app: &App) {
-    let ui = app.window();
-    let facade = ui.global::<Facade>();
+    let facade = app.facade();
     if let Some(report) = app.reports.last() {
         let now = Utc::now().naive_utc();
         let mut balance = Decimal::ZERO;
