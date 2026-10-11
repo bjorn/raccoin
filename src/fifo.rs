@@ -135,6 +135,14 @@ impl LotQueue {
     fn total_cost_base(&self) -> Decimal {
         self.lots.iter().map(Lot::cost_base).sum()
     }
+
+    fn quantity_held_for_at_least(&self, period: HoldingPeriod, at: NaiveDateTime) -> Decimal {
+        self.lots
+            .iter()
+            .filter(|lot| period.add_to(lot.timestamp) <= at)
+            .map(|lot| lot.quantity)
+            .sum()
+    }
 }
 
 /// A collection of cryptocurrency holdings organized by currency.
@@ -168,6 +176,17 @@ impl Holdings {
 
     pub(crate) fn currency_cost_base(&self, currency: &str) -> Decimal {
         self.lots_by_currency.get(currency).map_or(Decimal::ZERO, LotQueue::total_cost_base)
+    }
+
+    pub(crate) fn currency_balance_held_for_at_least(
+        &self,
+        currency: &str,
+        period: HoldingPeriod,
+        at: NaiveDateTime,
+    ) -> Decimal {
+        self.lots_by_currency
+            .get(currency)
+            .map_or(Decimal::ZERO, |lots| lots.quantity_held_for_at_least(period, at))
     }
 }
 
@@ -586,6 +605,8 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) ->
         sold: NaiveDateTime,
         #[serde(rename = "Quantity")]
         quantity: Decimal,
+        #[serde(rename = "Quantity (sats)")]
+        quantity_sats: String,
         #[serde(rename = "Cost")]
         cost: Decimal,
         #[serde(rename = "Proceeds")]
@@ -602,6 +623,11 @@ pub(crate) fn save_gains_to_csv(gains: &Vec<CapitalGain>, output_path: &Path) ->
             bought: Local.from_utc_datetime(&gain.bought).naive_local(),
             sold: Local.from_utc_datetime(&gain.sold).naive_local(),
             quantity: gain.amount.quantity,
+            quantity_sats: gain
+                .amount
+                .sats()
+                .map(|sats| sats.normalize().to_string())
+                .unwrap_or_default(),
             cost: gain.cost.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             proceeds: gain.proceeds.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
             gain_or_loss: (gain.proceeds - gain.cost).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
@@ -618,6 +644,7 @@ mod tests {
     use crate::time::parse_date_time;
     use chrono::NaiveDateTime;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     fn dt(s: &str) -> NaiveDateTime {
         parse_date_time(s).unwrap()
@@ -639,6 +666,61 @@ mod tests {
         // tx_meta provides the sender wallet index for the matched send (used during Receive processing)
         let tx_meta: Vec<TxMeta> = txs.iter().map(|t| TxMeta { wallet_index: t.wallet_index }).collect();
         fifo.process(txs, &tx_meta)
+    }
+
+    fn temp_csv_path(name: &str) -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("{}-{}-{}.csv", name, std::process::id(), unique))
+    }
+
+    #[test]
+    fn capital_gains_csv_includes_sats_for_btc_quantity() {
+        let path = temp_csv_path("raccoin-capital-gains-sats");
+        let gains = vec![CapitalGain {
+            bought: dt("2026-01-01 00:00:00"),
+            bought_tx_index: 0,
+            sold: dt("2026-02-01 00:00:00"),
+            sold_tx_index: 1,
+            amount: Amount::from_satoshis(1234),
+            cost: Decimal::ZERO,
+            proceeds: Decimal::ZERO,
+        }];
+
+        save_gains_to_csv(&gains, &path).unwrap();
+        let csv = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert!(csv.contains("Quantity (sats)"));
+        assert!(csv.contains("1234"));
+    }
+
+    #[test]
+    fn holdings_report_balance_held_past_period() {
+        let mut holdings = Holdings::default();
+        holdings.add_lot("BTC", Lot {
+            timestamp: dt("2024-01-01 00:00:00"),
+            tx_index: 0,
+            unit_price: Ok(Decimal::ONE),
+            quantity: dec!(0.75),
+        });
+        holdings.add_lot("BTC", Lot {
+            timestamp: dt("2026-01-01 00:00:00"),
+            tx_index: 1,
+            unit_price: Ok(Decimal::ONE),
+            quantity: dec!(0.25),
+        });
+
+        assert_eq!(
+            holdings.currency_balance_held_for_at_least(
+                "BTC",
+                HoldingPeriod::Years(1),
+                dt("2026-05-11 00:00:00"),
+            ),
+            dec!(0.75),
+        );
     }
 
     #[test]
