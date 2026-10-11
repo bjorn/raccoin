@@ -157,12 +157,12 @@ component TransactionDisplay inherits Rectangle {
             spacing: 4px;
 
             tx-btn := SmallButton {
-                visible: tx.tx-hash != "";
+                visible: tx.explorer-url != "";
                 text: "#";
-                tooltip: tx.tx-hash;
+                tooltip: "Open transaction in block explorer:\n" + tx.explorer-url;
                 tooltip-font-family: "DejaVu Sans Mono";
 
-                clicked => { Facade.open-transaction(tx.blockchain, tx.tx-hash) }
+                clicked => { Facade.open-url(tx.explorer-url) }
             }
 
             desc-btn := SmallButton {
