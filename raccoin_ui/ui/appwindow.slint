@@ -3,7 +3,7 @@ import { Portfolio } from "portfolio.slint";
 import { Wallets } from "wallets.slint";
 import { Transactions } from "transactions.slint";
 import { Reports } from "reports.slint";
-import { Badge } from "common.slint";
+import { Badge, ElidingText } from "common.slint";
 import { Facade } from "global.slint";
 import { UiCapitalGain, UiNotificationType } from "structs.slint";
 
@@ -84,6 +84,51 @@ component NavigationBar inherits HorizontalBox {
         Badge {
             text: Facade.reports.length;
         }
+    }
+}
+
+component PortfolioTabButton inherits Rectangle {
+    in property <string> text <=> label.text;
+    in property <bool> active;
+
+    callback pressed;
+
+    border-radius: 4px;
+    border-color: root.active ? #678 : touch.has-hover ? #456 : #3e3e3e;
+    border-width: 1px;
+    background: root.active ? #456 : touch.has-hover ? #4564 : transparent;
+    height: 28px;
+    width: Math.min(label.preferred-width + 24px, 220px);
+
+    label := ElidingText {
+        x: 12px;
+        y: 0;
+        width: parent.width - 24px;
+        height: 100%;
+        font-size: 13px;
+        horizontal-alignment: center;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.pressed();
+            }
+        }
+    }
+}
+
+component PortfolioTabBar inherits HorizontalBox {
+    visible: Facade.open-portfolios.length > 1;
+    height: self.visible ? self.preferred-height : 0px;
+    alignment: center;
+    spacing: 6px;
+
+    for portfolio[index] in Facade.open-portfolios: PortfolioTabButton {
+        text: portfolio.name;
+        active: portfolio.active;
+        pressed => { Facade.switch-portfolio(index); }
     }
 }
 
@@ -357,6 +402,8 @@ component MainContent inherits Rectangle {
     }
 
     VerticalLayout {
+        PortfolioTabBar {}
+
         NavigationBar {
             active-page <=> root.active-page;
         }
