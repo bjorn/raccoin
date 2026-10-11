@@ -389,7 +389,7 @@ impl App {
         let mut portfolio: Portfolio = serde_json::from_str(&std::fs::read_to_string(file_path)?)?;
         // Make the path absolute, so that the portfolio file remains valid
         // when stored as the last used portfolio in the application state
-        let file_path = &file_path.canonicalize().unwrap_or_else(|_| file_path.to_owned());
+        let file_path = file_path.canonicalize().unwrap_or_else(|_| file_path.to_owned());
         let portfolio_path = file_path.parent().unwrap_or(Path::new(""));
         portfolio.wallets.iter_mut().for_each(|w| w.sources.iter_mut().for_each(|source| {
             let source_definition = transaction_source_by_id(&source.source_type);
