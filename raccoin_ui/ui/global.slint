@@ -18,6 +18,7 @@ export global Facade {
     in-out property <[UiWallet]> wallets: TestData.wallets;
     in-out property <[UiWalletSource]> sources: TestData.sources;
     in-out property <[string]> source-types;
+    in-out property <[string]> generic-import-fields;
     in-out property <[UiTransaction]> transactions: TestData.transactions;
     in-out property <int> transaction-warning-count: 0;
     in-out property <[StandardListViewItem]> report-years: TestData.report-years;
@@ -38,6 +39,32 @@ export global Facade {
     in-out property <string> app-homepage: "";
     in-out property <string> app-license: "";
 
+    in-out property <string> generic-import-source-path: "";
+    in-out property <string> generic-import-format: "csv";
+    in-out property <string> generic-import-delimiter: ",";
+    in-out property <string> generic-import-name: "";
+    in-out property <string> generic-import-date-format: "%Y-%m-%d %H:%M:%S";
+    in-out property <string> generic-import-timestamp-column: "";
+    in-out property <string> generic-import-type-column: "";
+    in-out property <string> generic-import-received-amount-column: "";
+    in-out property <string> generic-import-received-currency-column: "";
+    in-out property <string> generic-import-sent-amount-column: "";
+    in-out property <string> generic-import-sent-currency-column: "";
+    in-out property <string> generic-import-fee-amount-column: "";
+    in-out property <string> generic-import-fee-currency-column: "";
+    in-out property <string> generic-import-value-amount-column: "";
+    in-out property <string> generic-import-value-currency-column: "";
+    in-out property <string> generic-import-tx-hash-column: "";
+    in-out property <string> generic-import-description-column: "";
+    in-out property <string> generic-import-blockchain-column: "";
+    in-out property <string> generic-import-buy-values: "";
+    in-out property <string> generic-import-sell-values: "";
+    in-out property <string> generic-import-receive-values: "";
+    in-out property <string> generic-import-send-values: "";
+    in-out property <string> generic-import-income-values: "";
+    in-out property <string> generic-import-expense-values: "";
+    in-out property <string> generic-import-fee-values: "";
+
     // ACTIONS
 
     callback new-portfolio();
@@ -51,6 +78,8 @@ export global Facade {
     callback remove-wallet(int);
 
     callback add-source-csv(int);
+    callback start-generic-import(int);
+    callback save-generic-import(int);
     callback add-source-address(int, string, string, string);
     callback remove-source(int,int);
 

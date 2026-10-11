@@ -39,6 +39,27 @@ Raccoin can import CSV files exported from the following sources:
 > that file and its origins. It is usually very easy to add support for
 > additional formats!
 
+### Generic CSV/JSON Mapping
+
+For CSV or JSON files that do not match a built-in source, use the CSV/JSON
+Assistant from the Add Source dialog. The assistant lets you map fields for the
+timestamp, transaction type, received and sent amounts, currencies, fees, fiat
+value, transaction ID, note and blockchain.
+
+Transaction type values such as `buy`, `sell`, `deposit` and `withdrawal` can be
+mapped to Raccoin transaction types in the same dialog. Date/time parsing uses a
+configurable format, with several common formats tried as fallbacks.
+For account-statement exports with one signed balance-change column, such as
+Binance files containing `UTC_Time`, `Operation`, `Coin`, `Change` and `Remark`,
+map the same `Change` and `Coin` columns to both the received and sent fields.
+Positive changes become incoming transactions and negative changes become
+outgoing transactions.
+
+The assistant stores the mapping in a `.raccoin-import.json` file next to the
+source file. This mapping file can be added again through the normal CSV/JSON
+file picker, and it can be shared with another Raccoin user together with the
+same source-file layout.
+
 ### Blockchains
 
 Raccoin can also synchronize wallets from certain blockchains directly.
@@ -55,9 +76,8 @@ Supported are:
 
 ### JSON Format
 
-> There is currently no way to import transactions exported to JSON from the UI,
-> but you can add them by manually adding a snippet to the portfolio JSON file,
-> similar to above:
+Transactions exported from Raccoin can be imported again through the CSV/JSON
+file picker. They can also be added manually to the portfolio JSON file:
 > ```json
 > "sources": [
 >   {

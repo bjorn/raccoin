@@ -1,4 +1,4 @@
-import { Button, CheckBox, ComboBox, GridBox, HorizontalBox, LineEdit, StandardButton, VerticalBox } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, GridBox, HorizontalBox, LineEdit, ScrollView, StandardButton, VerticalBox } from "std-widgets.slint";
 import { Portfolio } from "portfolio.slint";
 import { Wallets } from "wallets.slint";
 import { Transactions } from "transactions.slint";
@@ -192,9 +192,11 @@ component AddWalletSourceDialog inherits Rectangle {
 
     callback close-requested();
     callback add-csv-requested(int);
+    callback start-generic-import-requested(int);
+    callback save-generic-import-requested(int);
     callback add-address-requested(int, string, string, string);
 
-    preferred-height: self.step == 0 ? page-1.preferred-height : page-2.preferred-height;
+    preferred-height: self.step == 0 ? page-1.preferred-height : self.step == 1 ? page-2.preferred-height : page-3.preferred-height;
     min-height: 0px;
 
     function select-kind(kind_id: string, kind_label: string) {
@@ -210,12 +212,12 @@ component AddWalletSourceDialog inherits Rectangle {
 
         Text {
             row: 0; col: 0;
-            text: "Import CSV file";
+            text: "Known source";
             vertical-alignment: center;
         }
         Button {
             row: 0; col: 1; colspan: 2;
-            text: "CSV file";
+            text: "CSV/JSON File";
             clicked => {
                 root.add-csv-requested(wallet-index);
                 root.close-requested();
@@ -223,40 +225,57 @@ component AddWalletSourceDialog inherits Rectangle {
         }
 
         Text {
-            row: 2; col: 0;
+            row: 1; col: 0;
+            text: "Custom import";
+            vertical-alignment: center;
+        }
+        Button {
+            row: 1; col: 1; colspan: 2;
+            text: "CSV/JSON Assistant";
+            clicked => {
+                Facade.generic-import-source-path = "";
+                root.start-generic-import-requested(wallet-index);
+                if (Facade.generic-import-source-path != "") {
+                    root.step = 2;
+                }
+            }
+        }
+
+        Text {
+            row: 3; col: 0;
             text: "Bitcoin";
             vertical-alignment: center;
 
         }
         Button {
-            row: 2; col: 1;
+            row: 3; col: 1;
             text: "Bitcoin Address(es)";
             clicked => { root.select-kind("BitcoinAddresses", "Bitcoin Address(es)"); }
         }
         Button {
-            row: 2; col: 2;
+            row: 3; col: 2;
             text: "Bitcoin HD Wallet(s)";
             clicked => { root.select-kind("BitcoinXpubs", "Bitcoin HD Wallet(s)"); }
         }
 
         Text {
-            row: 3; col: 0;
+            row: 4; col: 0;
             text: "Ethereum";
             vertical-alignment: TextVerticalAlignment.center;
         }
         Button {
-            row: 3; col: 1; colspan: 2;
+            row: 4; col: 1; colspan: 2;
             text: "Ethereum Address";
             clicked => { root.select-kind("EthereumAddress", "Ethereum Address"); }
         }
 
         Text {
-            row: 4; col: 0;
+            row: 5; col: 0;
             text: "Stellar";
             vertical-alignment: TextVerticalAlignment.center;
         }
         Button {
-            row: 4; col: 1; colspan: 2;
+            row: 5; col: 1; colspan: 2;
             text: "Stellar Account";
             clicked => { root.select-kind("StellarAccount", "Stellar Address"); }
         }
@@ -330,6 +349,173 @@ component AddWalletSourceDialog inherits Rectangle {
                 clicked => {
                     root.add-address-requested(wallet-index, kind-id, address-input.text, name);
                     root.close-requested();
+                }
+            }
+        }
+    }
+
+    page-3 := ScrollView {
+        visible: step == 2;
+        preferred-height: 560px;
+        min-height: 0px;
+
+        generic-form := VerticalBox {
+            padding-left: 4px;
+            padding-right: 4px;
+            spacing: 8px;
+
+            Text {
+                text: Facade.generic-import-source-path;
+                color: #999;
+                font-size: 12px;
+            }
+
+            GridBox {
+                Text { row: 0; col: 0; text: "Source Name"; vertical-alignment: center; }
+                LineEdit {
+                    row: 0; col: 1;
+                    text <=> Facade.generic-import-name;
+                    placeholder-text: "Optional source name";
+                }
+
+                Text { row: 1; col: 0; text: "Timestamp"; vertical-alignment: center; }
+                ComboBox {
+                    row: 1; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-timestamp-column;
+                }
+
+                Text { row: 2; col: 0; text: "Date Format"; vertical-alignment: center; }
+                LineEdit {
+                    row: 2; col: 1;
+                    text <=> Facade.generic-import-date-format;
+                    placeholder-text: "%Y-%m-%d %H:%M:%S";
+                }
+
+                Text { row: 3; col: 0; text: "Transaction Type"; vertical-alignment: center; }
+                ComboBox {
+                    row: 3; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-type-column;
+                }
+
+                Text { row: 4; col: 0; text: "Received Amount"; vertical-alignment: center; }
+                ComboBox {
+                    row: 4; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-received-amount-column;
+                }
+
+                Text { row: 5; col: 0; text: "Received Currency"; vertical-alignment: center; }
+                ComboBox {
+                    row: 5; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-received-currency-column;
+                }
+
+                Text { row: 6; col: 0; text: "Sent Amount"; vertical-alignment: center; }
+                ComboBox {
+                    row: 6; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-sent-amount-column;
+                }
+
+                Text { row: 7; col: 0; text: "Sent Currency"; vertical-alignment: center; }
+                ComboBox {
+                    row: 7; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-sent-currency-column;
+                }
+
+                Text { row: 8; col: 0; text: "Fee Amount"; vertical-alignment: center; }
+                ComboBox {
+                    row: 8; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-fee-amount-column;
+                }
+
+                Text { row: 9; col: 0; text: "Fee Currency"; vertical-alignment: center; }
+                ComboBox {
+                    row: 9; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-fee-currency-column;
+                }
+
+                Text { row: 10; col: 0; text: "Fiat Value"; vertical-alignment: center; }
+                ComboBox {
+                    row: 10; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-value-amount-column;
+                }
+
+                Text { row: 11; col: 0; text: "Fiat Currency"; vertical-alignment: center; }
+                ComboBox {
+                    row: 11; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-value-currency-column;
+                }
+
+                Text { row: 12; col: 0; text: "Transaction ID"; vertical-alignment: center; }
+                ComboBox {
+                    row: 12; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-tx-hash-column;
+                }
+
+                Text { row: 13; col: 0; text: "Note"; vertical-alignment: center; }
+                ComboBox {
+                    row: 13; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-description-column;
+                }
+
+                Text { row: 14; col: 0; text: "Blockchain"; vertical-alignment: center; }
+                ComboBox {
+                    row: 14; col: 1;
+                    model: Facade.generic-import-fields;
+                    current-value <=> Facade.generic-import-blockchain-column;
+                }
+            }
+
+            Text {
+                text: "Transaction type values";
+                font-weight: 600;
+            }
+
+            GridBox {
+                Text { row: 0; col: 0; text: "Buy"; vertical-alignment: center; }
+                LineEdit { row: 0; col: 1; text <=> Facade.generic-import-buy-values; }
+                Text { row: 1; col: 0; text: "Sell"; vertical-alignment: center; }
+                LineEdit { row: 1; col: 1; text <=> Facade.generic-import-sell-values; }
+                Text { row: 2; col: 0; text: "Receive"; vertical-alignment: center; }
+                LineEdit { row: 2; col: 1; text <=> Facade.generic-import-receive-values; }
+                Text { row: 3; col: 0; text: "Send"; vertical-alignment: center; }
+                LineEdit { row: 3; col: 1; text <=> Facade.generic-import-send-values; }
+                Text { row: 4; col: 0; text: "Income"; vertical-alignment: center; }
+                LineEdit { row: 4; col: 1; text <=> Facade.generic-import-income-values; }
+                Text { row: 5; col: 0; text: "Expense"; vertical-alignment: center; }
+                LineEdit { row: 5; col: 1; text <=> Facade.generic-import-expense-values; }
+                Text { row: 6; col: 0; text: "Fee"; vertical-alignment: center; }
+                LineEdit { row: 6; col: 1; text <=> Facade.generic-import-fee-values; }
+            }
+
+            HorizontalBox {
+                padding: 0;
+
+                Button {
+                    text: "Back";
+                    clicked => {
+                        root.step = 0;
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: "Add Source";
+                    enabled: Facade.generic-import-timestamp-column != "";
+                    clicked => {
+                        root.save-generic-import-requested(wallet-index);
+                        root.close-requested();
+                    }
                 }
             }
         }
@@ -421,7 +607,7 @@ component MainContent inherits Rectangle {
         width: root.width;
         height: root.height;
 
-        title: root.add-source-step == 0 ? "Add Source" : "Add " + root.add-source-kind-label;
+        title: root.add-source-step == 0 ? "Add Source" : root.add-source-step == 2 ? "Map Import Fields" : "Add " + root.add-source-kind-label;
 
         AddWalletSourceDialog {
             wallet-index <=> root.add-source-wallet-index;
@@ -433,6 +619,8 @@ component MainContent inherits Rectangle {
 
             close-requested() => { add-source-modal.close(); }
             add-csv-requested(wallet_index) => { Facade.add-source-csv(wallet_index); }
+            start-generic-import-requested(wallet_index) => { Facade.start-generic-import(wallet_index); }
+            save-generic-import-requested(wallet_index) => { Facade.save-generic-import(wallet_index); }
             add-address-requested(wallet_index, kind_id, input, name) => {
                 Facade.add-source-address(wallet_index, kind_id, input, name);
             }
