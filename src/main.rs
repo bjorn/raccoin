@@ -399,7 +399,7 @@ impl App {
             }
         }));
 
-        self.state.portfolio_file = Some(file_path.into());
+        self.state.portfolio_file = Some(file_path);
         self.portfolio = portfolio;
 
         self.refresh_transactions();
