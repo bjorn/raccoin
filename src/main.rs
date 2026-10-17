@@ -8,6 +8,7 @@ mod bison;
 mod blink;
 mod bitcoin_core;
 mod bitcoin_de;
+mod bitcoin_descriptor;
 mod bitonic;
 mod bitstamp;
 mod bittrex;
@@ -1926,6 +1927,13 @@ async fn main() -> Result<()> {
             if source_definition.is_none() {
                 app.report_error("Unknown source type.");
                 return;
+            }
+
+            if source_type == "BitcoinDescriptors" {
+                if let Err(error) = bitcoin_descriptor::BitcoinDescriptor::parse_list(source_path) {
+                    app.report_error(&format!("Invalid Bitcoin output descriptor: {error:#}"));
+                    return;
+                }
             }
 
             if let Some(wallet) = app.portfolio.wallets.get_mut(wallet_index as usize) {
